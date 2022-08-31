@@ -10,7 +10,7 @@ use std::mem::size_of;
 use log::{error, warn};
 use lz4_flex::decompress;
 use nom::{
-    bytes::complete::take,
+    bytes::complete::{take, take_while},
     number::complete::{le_u32, le_u64},
     Needed,
 };
@@ -18,7 +18,6 @@ use nom::{
 use crate::chunks::firehose::firehose_log::FirehosePreamble;
 use crate::chunks::simpledump::SimpleDump;
 use crate::chunks::statedump::Statedump;
-use crate::util::padding_size;
 use crate::{
     chunks::oversize::Oversize, preamble::LogPreamble, unified_log::UnifiedLogCatalogData,
 };
@@ -133,15 +132,13 @@ impl ChunksetChunk {
             let (data, chunk_data) = take(chunk_size + chunk_preamble_size)(input)?;
             ChunksetChunk::get_chunkset_data(chunk_data, preamble.chunk_tag, unified_log_data);
 
-            let padding_size = padding_size(preamble.chunk_data_size);
-            if data.len() < padding_size as usize {
+            // Nom all zero padding
+            let (remaining_data, _) = take_while(|b: u8| b == 0)(data)?;
+            if remaining_data.is_empty() {
                 break;
             }
-            let (data, _) = take(padding_size)(data)?;
-            if data.is_empty() {
-                break;
-            }
-            input = data;
+
+            input = remaining_data;
             if input.len() < chunk_preamble_size as usize {
                 warn!(
                     "[macos-unifiedlogs] Not enough data for Chunkset preamble header, needed 16 bytes. Got: {:?}",
@@ -2380,7 +2377,6 @@ mod tests {
         let statedump_chunk = 0x6003;
         ChunksetChunk::get_chunkset_data(&buffer, statedump_chunk, &mut unified_log);
         assert_eq!(unified_log.statedump.len(), 1);
-        println!("{:?}", unified_log.statedump);
         assert_eq!(
             unified_log.statedump[0].unknown_name,
             "CLDaemonStatusStateTracker"
@@ -2444,7 +2440,6 @@ mod tests {
         let simpledump_chunk = 0x6004;
         ChunksetChunk::get_chunkset_data(&buffer, simpledump_chunk, &mut unified_log);
         assert_eq!(unified_log.simpledump.len(), 1);
-        println!("{:?}", unified_log.simpledump);
         assert_eq!(
             unified_log.simpledump[0].message_string,
             "service exited: dirty = 0, supported pressured-exit = 1"

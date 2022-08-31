@@ -120,7 +120,7 @@ impl FirehosePreamble {
         let (input, private_data_virtual_offset) = take(size_of::<u16>())(input)?;
         let (input, unknown2) = take(size_of::<u16>())(input)?;
         let (input, unknown3) = take(size_of::<u16>())(input)?;
-        let (input, base_continous_time) = take(size_of::<u64>())(input)?;
+        let (log_data, base_continous_time) = take(size_of::<u64>())(input)?;
 
         let (_, firehose_chunk_tag) = le_u32(chunk_tag)?;
         let (_, firehose_chunk_sub_tag) = le_u32(chunk_sub_tag)?;
@@ -155,16 +155,54 @@ impl FirehosePreamble {
         // firehose_public_data_size includes the 16 bytes before the public data offset
         let public_data_size_offset = 16;
         let (mut input, mut public_data) =
-            take(firehose_public_data_size - public_data_size_offset)(input)?;
+            take(firehose_public_data_size - public_data_size_offset)(log_data)?;
 
         let log_types = vec![0x2, 0x6, 0x4, 0x7, 0x3];
 
+        let remnant_data = 0x0;
         // Go through all the public data associated with log Firehose entry
         while !public_data.is_empty() {
             let (firehose_input, firehose_public_data) =
                 FirehosePreamble::parse_firehose(public_data)?;
             public_data = firehose_input;
-            if !log_types.contains(&firehose_public_data.unknown_log_activity_type) {
+            if !log_types.contains(&firehose_public_data.unknown_log_activity_type)
+                || public_data.len() < 24
+            {
+                if remnant_data == firehose_public_data.unknown_log_activity_type {
+                    break;
+                }
+                if firehose_private_data_virtual_offset != 0x1000 {
+                    let private_offst = 0x1000;
+                    let private_data_offset = private_offst - firehose_private_data_virtual_offset;
+                    // Calculate start of private data. If the remaining input is greater than private data offset. 
+                    // Remove any padding/junk data
+                    if input.len() > private_data_offset.into() && public_data.is_empty() {
+                        let leftover_data = input.len() - private_data_offset as usize;
+                        let (private_data, _) = take(leftover_data)(input)?;
+                        input = private_data;
+                    } else {
+                        // If we have private data, then any leftover public data is actually prepended to the private data
+                        /*
+                        buffer:             2736 bytes
+                            00000000: b0 0a aa 0a 00 00 00 03 19 6d c9 a4 1d 08 00 00 .........m......
+                            ...
+                            00000a90: ce fa d2 b0 10 00 12 00 aa 0a 4b 00 35 60 00 00 ..........K.5`..
+                            00000aa0: 01 00 43 01 21 04 00 00 4b 00 43 6f 6e 66 69 67 ..C.!...K.Config <- Config is actually in private data
+                        privdata:           1366 bytes
+                            00000000: 43 6f 6e 66 69 67 52 65 73 6f 6c 76 65 72 73 3a ConfigResolvers:
+                            00000010: 20 55 6e 73 63 6f 70 65 64 20 72 65 73 6f 6c 76  Unscoped resolv
+                            00000020: 65 72 5b 35 5d 20 64 6f 6d 61 69 6e 20 61 2e 65 er[5] domain a.e
+                            00000030: 2e 66 2e 69 70 36 2e 61 72 70 61 20 6e 5f 6e 61 .f.ip6.arpa n_na
+                            00000040: 6d 65 73 65 72 76 65 72 20 30 00 43 6f 6e 66 69 meserver 0.Confi
+                        */
+                        let (private_input_data, _) = take(
+                            (firehose_public_data_size - public_data_size_offset) as usize
+                                - public_data.len(),
+                        )(log_data)?;
+                        input = private_input_data;
+                    }
+                }
+                firehose_data.public_data.push(firehose_public_data);
                 break;
             }
             firehose_data.public_data.push(firehose_public_data);
@@ -173,7 +211,7 @@ impl FirehosePreamble {
         // If there is private data, go through and update any logs that have private data items
         if firehose_private_data_virtual_offset != 0x1000 {
             debug!("[macos-unifiedlogs] Parsing Private Firehose Data");
-            // nom any padding
+            // Nom any padding
             let (mut private_input, _) = take_while(|b: u8| b == 0)(input)?;
 
             // if we nom the rest of the data (all zeros) then the private data is actually zeros
@@ -190,7 +228,6 @@ impl FirehosePreamble {
                 // Get the start of private string data
                 let string_offset = data.firehose_non_activity.private_strings_offset
                     - firehose_private_data_virtual_offset;
-
                 let (private_string_start, _) = take(string_offset)(private_input)?;
                 let (_, _) =
                     FirehosePreamble::parse_private_data(private_string_start, &mut data.message)?;
@@ -366,7 +403,7 @@ impl FirehosePreamble {
                 if firehose_info.item_type == private_strings[3]
                     || firehose_info.item_type == private_strings[4]
                 {
-                    if private_string_start.len() < firehose_info.item_size as usize {
+                    if private_string_start.len() < firehose_info.item_size.into() {
                         let (private_data, pointer_object) =
                             take(private_string_start.len())(private_string_start)?;
                         private_string_start = private_data;
@@ -525,7 +562,7 @@ impl FirehosePreamble {
         firehose_results.continous_time_delta = firehose_continous_delta;
         firehose_results.data_size = firehose_data_size;
 
-        let (input, mut firehose_input) = take(firehose_data_size)(input)?;
+        let (mut input, mut firehose_input) = take(firehose_data_size)(input)?;
 
         // Log activity type (unknown_log_activity_type)
         let activity: u8 = 0x2;
@@ -535,7 +572,7 @@ impl FirehosePreamble {
         let trace: u8 = 0x3;
 
         // Unknown types
-        let unknown_remenant_data = 0x0; // 0x0 appears to be remenant data or garbage data (log command does not parse it either)
+        let unknown_remnant_data = 0x0; // 0x0 appears to be remnant data or garbage data (log command does not parse it either)
 
         if firehose_unknown_log_activity_type == activity {
             let (activity_data, activity) = FirehoseActivity::parse_activity(
@@ -568,7 +605,7 @@ impl FirehosePreamble {
             firehose_results.message = FirehoseTrace::get_trace_message_string(
                 firehose_results.firehose_trace.message_value,
             );
-        } else if firehose_unknown_log_activity_type == unknown_remenant_data {
+        } else if firehose_unknown_log_activity_type == unknown_remnant_data {
             return Ok((input, firehose_results));
         } else {
             warn!(
@@ -576,14 +613,16 @@ impl FirehosePreamble {
                 firehose_unknown_log_activity_type,
                 input.len()
             );
-            debug!("[macos-unifiedlogs] Firehose data: {:?}", data);
+            debug!("[macos-unifiedlogs] Firehose data: {:X?}", data);
             return Ok((input, firehose_results));
         }
 
         let minimum_item_size = 6;
         if firehose_input.len() < minimum_item_size {
-            let padding_size = padding_size(firehose_results.data_size.into());
-            let (input, _) = take(padding_size)(input)?;
+            // Nom any zero padding
+            let (remaining_data, _) = take_while(|b: u8| b == 0)(input)?;
+
+            input = remaining_data;
             return Ok((input, firehose_results));
         }
 
@@ -604,8 +643,16 @@ impl FirehosePreamble {
 
         firehose_results.message = firehose_item_data;
 
+        // Nom any zero padding
+        let (remaining_data, taken_data) = take_while(|b: u8| b == 0)(input)?;
+
+        // Verify we did not nom into remnant/junk data
         let padding_data = padding_size(firehose_data_size.into());
-        let (input, _) = take(padding_data)(input)?;
+        let (mut input, _) = take(padding_data)(input)?;
+        if (padding_data as usize) > taken_data.len() {
+            input = remaining_data;
+        }
+
         Ok((input, firehose_results))
     }
 

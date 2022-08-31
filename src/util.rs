@@ -48,9 +48,7 @@ pub fn extract_string_size(data: &[u8], message_size: u64) -> nom::IResult<&[u8]
 
     // Get whole string message except end of string (0s)
     let (input, path) = take(message_size)(data)?;
-
     let path_string = String::from_utf8(path.to_vec());
-
     match path_string {
         Ok(results) => return Ok((input, results.trim_end_matches(char::from(0)).to_string())),
         Err(err) => error!(
