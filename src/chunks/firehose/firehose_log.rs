@@ -175,31 +175,40 @@ impl FirehosePreamble {
                     let private_offst = 0x1000;
                     let private_data_offset = private_offst - firehose_private_data_virtual_offset;
                     // Calculate start of private data. If the remaining input is greater than private data offset. 
-                    // Remove any padding/junk data
+                    // Remove any padding/junk data in front of the private data
                     if input.len() > private_data_offset.into() && public_data.is_empty() {
                         let leftover_data = input.len() - private_data_offset as usize;
                         let (private_data, _) = take(leftover_data)(input)?;
                         input = private_data;
                     } else {
-                        // If we have private data, then any leftover public data is actually prepended to the private data
-                        /*
-                        buffer:             2736 bytes
-                            00000000: b0 0a aa 0a 00 00 00 03 19 6d c9 a4 1d 08 00 00 .........m......
-                            ...
-                            00000a90: ce fa d2 b0 10 00 12 00 aa 0a 4b 00 35 60 00 00 ..........K.5`..
-                            00000aa0: 01 00 43 01 21 04 00 00 4b 00 43 6f 6e 66 69 67 ..C.!...K.Config <- Config is actually in private data
-                        privdata:           1366 bytes
-                            00000000: 43 6f 6e 66 69 67 52 65 73 6f 6c 76 65 72 73 3a ConfigResolvers:
-                            00000010: 20 55 6e 73 63 6f 70 65 64 20 72 65 73 6f 6c 76  Unscoped resolv
-                            00000020: 65 72 5b 35 5d 20 64 6f 6d 61 69 6e 20 61 2e 65 er[5] domain a.e
-                            00000030: 2e 66 2e 69 70 36 2e 61 72 70 61 20 6e 5f 6e 61 .f.ip6.arpa n_na
-                            00000040: 6d 65 73 65 72 76 65 72 20 30 00 43 6f 6e 66 69 meserver 0.Confi
-                        */
-                        let (private_input_data, _) = take(
-                            (firehose_public_data_size - public_data_size_offset) as usize
-                                - public_data.len(),
-                        )(log_data)?;
-                        input = private_input_data;
+                        // If log data and public data are the same size. Use private data offset to calculate the private data
+                        if log_data.len() == (firehose_public_data_size - public_data_size_offset) as usize {
+                            let (private_input_data, _) = take(
+                                (firehose_private_data_virtual_offset - public_data_size_offset) as usize
+                                    - public_data.len(),
+                            )(log_data)?;
+                            input = private_input_data;
+                        } else {
+                            // If we have private data, then any leftover public data is actually prepended to the private data
+                            /*
+                            buffer:             2736 bytes
+                                00000000: b0 0a aa 0a 00 00 00 03 19 6d c9 a4 1d 08 00 00 .........m......
+                                ...
+                                00000a90: ce fa d2 b0 10 00 12 00 aa 0a 4b 00 35 60 00 00 ..........K.5`..
+                                00000aa0: 01 00 43 01 21 04 00 00 4b 00 43 6f 6e 66 69 67 ..C.!...K.Config <- Config is actually in private data
+                            privdata:           1366 bytes
+                                00000000: 43 6f 6e 66 69 67 52 65 73 6f 6c 76 65 72 73 3a ConfigResolvers:
+                                00000010: 20 55 6e 73 63 6f 70 65 64 20 72 65 73 6f 6c 76  Unscoped resolv
+                                00000020: 65 72 5b 35 5d 20 64 6f 6d 61 69 6e 20 61 2e 65 er[5] domain a.e
+                                00000030: 2e 66 2e 69 70 36 2e 61 72 70 61 20 6e 5f 6e 61 .f.ip6.arpa n_na
+                                00000040: 6d 65 73 65 72 76 65 72 20 30 00 43 6f 6e 66 69 meserver 0.Confi
+                            */
+                            let (private_input_data, _) = take(
+                                (firehose_public_data_size - public_data_size_offset) as usize
+                                    - public_data.len(),
+                            )(log_data)?;
+                            input = private_input_data;
+                        }
                     }
                 }
                 firehose_data.public_data.push(firehose_public_data);
