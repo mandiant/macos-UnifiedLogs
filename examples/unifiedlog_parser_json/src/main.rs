@@ -16,10 +16,28 @@ use macos_unifiedlogs::unified_log::{LogData, UnifiedLogData};
 use macos_unifiedlogs::uuidtext::UUIDText;
 use simplelog::{Config, SimpleLogger};
 use std::error::Error;
+use std::fs;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
-use std::{env, fs};
+
+use clap::Parser;
+
+#[derive(Parser, Debug)]
+#[clap(version, about, long_about = None)]
+struct Args {
+    /// Run on live system
+    #[clap(short, long, default_value = "false")]
+    live: String,
+
+    /// Path to logarchive formatted directory
+    #[clap(short, long, default_value = "")]
+    input: String,
+
+    /// Path to output directory. Any directories must already exist
+    #[clap(short, long, default_value = ".")]
+    output: String,
+}
 
 fn main() {
     println!("Starting Unified Log parser...");
@@ -27,12 +45,11 @@ fn main() {
     SimpleLogger::init(LevelFilter::Warn, Config::default())
         .expect("Failed to initialize simple logger");
 
-    let args: Vec<String> = env::args().collect();
-    // If arguement is passed, parsing logarchive
-    if args.len() == 2 {
-        let archive_path = &args[1];
-        parse_log_archive(archive_path);
-    } else {
+    let args = Args::parse();
+
+    if args.input != "" && args.output != "" {
+        parse_log_archive(&args.input);
+    } else if args.live != "false" {
         parse_live_system();
     }
 }
@@ -273,6 +290,7 @@ fn parse_trace_file(
 
     // Check if livedata exists. We only have it if 'log collect' was used
     if archive_path.exists() {
+        println!("Parsing: logdata.LiveData.tracev3");
         let mut log_data = parse_log(&archive_path.display().to_string()).unwrap();
         log_data.oversize.append(&mut oversize_strings.oversize);
         let (results, missing_logs) = build_log(
@@ -317,10 +335,11 @@ fn parse_trace_file(
 
 // Create JSON files
 fn output(results: &Vec<LogData>, output_name: &str) -> Result<(), Box<dyn Error>> {
+    let args = Args::parse();
     let mut json_file = OpenOptions::new()
         .append(true)
         .create(true)
-        .open(format!("{}.json", output_name))?;
+        .open(format!("{}/{}.json", args.output, output_name))?;
 
     let serde_data = serde_json::to_string(&results)?;
 

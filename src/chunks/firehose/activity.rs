@@ -138,6 +138,7 @@ impl FirehoseActivity {
         {
             if firehose.firehose_formatters.has_large_offset != 0 {
                 let mut large_offset = firehose.firehose_formatters.has_large_offset;
+                let extra_offset_value;
                 // large_shared_cache should be double the value of has_large_offset
                 // Ex: has_large_offset = 1, large_shared_cache = 2
                 // If the value do not match then there is an issue with shared string offset
@@ -148,13 +149,15 @@ impl FirehoseActivity {
                     && !firehose.firehose_formatters.shared_cache
                 {
                     large_offset = firehose.firehose_formatters.large_shared_cache / 2;
-                }
-                // Large offset is 8 if shared_cache flag is set
-                if firehose.firehose_formatters.shared_cache {
+                    // Combine large offset value with current string offset to get the true offset
+                    extra_offset_value = format!("{:X}{:08X}", large_offset, string_offset);
+                } else if firehose.firehose_formatters.shared_cache {
+                    // Large offset is 8 if shared_cache flag is set
                     large_offset = 8;
+                    extra_offset_value = format!("{:X}{:07X}", large_offset, string_offset);
+                } else {
+                    extra_offset_value = format!("{:X}{:08X}", large_offset, string_offset);
                 }
-                // Combine large offset value with current string offset to get the true offset
-                let extra_offset_value = format!("{:X}{:07X}", large_offset, string_offset);
 
                 let extra_offset_value_result = u64::from_str_radix(&extra_offset_value, 16);
                 match extra_offset_value_result {
@@ -166,7 +169,7 @@ impl FirehoseActivity {
                             first_proc_id,
                             second_proc_id,
                             catalogs,
-                            firehose.firehose_formatters.has_large_offset,
+                            string_offset,
                         );
                     }
                     Err(err) => {
@@ -186,7 +189,7 @@ impl FirehoseActivity {
                 first_proc_id,
                 second_proc_id,
                 catalogs,
-                firehose.firehose_formatters.has_large_offset,
+                string_offset,
             )
         } else {
             if firehose.firehose_formatters.absolute {
@@ -204,7 +207,7 @@ impl FirehoseActivity {
                             first_proc_id,
                             second_proc_id,
                             catalogs,
-                            firehose.firehose_formatters.has_large_offset,
+                            string_offset,
                         );
                     }
                     Err(err) => {
@@ -222,7 +225,7 @@ impl FirehoseActivity {
                     first_proc_id,
                     second_proc_id,
                     catalogs,
-                    firehose.firehose_formatters.has_large_offset,
+                    string_offset,
                 );
             }
             MessageData::extract_format_strings(
@@ -231,7 +234,7 @@ impl FirehoseActivity {
                 first_proc_id,
                 second_proc_id,
                 catalogs,
-                firehose.firehose_formatters.has_large_offset,
+                string_offset,
             )
         }
     }

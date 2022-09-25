@@ -17,9 +17,27 @@ use macos_unifiedlogs::unified_log::{LogData, UnifiedLogData};
 use macos_unifiedlogs::uuidtext::UUIDText;
 use simplelog::{Config, SimpleLogger};
 use std::error::Error;
+use std::fs;
 use std::fs::OpenOptions;
 use std::path::PathBuf;
-use std::{env, fs};
+
+use clap::Parser;
+
+#[derive(Parser, Debug)]
+#[clap(version, about, long_about = None)]
+struct Args {
+    /// Run on live system
+    #[clap(short, long, default_value = "false")]
+    live: String,
+
+    /// Path to logarchive formatted directory
+    #[clap(short, long, default_value = "")]
+    input: String,
+
+    /// Path to output file. Any directories must already exist
+    #[clap(short, long)]
+    output: String,
+}
 
 fn main() {
     println!("Starting Unified Log parser...");
@@ -27,15 +45,13 @@ fn main() {
     SimpleLogger::init(LevelFilter::Warn, Config::default())
         .expect("Failed to initialize simple logger");
 
-    let args: Vec<String> = env::args().collect();
+    let args = Args::parse();
     // Create headers for CSV file
     output_header().unwrap();
 
-    // If arguement is passed, parsing logarchive
-    if args.len() == 2 {
-        let archive_path = &args[1];
-        parse_log_archive(archive_path);
-    } else {
+    if args.input != "" && args.output != "" {
+        parse_log_archive(&args.input);
+    } else if args.live != "false" {
         parse_live_system();
     }
 }
@@ -307,10 +323,12 @@ fn parse_trace_file(
 
 // Create csv file and create headers
 fn output_header() -> Result<(), Box<dyn Error>> {
+    let args = Args::parse();
+
     let csv_file = OpenOptions::new()
         .append(true)
         .create(true)
-        .open("output.csv")?;
+        .open(args.output)?;
     let mut writer = csv::Writer::from_writer(csv_file);
 
     writer.write_record(&[
@@ -337,10 +355,12 @@ fn output_header() -> Result<(), Box<dyn Error>> {
 
 // Append or create csv file
 fn output(results: &Vec<LogData>) -> Result<(), Box<dyn Error>> {
+    let args = Args::parse();
+
     let csv_file = OpenOptions::new()
         .append(true)
         .create(true)
-        .open("output.csv")?;
+        .open(args.output)?;
     let mut writer = csv::Writer::from_writer(csv_file);
 
     for data in results {

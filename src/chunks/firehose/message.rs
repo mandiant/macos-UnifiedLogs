@@ -34,7 +34,7 @@ impl MessageData {
         first_proc_id: &u64,
         second_proc_id: &u32,
         catalogs: &CatalogChunk,
-        has_large_offset: u16,
+        original_offset: u64,
     ) -> nom::IResult<&'a [u8], MessageData> {
         debug!("[macos-unifiedlogs] Extracting format string from shared cache file (dsc)");
         let mut message_data = MessageData {
@@ -46,7 +46,7 @@ impl MessageData {
         };
 
         // Check if the string offset is "dynamic" (the formatter is "%s")
-        if (string_offset & 0x80000000 != 0) && has_large_offset == 0 {
+        if original_offset & 0x80000000 != 0 {
             for shared_string in shared_strings {
                 // Get shared string file (DSC) associated with log entry from Catalog
                 let (dsc_uuid, main_uuid) =
@@ -179,7 +179,7 @@ impl MessageData {
         first_proc_id: &u64,
         second_proc_id: &u32,
         catalogs: &CatalogChunk,
-        has_large_offset: u16,
+        original_offset: u64,
     ) -> nom::IResult<&'a [u8], MessageData> {
         debug!("[macos-unifiedlogs] Extracting format string from UUID file");
         let (_, main_uuid) = MessageData::get_catalog_dsc(catalogs, first_proc_id, second_proc_id);
@@ -194,7 +194,7 @@ impl MessageData {
         };
 
         // If most significant bit is set, the string offset is "dynamic" (the formatter is "%s")
-        if (string_offset & 0x80000000 != 0) && has_large_offset == 0 {
+        if original_offset & 0x80000000 != 0 {
             for data in strings_data {
                 if message_data.process_uuid.ends_with(&data.uuid) {
                     // Footer data is a collection of strings that ends with the image path/library associated with strings
@@ -293,7 +293,7 @@ impl MessageData {
         first_proc_id: &u64,
         second_proc_id: &u32,
         catalogs: &CatalogChunk,
-        has_large_offset: u16,
+        original_offset: u64,
     ) -> nom::IResult<&'a [u8], MessageData> {
         debug!("[macos-unifiedlogs] Extracting format string from UUID file for log entry with Absolute flag");
         let mut uuid = String::new();
@@ -333,9 +333,7 @@ impl MessageData {
             process_uuid: main_uuid,
         };
         // If most significant bit is set, the string offset is "dynamic" (the formatter is "%s")
-        if ((string_offset & 0x80000000 != 0) || string_offset == absolute_offset)
-            && has_large_offset == 0
-        {
+        if (original_offset & 0x80000000 != 0) || string_offset == absolute_offset {
             for data in strings_data {
                 if message_data.library_uuid.ends_with(&data.uuid) {
                     // Footer data is a collection of strings that ends with the image path/library associated with strings
@@ -443,7 +441,7 @@ impl MessageData {
         first_proc_id: &u64,
         second_proc_id: &u32,
         catalogs: &CatalogChunk,
-        has_large_offset: u16,
+        original_offset: u64,
     ) -> nom::IResult<&'a [u8], MessageData> {
         debug!("[macos-unifiedlogs] Extracting format string from alt uuid");
         // Log entries with uuid_relative flags set have the UUID in the log itself. They do not use the dsc UUID files
@@ -457,7 +455,7 @@ impl MessageData {
             process_uuid: main_uuid,
         };
         // If most significant bit is set, the string offset is "dynamic" (the formatter is "%s")
-        if (string_offset & 0x80000000 != 0) && has_large_offset == 0 {
+        if original_offset & 0x80000000 != 0 {
             for data in strings_data {
                 if uuid.ends_with(&data.uuid) {
                     // Footer data is a collection of strings that ends with the image path/library associated with strings
@@ -734,7 +732,7 @@ mod tests {
             &test_first_proc_id,
             &test_second_proc_id,
             &log_data.catalog_data[2].catalog,
-            0,
+            test_offset,
         )
         .unwrap();
 
@@ -768,7 +766,7 @@ mod tests {
             &test_first_proc_id,
             &test_second_proc_id,
             &log_data.catalog_data[0].catalog,
-            0,
+            test_offset,
         )
         .unwrap();
 
@@ -829,7 +827,7 @@ mod tests {
             &test_first_proc_id,
             &test_second_proc_id,
             &log_data.catalog_data[4].catalog,
-            0,
+            test_offset,
         )
         .unwrap();
 
@@ -861,7 +859,7 @@ mod tests {
             &test_first_proc_id,
             &test_second_proc_id,
             &log_data.catalog_data[4].catalog,
-            0,
+            bad_offset,
         )
         .unwrap();
 
@@ -955,7 +953,7 @@ mod tests {
             &test_first_proc_id,
             &test_second_proc_id,
             &log_data.catalog_data[1].catalog,
-            0,
+            test_offset,
         )
         .unwrap();
 
@@ -989,7 +987,7 @@ mod tests {
             &test_first_proc_id,
             &test_second_proc_id,
             &log_data.catalog_data[1].catalog,
-            0,
+            bad_offset,
         )
         .unwrap();
 

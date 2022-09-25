@@ -1,11 +1,39 @@
 # Example binaries
 Precompiled binaries are available in GitHub releases, they can also be built following the steps under `BUILDING.md`.  
-`unifiedlog_parser` and `unifiedlog_parser_json` can run on a live macOS system or a `logarchive`.  To run on a live system execute `unifiedlog_parser` or `unifiedlog_parser_json` with no arguements.  
+`unifiedlog_parser` and `unifiedlog_parser_json` can run on a live macOS system or a `logarchive`.  To run on a live system execute `unifiedlog_parser` or `unifiedlog_parser_json` with the arguements `-l true`.  
 To run on a `logarchive` provide the full path to the `logarchive` as an arguement to `unifiedlog_parser` or `unifiedlog_parser_json`.  
-- Ex: `unifiedlog_parser <path/to/file.logarchive>`  
+- Ex: `unifiedlog_parser -i <path/to/file.logarchive>`  
+
+By default the example binaries will output to the directory where run from. To change the output path pass the arguement `-o <path to output>`  
+Full exmample: 
+```
+./unifiedlog_parser -i system_logs.logarchive -o build/output.csv
+Starting Unified Log parser...
+Parsing: system_logs.logarchive/Persist/0000000000000462.tracev3
+Parsing: system_logs.logarchive/Persist/0000000000000454.tracev3
+...
+```
+
+A very simple help menu is provided via the `-h` option for both `unifiedlog_parser` and `unifiedlog_parser_json`
+```
+./unifiedlog_parser_json -h
+Starting Unified Log parser...
+unifiedlog_parser_json 0.1.0
+
+USAGE:
+    unifiedlog_parser_json [OPTIONS]
+
+OPTIONS:
+    -h, --help               Print help information
+    -i, --input <INPUT>      Path to logarchive formatted directory [default: ]
+    -l, --live <LIVE>        Run on live system [default: false]
+    -o, --output <OUTPUT>    Path to output directory. Any directories must already exist [default:.]
+    -V, --version            Print version information
+```
+
 
 To create an `logarchive`, execute `sudo log collect`. If you cannot execute the `log` command, you can manually create a `logarchive`.  
-`parse_tracev3` can parse a single `tracev3`.  
+The example binary `parse_tracev3` can parse a single `tracev3`.  
 - Ex: `parse_tracev3 <path/to/file.tracev3>`  
 
 ## Manually create logarchive
@@ -13,13 +41,13 @@ To create an `logarchive`, execute `sudo log collect`. If you cannot execute the
 2. Copy all contents from `/private/var/db/uuidtext` to created directory
 3. Copy all contents from `/private/var/db/diagnostics` to created directory
 4. Execute `unifiedlog_parser` or `unifiedlog_parser_json` with path to created directory
-- Ex: `unifiedlog_parser <path/to/output>`
+- Ex: `unifiedlog_parser -i <path/to/output>`
 
 # Possible Issues when running
 Due to the complexity and size of the Unified Logs, some warnings may be encountered when running `unifiedlog_parser` or the other example binaries. Any errors or crashes should be reported.  
 Example of running `unifiedlog_parser` on a live system
 ```
-./unifiedlog_parser
+./unifiedlog_parser -l true
 Starting Unified Log parser...
 Parsing: /var/db/diagnostics/Persist/00000000000005c8.tracev3
 21:55:02 [WARN] Failed to get message string from alternative UUIDText file: "8151CEAA69AF3C059474AAE3403C91A7"

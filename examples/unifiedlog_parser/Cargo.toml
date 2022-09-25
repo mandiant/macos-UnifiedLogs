@@ -11,3 +11,4 @@ csv = "1.1.6"
 chrono = "0.4.19"
 log = "0.4.14"
 macos-unifiedlogs = {path = "../../"}
+clap = {version = "3.2.22", features = ["derive"]}
