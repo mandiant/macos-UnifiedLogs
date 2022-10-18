@@ -290,7 +290,7 @@ impl LogData {
                         library_uuid: String::new(),
                         process_uuid: String::new(),
                         raw_message: String::new(),
-                        message_entries: Vec::new(),
+                        message_entries: firehose.message.item_info.to_owned(),
                     };
 
                     // 0x4 - Non-activity log entry. Ex: log default, log error, etc
@@ -370,8 +370,6 @@ impl LogData {
                                     } else {
                                         log_data.message = log_message;
                                     }
-
-                                    log_data.message_entries = firehose.message.item_info.to_owned()
                                 }
                                 Err(err) => {
                                     warn!("[macos-unifiedlogs] Failed to get message string data for firehose non-activity log entry: {:?}", err);
@@ -647,32 +645,33 @@ impl LogData {
             }
 
             for statedump in &catalog_data.statedump {
-                let plist_type = 1;
-                let protocol_buffer = 2;
-                let custom_object = 3;
-                let mut data_string = String::new();
-
                 let no_firehose_preamble = 1;
-                if statedump.unknown_data_type == plist_type {
-                    data_string = Statedump::parse_statedump_plist(&statedump.statedump_data);
-                } else if statedump.unknown_data_type == custom_object {
-                    data_string = String::from("Statedump Custom Object");
-                } else if statedump.unknown_data_type == protocol_buffer {
-                    data_string = String::from("Statedump Protocol Buffer");
-                } else if !&statedump.statedump_data.is_empty() {
-                    warn!(
-                        "Unknown statedump data type: {}",
-                        statedump.unknown_data_type
-                    );
-                    let results = extract_string(&statedump.statedump_data);
-                    match results {
-                        Ok((_, string_data)) => data_string = string_data,
-                        Err(err) => error!(
-                            "[macos-unifiedlogs] Failed to extract string from statedump: {:?}",
-                            err
-                        ),
+
+                let data_string = match statedump.unknown_data_type {
+                    0x1 => Statedump::parse_statedump_plist(&statedump.statedump_data),
+                    0x2 => String::from("Statedump Protocol Buffer"),
+                    0x3 => Statedump::parse_statedump_object(
+                        &statedump.statedump_data,
+                        &statedump.unknown_name,
+                    ),
+                    _=> {
+                        warn!(
+                            "Unknown statedump data type: {}",
+                            statedump.unknown_data_type
+                        );
+                        let results = extract_string(&statedump.statedump_data);
+                        match results {
+                            Ok((_, string_data)) => string_data,
+                            Err(err) => {
+                                error!(
+                                "[macos-unifiedlogs] Failed to extract string from statedump: {:?}",
+                                err
+                            );
+                            String::from("Failed to extract string from statedump")
+                        }
+                        }
                     }
-                }
+                };
 
                 let log_data = LogData {
                     subsystem: String::new(),
@@ -717,7 +716,7 @@ impl LogData {
         (log_data_vec, missing_unified_log_data_vec)
     }
 
-    // Return log type based on parsed log data
+    /// Return log type based on parsed log data
     fn get_log_type(log_type: &u8, activity_type: &u8) -> String {
         match log_type {
             0x1 => {
@@ -745,7 +744,7 @@ impl LogData {
         }
     }
 
-    // Return the log event type based on parsed log data
+    /// Return the log event type based on parsed log data
     fn get_event_type(event_type: &u8) -> String {
         match event_type {
             0x4 => String::from("Log"),
@@ -757,7 +756,7 @@ impl LogData {
         }
     }
 
-    // Get the header of the Unified Log data (tracev3 file)
+    /// Get the header of the Unified Log data (tracev3 file)
     fn get_header_data(data: &[u8], unified_log_data: &mut UnifiedLogData) {
         let header_results = HeaderChunk::parse_header(data);
         match header_results {
@@ -766,7 +765,7 @@ impl LogData {
         }
     }
 
-    // Get the Catalog of the Unified Log data (tracev3 file)
+    /// Get the Catalog of the Unified Log data (tracev3 file)
     fn get_catalog_data(data: &[u8], unified_log_data: &mut UnifiedLogCatalogData) {
         let catalog_results = CatalogChunk::parse_catalog(data);
         match catalog_results {
@@ -778,7 +777,7 @@ impl LogData {
         }
     }
 
-    // Get the Chunkset of the Unified Log data (tracev3)
+    /// Get the Chunkset of the Unified Log data (tracev3)
     fn get_chunkset_data(
         data: &[u8],
         catalog_data: &mut UnifiedLogCatalogData,
@@ -802,7 +801,7 @@ impl LogData {
         }
     }
 
-    // Track log entries that are missing data that could in another tracev3 file
+    /// Track log entries that are missing data that could in another tracev3 file
     fn track_missing(
         first_proc_id: u64,
         second_proc_id: u32,
@@ -827,7 +826,7 @@ impl LogData {
         }
     }
 
-    // Add all missing log entries to log data tracker. Log data may be in another file. Mainly related to logs with that have Oversize data
+    /// Add all missing log entries to log data tracker. Log data may be in another file. Mainly related to logs with that have Oversize data
     fn add_missing(
         catalog_data: &UnifiedLogCatalogData,
         preamble_index: usize,

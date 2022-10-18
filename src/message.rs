@@ -8,6 +8,7 @@
 use std::mem::size_of;
 
 use crate::chunks::firehose::firehose_log::FirehoseItemInfo;
+use crate::decoders::decoder;
 use log::{error, info, warn};
 use nom::branch::alt;
 use nom::bytes::complete::{is_a, is_not, take, take_until};
@@ -452,6 +453,14 @@ fn parse_type_formatter<'a>(
     item_index: usize,
 ) -> nom::IResult<&'a str, String> {
     let (format, format_type) = take_until("}")(formatter)?;
+
+    let apple_object = decoder::check_objects(format_type, message_value, item_type, item_index);
+
+    // If we successfully decoded an apple object, then there is nothing to format.
+    // Signpost entries have not been seen with custom objects
+    if !apple_object.is_empty() {
+        return Ok(("", apple_object));
+    }
 
     let (_, mut message) = parse_formatter(format, message_value, item_type, item_index)?;
     if format_type.contains("signpost") {

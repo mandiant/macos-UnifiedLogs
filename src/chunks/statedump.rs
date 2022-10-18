@@ -5,6 +5,7 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
+use crate::decoders::location;
 use crate::util::{clean_uuid, extract_string};
 use log::{error, info};
 use nom::bytes::complete::take;
@@ -142,6 +143,29 @@ impl Statedump {
                 String::from("Failed to get plist data")
             }
         }
+    }
+
+    /// Parse custom Apple objects
+    pub(crate) fn parse_statedump_object(object_data: &[u8], name: &str) -> String {
+        let message_result = match name {
+            "CLDaemonStatusStateTracker" => location::get_daemon_status_tracker(object_data),
+            "CLClientManagerStateTracker" => location::get_state_tracker_data(object_data),
+            "CLLocationManagerStateTracker" => location::get_location_tracker_state(object_data),
+            _ => {
+                return format!("Unsupported Statedump object: {}", name);
+            }
+        };
+        let message = match message_result {
+            Ok((_, result)) => result,
+            Err(err) => {
+                error!(
+                    "[macos-unifiedlogs] Failed to parse statedump object {}: {:?}",
+                    name, err
+                );
+                return format!("Failed to parse statedump object: {}", name);
+            }
+        };
+        message
     }
 }
 
@@ -1029,5 +1053,16 @@ mod tests {
                 219
             ]
         );
+    }
+
+    #[test]
+    fn test_parse_statedump_object() {
+        let name = "CLDaemonStatusStateTracker";
+        let test_data = [
+            0, 0, 0, 0, 0, 0, 240, 191, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0,
+            255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0,
+        ];
+        let result = Statedump::parse_statedump_object(&test_data, name);
+        assert_eq!(result, "{\"thermalLevel\": -1, \"reachability: \"kReachabilityLarge\", \"airplaneMode\": false, \"batteryData\":{\"wasConnected\": false, \"charged\": false, \"level\": -1, \"connected\": false, \"chargerType\": \"kChargerTypeUnknown\"}, \"restrictedMode\": false, \"batterySaverModeEnabled\": false, \"push_service\":false}");
     }
 }

@@ -75,7 +75,7 @@ pub fn extract_string(data: &[u8]) -> nom::IResult<&[u8], String> {
                     Ok(results) => return Ok((input, results.to_string())),
                     Err(err) => {
                         warn!(
-                            "[macos-unifiedlogs] Failed to get no end of character string: {:?}",
+                            "[macos-unifiedlogs] Failed to extract full string: {:?}",
                             err
                         );
                         return Ok((input, String::from("Could not extract string")));
@@ -84,8 +84,8 @@ pub fn extract_string(data: &[u8]) -> nom::IResult<&[u8], String> {
             }
         }
         None => {
-            error!("[macos-unifiedlogs] Can not extract string. Empty input.");
-            return Ok((data, String::from("Can not extract string. Empty input.")));
+            error!("[macos-unifiedlogs] Cannot extract string. Empty input.");
+            return Ok((data, String::from("Cannot extract string. Empty input.")));
         }
     }
 

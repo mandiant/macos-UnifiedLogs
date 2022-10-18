@@ -44,3 +44,4 @@ pub mod timesync;
 pub mod unified_log;
 mod util;
 pub mod uuidtext;
+mod decoders;
