@@ -24,7 +24,7 @@ pub(crate) fn parse_dns_header(data: &str) -> String {
     };
 
     let message_result = get_dns_header(&decoded_data);
-    let message = match message_result {
+     match message_result {
         Ok((_, result)) => result,
         Err(err) => {
             error!(
@@ -36,8 +36,7 @@ pub(crate) fn parse_dns_header(data: &str) -> String {
                 data
             )
         }
-    };
-    message
+    }
 }
 
 /// Get the DNS header data
@@ -149,7 +148,7 @@ pub(crate) fn get_domain_name(data: &str) -> String {
     };
 
     let domain_results = extract_string(&decoded_data);
-    return match domain_results {
+    match domain_results {
         Ok((_, results)) => {
             let mut clean_domain = String::new();
             let non_domain_chars:Vec<char> = vec!['\n', '\t', '\r'];
@@ -182,7 +181,7 @@ pub(crate) fn get_service_binding(data: &str) -> String {
     };
 
     let message_results = parse_svcb(&decoded_data);
-    return match message_results {
+    match message_results {
         Ok((_, results)) => results,
         Err(err) => {
             error!("[macos-unifiedlogs] Failed to parse DNS Service Binding data: {:?}", err);
@@ -288,7 +287,7 @@ pub(crate) fn get_dns_mac_addr(data: &str) -> String {
     };
 
     let message_results = parse_mac_addr(&decoded_data);
-    return match message_results {
+    match message_results {
         Ok((_, results)) => results,
         Err(err) => {
             error!("[macos-unifiedlogs] Failed to parse DNS mac address data: {:?}", err);
@@ -323,7 +322,7 @@ pub(crate) fn dns_ip_addr(data: &str) -> String {
         }
     };
     let message_results = parse_dns_ip_addr(&decoded_data);
-    return match message_results {
+    match message_results {
         Ok((_, results)) => results,
         Err(err) => {
             error!("[macos-unifiedlogs] Failed to parse DNS ip address data: {:?}", err);
@@ -467,13 +466,13 @@ pub(crate) fn dns_idflags(data: &str) -> String {
     }
 
     let message_result = parse_idflags(&bytes);
-    return match message_result {
+    match message_result {
         Ok((_, result)) => result,
         Err(err) => {
             error!("[macos-unifiedlogs] Failed to get ID Flags: {:?}", err);
-            return data.to_string()
+            data.to_string()
         }
-    };
+    }
 }
 
 /// Parse just the DNS flags associated with the DNS header
@@ -517,13 +516,13 @@ pub(crate) fn dns_counts(data: &str) -> String {
     }
 
     let message_result = parse_counts(&bytes);
-    return match message_result {
+    match message_result {
         Ok((_, result)) => result,
         Err(err) => {
             error!("[macos-unifiedlogs] Failed to get counts: {:?}", err);
-            return data.to_string()
+            data.to_string()
         }
-    };
+    }
 }
 
 /// parse just the DNS count data associated with the DNS header

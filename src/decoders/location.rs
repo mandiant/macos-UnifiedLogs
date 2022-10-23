@@ -122,17 +122,16 @@ pub(crate) fn sqlite(status: &str) -> String {
     };
 
     let message_result = get_sqlite_data(&decoded_data);
-    let message = match message_result {
+    match message_result {
         Ok((_, result)) => result,
         Err(err) => {
             error!(
                 "[macos-unifiedlogs] Failed to get sqlite {}, error code, error: {:?}",
                 status, err
             );
-            return String::from("Failed to get sqlite error");
+            String::from("Failed to get sqlite error")
         }
-    };
-    message
+    }
 }
 
 /// Get the SQLITE error message
@@ -198,17 +197,16 @@ pub(crate) fn client_manager_state_tracker_state(status: &str) -> String {
     };
 
     let message_result = get_state_tracker_data(&decoded_data);
-    let message = match message_result {
+    match message_result {
         Ok((_, result)) => result,
         Err(err) => {
             error!(
                 "[macos-unifiedlogs] Failed to get client tracker data {}, error: {:?}",
                 status, err
             );
-            return String::from("Failed to get client tracker data");
+            String::from("Failed to get client tracker data")
         }
-    };
-    message
+    }
 }
 
 /// Get the tracker data
@@ -241,17 +239,16 @@ pub(crate) fn location_manager_state_tracker_state(status: &str) -> String {
     };
 
     let message_result = get_location_tracker_state(&decoded_data);
-    let message = match message_result {
+    match message_result {
         Ok((_, result)) => result,
         Err(err) => {
             error!(
                 "[macos-unifiedlogs] Failed to get location tracker data {}, error: {:?}",
                 status, err
             );
-            return String::from("Failed to get logon manager trackder data");
+            String::from("Failed to get logon manager trackder data")
         }
-    };
-    message
+    }
 }
 
 /// Get the location state data

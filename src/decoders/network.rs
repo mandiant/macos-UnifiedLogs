@@ -28,14 +28,13 @@ pub(crate) fn ipv_six(data: &str) -> String {
     };
     let message_result = get_ip_six(&decoded_data);
 
-    let message = match message_result {
+    match message_result {
         Ok((_, result)) => result,
         Err(err) => {
             error!("[macos-unifiedlogs] Failed to get ipv6: {:?}", err);
             format!("Failed to get ipv6: {}", data)
         }
-    };
-    message
+    }
 }
 
 /// Parse an IPv4 address
@@ -53,14 +52,13 @@ pub(crate) fn ipv_four(data: &str) -> String {
     };
     let message_result = get_ip_four(&decoded_data);
 
-    let message = match message_result {
+    match message_result {
         Ok((_, result)) => result,
         Err(err) => {
             error!("[macos-unifiedlogs] Failed to get ipv4: {:?}", err);
             format!("Failed to get ipv4: {}", data)
         }
-    };
-    message
+    }
 }
 
 /// Parse a sockaddr structure
@@ -80,7 +78,7 @@ pub(crate) fn sockaddr(data: &str) -> String {
         }
     };
     let message_result = get_sockaddr_data(&decoded_data);
-    let message = match message_result {
+    match message_result {
         Ok((_, result)) => result,
         Err(err) => {
             error!(
@@ -89,8 +87,7 @@ pub(crate) fn sockaddr(data: &str) -> String {
             );
             format!("Failed to get sockaddr: {}", data)
         }
-    };
-    message
+    }
 }
 
 /// Get the sockaddr data

@@ -155,17 +155,16 @@ impl Statedump {
                 return format!("Unsupported Statedump object: {}", name);
             }
         };
-        let message = match message_result {
+        match message_result {
             Ok((_, result)) => result,
             Err(err) => {
                 error!(
                     "[macos-unifiedlogs] Failed to parse statedump object {}: {:?}",
                     name, err
                 );
-                return format!("Failed to parse statedump object: {}", name);
+                format!("Failed to parse statedump object: {}", name)
             }
-        };
-        message
+        }
     }
 }
 

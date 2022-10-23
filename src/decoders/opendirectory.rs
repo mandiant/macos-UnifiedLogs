@@ -19,7 +19,7 @@ pub(crate) fn errors(oderror: &str) -> String {
     // Found at https://developer.apple.com/documentation/opendirectory/odframeworkerrors?changes=__2&language=objc
     let message = match oderror {
         "5301" => "ODErrorCredentialsAccountDisabled",
-        "5302"=> "ODErrorCredentialsAccountExpired",
+        "5302" => "ODErrorCredentialsAccountExpired",
         "5303" => "ODErrorCredentialsAccountInactive",
         "5300" => "ODErrorCredentialsAccountNotFound",
         "5000" => "ODErrorCredentialsInvalid",
@@ -89,8 +89,6 @@ pub(crate) fn errors(oderror: &str) -> String {
             );
             oderror
         }
-
-
     };
     message.to_string()
 }
@@ -132,7 +130,7 @@ pub(crate) fn member_details(member_string: &str) -> String {
         }
     };
     let message_result = get_member_data(&decoded_data);
-    let message = match message_result {
+    match message_result {
         Ok((_, result)) => result,
         Err(err) => {
             error!(
@@ -144,8 +142,7 @@ pub(crate) fn member_details(member_string: &str) -> String {
                 member_string
             )
         }
-    };
-    message
+    }
 }
 
 /// Parse SID log data to SID string
@@ -159,7 +156,7 @@ pub(crate) fn sid_details(sid_string: &str) -> String {
         }
     };
     let message_result = get_sid_data(&decoded_data);
-    let message = match message_result {
+    match message_result {
         Ok((_, result)) => result,
         Err(err) => {
             error!(
@@ -169,8 +166,7 @@ pub(crate) fn sid_details(sid_string: &str) -> String {
 
             format!("Failed to get open directory sid details: {}", sid_string)
         }
-    };
-    message
+    }
 }
 
 /// Parse Open Directory membership details data
