@@ -5,7 +5,7 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-use chrono::{SecondsFormat, TimeZone, Utc};
+use chrono::{LocalResult, SecondsFormat, TimeZone, Utc};
 use log::error;
 
 /// Parse time data object
@@ -23,8 +23,16 @@ pub(crate) fn parse_time(data: &str) -> String {
     };
 
     // Format to UTC, the log command will format to whatever the local time is for the system
-    let date_time = Utc.timestamp(timestamp, 0);
-    date_time.to_rfc3339_opts(SecondsFormat::Millis, true)
+    let date_time_result = Utc.timestamp_opt(timestamp, 0);
+    match date_time_result {
+        LocalResult::None => format!("Could not parse time: {}", data),
+        LocalResult::Single(date_time) => date_time.to_rfc3339_opts(SecondsFormat::Millis, true),
+        LocalResult::Ambiguous(date_time, date_time2) => format!(
+            "Ambiguous time: {} or {}",
+            date_time.to_rfc3339_opts(SecondsFormat::Millis, true),
+            date_time2.to_rfc3339_opts(SecondsFormat::Millis, true)
+        ),
+    }
 }
 
 #[cfg(test)]

@@ -104,11 +104,7 @@ pub fn extract_string(data: &[u8]) -> nom::IResult<&[u8], String> {
 
 /// Clean and format UUIDs to be pretty
 pub fn clean_uuid(uuid_format: &str) -> String {
-    uuid_format
-        .replace(',', "")
-        .replace('[', "")
-        .replace(']', "")
-        .replace(' ', "")
+    uuid_format.replace([',', '[', ']', ' '], "")
 }
 
 #[cfg(test)]
