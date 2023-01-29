@@ -654,7 +654,7 @@ impl LogData {
                         &statedump.statedump_data,
                         &statedump.unknown_name,
                     ),
-                    _=> {
+                    _ => {
                         warn!(
                             "Unknown statedump data type: {}",
                             statedump.unknown_data_type
@@ -667,8 +667,8 @@ impl LogData {
                                 "[macos-unifiedlogs] Failed to extract string from statedump: {:?}",
                                 err
                             );
-                            String::from("Failed to extract string from statedump")
-                        }
+                                String::from("Failed to extract string from statedump")
+                            }
                         }
                     }
                 };

@@ -5,12 +5,12 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-use crate::util::clean_uuid;
+use crate::util::{clean_uuid, decode_standard};
 use log::error;
 
 /// Get UUID string from log object
 pub(crate) fn parse_uuid(uuid_data: &str) -> String {
-    let decoded_data_result = base64::decode(uuid_data);
+    let decoded_data_result = decode_standard(uuid_data);
     let decoded_data = match decoded_data_result {
         Ok(result) => result,
         Err(err) => {

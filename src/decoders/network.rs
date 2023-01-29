@@ -5,6 +5,7 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
+use crate::util::decode_standard;
 use log::{error, warn};
 use nom::{
     bytes::complete::take,
@@ -15,7 +16,7 @@ use std::{mem::size_of, net::Ipv4Addr};
 
 /// Parse an IPv6 address
 pub(crate) fn ipv_six(data: &str) -> String {
-    let decoded_data_result = base64::decode(data);
+    let decoded_data_result = decode_standard(data);
     let decoded_data = match decoded_data_result {
         Ok(result) => result,
         Err(err) => {
@@ -39,7 +40,7 @@ pub(crate) fn ipv_six(data: &str) -> String {
 
 /// Parse an IPv4 address
 pub(crate) fn ipv_four(data: &str) -> String {
-    let decoded_data_result = base64::decode(data);
+    let decoded_data_result = decode_standard(data);
     let decoded_data = match decoded_data_result {
         Ok(result) => result,
         Err(err) => {
@@ -66,7 +67,7 @@ pub(crate) fn sockaddr(data: &str) -> String {
     if data.is_empty() {
         return String::from("<NULL>");
     }
-    let decoded_data_result = base64::decode(data);
+    let decoded_data_result = decode_standard(data);
     let decoded_data = match decoded_data_result {
         Ok(result) => result,
         Err(err) => {
@@ -168,8 +169,11 @@ pub(crate) fn get_ip_six(data: &[u8]) -> nom::IResult<&[u8], String> {
 
 #[cfg(test)]
 mod tests {
-    use crate::decoders::network::{
-        get_ip_four, get_ip_six, get_sockaddr_data, ipv_four, ipv_six, sockaddr,
+    use crate::{
+        decoders::network::{
+            get_ip_four, get_ip_six, get_sockaddr_data, ipv_four, ipv_six, sockaddr,
+        },
+        util::decode_standard,
     };
 
     #[test]
@@ -182,7 +186,7 @@ mod tests {
     #[test]
     fn test_get_ip_six() {
         let test_data = "/wIAAAAAAAAAAAAAAAAA+w==";
-        let decoded_data_result = base64::decode(test_data).unwrap();
+        let decoded_data_result = decode_standard(test_data).unwrap();
 
         let (_, result) = get_ip_six(&decoded_data_result).unwrap();
         assert_eq!(result, "ff02::fb");
@@ -198,7 +202,7 @@ mod tests {
     #[test]
     fn test_get_ip_four() {
         let test_data = "4AAA+w==";
-        let decoded_data_result = base64::decode(test_data).unwrap();
+        let decoded_data_result = decode_standard(test_data).unwrap();
 
         let (_, result) = get_ip_four(&decoded_data_result).unwrap();
         assert_eq!(result, "224.0.0.251");
@@ -218,7 +222,7 @@ mod tests {
     #[test]
     fn test_get_sockaddr_data() {
         let test_data = "EAIAALgciWcAAAAAAAAAAA==";
-        let decoded_data_result = base64::decode(test_data).unwrap();
+        let decoded_data_result = decode_standard(test_data).unwrap();
 
         let (_, result) = get_sockaddr_data(&decoded_data_result).unwrap();
         assert_eq!(result, "184.28.137.103");

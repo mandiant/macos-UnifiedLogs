@@ -239,8 +239,10 @@ impl TimesyncBoot {
             }
         }
 
-        let continous_time = (firehose_log_delta_time as f64 * timebase_adjustment)
-            - (timesync_continous_time as f64 * timebase_adjustment);
+        let continous_time = (firehose_log_delta_time as f64).mul_add(
+            timebase_adjustment,
+            -(timesync_continous_time as f64) * timebase_adjustment,
+        );
         continous_time + timesync_walltime as f64
     }
 }

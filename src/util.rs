@@ -5,28 +5,30 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
+use base64::engine::general_purpose;
+use base64::DecodeError;
+use base64::Engine;
 use log::{error, warn};
-use std::str::from_utf8;
-
 use nom::bytes::complete::take;
 use nom::bytes::complete::take_while;
+use std::str::from_utf8;
 
 /// Calculate 8 byte padding
-pub fn padding_size(data: u64) -> u64 {
+pub(crate) fn padding_size(data: u64) -> u64 {
     let alignment = 8;
     // Calculate padding to achieve 64-bit alignment
     (alignment - (data & (alignment - 1))) & (alignment - 1)
 }
 
 /// Calculate 4 byte padding
-pub fn padding_size_four(data: u64) -> u64 {
+pub(crate) fn padding_size_four(data: u64) -> u64 {
     let alignment = 4;
     // Calculate padding to achieve 64-bit alignment
     (alignment - (data & (alignment - 1))) & (alignment - 1)
 }
 
 /// Extract a size based on provided string size from Firehose string item entries
-pub fn extract_string_size(data: &[u8], message_size: u64) -> nom::IResult<&[u8], String> {
+pub(crate) fn extract_string_size(data: &[u8], message_size: u64) -> nom::IResult<&[u8], String> {
     let null_string = 0;
     if message_size == null_string {
         return Ok((data, String::from("(null)")));
@@ -60,7 +62,7 @@ pub fn extract_string_size(data: &[u8], message_size: u64) -> nom::IResult<&[u8]
 }
 
 /// Extract strings that contain end of string characters
-pub fn extract_string(data: &[u8]) -> nom::IResult<&[u8], String> {
+pub(crate) fn extract_string(data: &[u8]) -> nom::IResult<&[u8], String> {
     let last_value = data.last();
     match last_value {
         Some(value) => {
@@ -103,13 +105,25 @@ pub fn extract_string(data: &[u8]) -> nom::IResult<&[u8], String> {
 }
 
 /// Clean and format UUIDs to be pretty
-pub fn clean_uuid(uuid_format: &str) -> String {
+pub(crate) fn clean_uuid(uuid_format: &str) -> String {
     uuid_format.replace([',', '[', ']', ' '], "")
+}
+
+/// Base64 encode data use the STANDARD engine (alphabet along with "+" and "/")
+pub(crate) fn encode_standard(data: &[u8]) -> String {
+    general_purpose::STANDARD.encode(data)
+}
+
+/// Base64 decode data use the STANDARD engine (alphabet along with "+" and "/")
+pub(crate) fn decode_standard(data: &str) -> Result<Vec<u8>, DecodeError> {
+    general_purpose::STANDARD.decode(data)
 }
 
 #[cfg(test)]
 mod tests {
     use crate::util::{extract_string, extract_string_size, padding_size, padding_size_four};
+
+    use super::{decode_standard, encode_standard};
 
     #[test]
     fn test_padding_size() {
@@ -138,5 +152,19 @@ mod tests {
         let test_data = [55, 57, 54, 46, 49, 48, 48, 0];
         let (_, results) = extract_string(&test_data).unwrap();
         assert_eq!(results, "796.100");
+    }
+
+    #[test]
+    fn test_encode_standard() {
+        let test = b"Hello word!";
+        let result = encode_standard(test);
+        assert_eq!(result, "SGVsbG8gd29yZCE=")
+    }
+
+    #[test]
+    fn test_decode_standard() {
+        let test = "SGVsbG8gd29yZCE=";
+        let result = decode_standard(test).unwrap();
+        assert_eq!(result, b"Hello word!")
     }
 }

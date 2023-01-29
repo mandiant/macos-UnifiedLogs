@@ -19,10 +19,10 @@
     clippy::verbose_file_reads,
     clippy::unnested_or_patterns,
     rust_2018_idioms,
-    future_incompatible,
+    future_incompatible
 )]
 #![deny(
-    clippy::cast_lossless, 
+    clippy::cast_lossless,
     //clippy::cast_possible_truncation, 
     clippy::cast_possible_wrap,
     clippy::cast_ptr_alignment,
@@ -34,6 +34,7 @@
 mod catalog;
 mod chunks;
 mod chunkset;
+mod decoders;
 pub mod dsc;
 mod error;
 mod header;
@@ -44,4 +45,3 @@ pub mod timesync;
 pub mod unified_log;
 mod util;
 pub mod uuidtext;
-mod decoders;

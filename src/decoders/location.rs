@@ -5,6 +5,8 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
+use crate::util::decode_standard;
+
 use super::bool::{lowercase_bool, lowercase_int_bool};
 use log::{error, warn};
 use nom::{
@@ -109,7 +111,7 @@ pub(crate) fn subharvester_identifier(status: &str) -> String {
 
 /// Convert Core Location SQLITE code to string
 pub(crate) fn sqlite(status: &str) -> String {
-    let decoded_data_result = base64::decode(status);
+    let decoded_data_result = decode_standard(status);
     let decoded_data = match decoded_data_result {
         Ok(result) => result,
         Err(err) => {
@@ -187,7 +189,7 @@ fn get_sqlite_data(data: &[u8]) -> nom::IResult<&[u8], String> {
 
 /// Parse the manager tracker state data
 pub(crate) fn client_manager_state_tracker_state(status: &str) -> String {
-    let decoded_data_result = base64::decode(status);
+    let decoded_data_result = decode_standard(status);
     let decoded_data = match decoded_data_result {
         Ok(result) => result,
         Err(err) => {
@@ -229,7 +231,7 @@ pub(crate) fn get_state_tracker_data(data: &[u8]) -> nom::IResult<&[u8], String>
 
 /// Parse location tracker state data
 pub(crate) fn location_manager_state_tracker_state(status: &str) -> String {
-    let decoded_data_result = base64::decode(status);
+    let decoded_data_result = decode_standard(status);
     let decoded_data = match decoded_data_result {
         Ok(result) => result,
         Err(err) => {
@@ -560,11 +562,14 @@ pub(crate) fn get_daemon_status_tracker(data: &[u8]) -> nom::IResult<&[u8], Stri
 
 #[cfg(test)]
 mod tests {
-    use crate::decoders::location::{
-        client_manager_state_tracker_state, daemon_status_type, get_daemon_status_tracker,
-        get_location_tracker_state, get_sqlite_data, get_state_tracker_data, io_message,
-        location_manager_state_tracker_state, location_tracker_object, sqlite,
-        subharvester_identifier, LocationTrackerState,
+    use crate::{
+        decoders::location::{
+            client_manager_state_tracker_state, daemon_status_type, get_daemon_status_tracker,
+            get_location_tracker_state, get_sqlite_data, get_state_tracker_data, io_message,
+            location_manager_state_tracker_state, location_tracker_object, sqlite,
+            subharvester_identifier, LocationTrackerState,
+        },
+        util::decode_standard,
     };
 
     use super::client_authorization_status;
@@ -604,7 +609,7 @@ mod tests {
     #[test]
     fn test_get_sqlite_data() {
         let test_data = "AAAAAA==";
-        let decoded_data_result = base64::decode(test_data).unwrap();
+        let decoded_data_result = decode_standard(test_data).unwrap();
 
         let (_, result) = get_sqlite_data(&decoded_data_result).unwrap();
 
@@ -665,7 +670,7 @@ mod tests {
     #[test]
     fn test_get_state_tracker_data() {
         let test_data = "AQAAAAAAAAA=";
-        let decoded_data_result = base64::decode(test_data).unwrap();
+        let decoded_data_result = decode_standard(test_data).unwrap();
 
         let (_, result) = get_state_tracker_data(&decoded_data_result).unwrap();
 
@@ -689,7 +694,7 @@ mod tests {
     #[test]
     fn test_get_location_tracker_state() {
         let test_data = "AAAAAAAA8L8AAAAAAABZQAAAAAAAAAAAAAAAAAAA8D8BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAQAAAAAAAAAA";
-        let decoded_data_result = base64::decode(test_data).unwrap();
+        let decoded_data_result = decode_standard(test_data).unwrap();
 
         let (_, result) = get_location_tracker_state(&decoded_data_result).unwrap();
 

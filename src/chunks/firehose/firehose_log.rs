@@ -5,23 +5,22 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-use log::{debug, error, warn};
-use nom::bytes::complete::take_while;
-use serde::Serialize;
-use std::mem::size_of;
-
 use crate::chunks::firehose::activity::FirehoseActivity;
 use crate::chunks::firehose::flags::FirehoseFormatters;
 use crate::chunks::firehose::loss::FirehoseLoss;
 use crate::chunks::firehose::nonactivity::FirehoseNonActivity;
 use crate::chunks::firehose::signpost::FirehoseSignpost;
 use crate::chunks::firehose::trace::FirehoseTrace;
-use crate::util::{extract_string_size, padding_size, padding_size_four};
+use crate::util::{encode_standard, extract_string_size, padding_size, padding_size_four};
+use log::{debug, error, warn};
+use nom::bytes::complete::take_while;
 use nom::number::complete::{be_u128, le_i16, le_i32, le_i64, le_i8};
 use nom::{
     bytes::complete::take,
     number::complete::{le_u16, le_u32, le_u64, le_u8},
 };
+use serde::Serialize;
+use std::mem::size_of;
 
 #[derive(Debug, Clone)]
 pub struct FirehosePreamble {
@@ -174,7 +173,7 @@ impl FirehosePreamble {
                 if firehose_private_data_virtual_offset != 0x1000 {
                     let private_offst = 0x1000;
                     let private_data_offset = private_offst - firehose_private_data_virtual_offset;
-                    // Calculate start of private data. If the remaining input is greater than private data offset. 
+                    // Calculate start of private data. If the remaining input is greater than private data offset.
                     // Remove any padding/junk data in front of the private data
                     if input.len() > private_data_offset.into() && public_data.is_empty() {
                         let leftover_data = input.len() - private_data_offset as usize;
@@ -182,9 +181,12 @@ impl FirehosePreamble {
                         input = private_data;
                     } else {
                         // If log data and public data are the same size. Use private data offset to calculate the private data
-                        if log_data.len() == (firehose_public_data_size - public_data_size_offset) as usize {
+                        if log_data.len()
+                            == (firehose_public_data_size - public_data_size_offset) as usize
+                        {
                             let (private_input_data, _) = take(
-                                (firehose_private_data_virtual_offset - public_data_size_offset) as usize
+                                (firehose_private_data_virtual_offset - public_data_size_offset)
+                                    as usize
                                     - public_data.len(),
                             )(log_data)?;
                             input = private_input_data;
@@ -416,7 +418,7 @@ impl FirehosePreamble {
                         let (private_data, pointer_object) =
                             take(private_string_start.len())(private_string_start)?;
                         private_string_start = private_data;
-                        firehose_info.message_strings = base64::encode(pointer_object);
+                        firehose_info.message_strings = encode_standard(pointer_object);
 
                         continue;
                     }
@@ -424,7 +426,7 @@ impl FirehosePreamble {
                     let (private_data, pointer_object) =
                         take(firehose_info.item_size)(private_string_start)?;
                     private_string_start = private_data;
-                    firehose_info.message_strings = base64::encode(pointer_object);
+                    firehose_info.message_strings = encode_standard(pointer_object);
                     continue;
                 }
 
@@ -791,12 +793,12 @@ impl FirehosePreamble {
         // 0x30, 0x31, and 0x32 represent arbitrary data, need to be decoded again
         // Ex: name: %{private, mask.hash, mdnsresponder:domain_name}.*P, type: A, rdata: %{private, mask.hash, network:in_addr}.4P
         if arbitrary.contains(item_type) {
-            return Ok((input, base64::encode(message_data)));
+            return Ok((input, encode_standard(message_data)));
         }
 
         let base64_raw_bytes: u8 = 0xf2;
         if item_type == &base64_raw_bytes {
-            return Ok((input, base64::encode(message_data)));
+            return Ok((input, encode_standard(message_data)));
         }
 
         let (_, message_string) = extract_string_size(message_data, u64::from(message_size))?;

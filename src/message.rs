@@ -520,7 +520,7 @@ fn format_alignment_left(
             "{plus_symbol}{:0<width$.precision$}",
             float_message,
             width = format_width - adjust_width,
-            precision = precision_value as usize,
+            precision = precision_value,
             plus_symbol = plus_option
         );
     } else if INT_TYPES.contains(&type_data) {
@@ -529,7 +529,7 @@ fn format_alignment_left(
             "{plus_symbol}{:0<width$.precision$}",
             int_message,
             width = format_width - adjust_width,
-            precision = precision_value as usize,
+            precision = precision_value,
             plus_symbol = plus_option
         );
     } else if STRING_TYPES.contains(&type_data) {
@@ -540,7 +540,7 @@ fn format_alignment_left(
             "{plus_symbol}{:0<width$.precision$}",
             message,
             width = format_width - adjust_width,
-            precision = precision_value as usize,
+            precision = precision_value,
             plus_symbol = plus_option
         );
     } else if HEX_TYPES.contains(&type_data) {
@@ -550,7 +550,7 @@ fn format_alignment_left(
                 "{plus_symbol}{:0<#width$.precision$X}",
                 hex_message,
                 width = format_width - adjust_width,
-                precision = precision_value as usize,
+                precision = precision_value,
                 plus_symbol = plus_option
             );
         } else {
@@ -558,7 +558,7 @@ fn format_alignment_left(
                 "{plus_symbol}{:0<width$.precision$X}",
                 hex_message,
                 width = format_width - adjust_width,
-                precision = precision_value as usize,
+                precision = precision_value,
                 plus_symbol = plus_option
             );
         }
@@ -569,7 +569,7 @@ fn format_alignment_left(
                 "{plus_symbol}{:0<#width$.precision$o}",
                 octal_message,
                 width = format_width - adjust_width,
-                precision = precision_value as usize,
+                precision = precision_value,
                 plus_symbol = plus_option
             );
         } else {
@@ -577,7 +577,7 @@ fn format_alignment_left(
                 "{plus_symbol}{:0<width$.precision$o}",
                 octal_message,
                 width = format_width - adjust_width,
-                precision = precision_value as usize,
+                precision = precision_value,
                 plus_symbol = plus_option
             );
         }
@@ -617,7 +617,7 @@ fn format_alignment_right(
             "{plus_symbol}{:0>width$.precision$}",
             float_message,
             width = format_width - adjust_width,
-            precision = precision_value as usize,
+            precision = precision_value,
             plus_symbol = plus_option
         );
     } else if INT_TYPES.contains(&type_data) {
@@ -626,7 +626,7 @@ fn format_alignment_right(
             "{plus_symbol}{:0>width$.precision$}",
             int_message,
             width = format_width - adjust_width,
-            precision = precision_value as usize,
+            precision = precision_value,
             plus_symbol = plus_option
         );
     } else if STRING_TYPES.contains(&type_data) {
@@ -637,7 +637,7 @@ fn format_alignment_right(
             "{plus_symbol}{:0>width$.precision$}",
             message,
             width = format_width - adjust_width,
-            precision = precision_value as usize,
+            precision = precision_value,
             plus_symbol = plus_option
         );
     } else if HEX_TYPES.contains(&type_data) {
@@ -647,7 +647,7 @@ fn format_alignment_right(
                 "{plus_symbol}{:0>#width$.precision$X}",
                 hex_message,
                 width = format_width - adjust_width,
-                precision = precision_value as usize,
+                precision = precision_value,
                 plus_symbol = plus_option
             );
         } else {
@@ -655,7 +655,7 @@ fn format_alignment_right(
                 "{plus_symbol}{:0>width$.precision$X}",
                 hex_message,
                 width = format_width - adjust_width,
-                precision = precision_value as usize,
+                precision = precision_value,
                 plus_symbol = plus_option
             );
         }
@@ -666,7 +666,7 @@ fn format_alignment_right(
                 "{plus_symbol}{:0>#width$.precision$o}",
                 octal_message,
                 width = format_width - adjust_width,
-                precision = precision_value as usize,
+                precision = precision_value,
                 plus_symbol = plus_option
             );
         } else {
@@ -674,7 +674,7 @@ fn format_alignment_right(
                 "{plus_symbol}{:0>width$.precision$o}",
                 octal_message,
                 width = format_width - adjust_width,
-                precision = precision_value as usize,
+                precision = precision_value,
                 plus_symbol = plus_option
             );
         }
@@ -714,7 +714,7 @@ fn format_alignment_left_space(
             "{plus_symbol}{:<width$.precision$}",
             float_message,
             width = format_width - adjust_width,
-            precision = precision_value as usize,
+            precision = precision_value,
             plus_symbol = plus_option
         );
     } else if INT_TYPES.contains(&type_data) {
@@ -723,7 +723,7 @@ fn format_alignment_left_space(
             "{plus_symbol}{:<width$.precision$}",
             int_message,
             width = format_width - adjust_width,
-            precision = precision_value as usize,
+            precision = precision_value,
             plus_symbol = plus_option
         );
     } else if STRING_TYPES.contains(&type_data) {
@@ -734,7 +734,7 @@ fn format_alignment_left_space(
             "{plus_symbol}{:<width$.precision$}",
             message,
             width = format_width - adjust_width,
-            precision = precision_value as usize,
+            precision = precision_value,
             plus_symbol = plus_option
         );
     } else if HEX_TYPES.contains(&type_data) {
@@ -744,7 +744,7 @@ fn format_alignment_left_space(
                 "{plus_symbol}{:<#width$.precision$X}",
                 hex_message,
                 width = format_width - adjust_width,
-                precision = precision_value as usize,
+                precision = precision_value,
                 plus_symbol = plus_option
             );
         } else {
@@ -752,7 +752,7 @@ fn format_alignment_left_space(
                 "{plus_symbol}{:<width$.precision$X}",
                 hex_message,
                 width = format_width - adjust_width,
-                precision = precision_value as usize,
+                precision = precision_value,
                 plus_symbol = plus_option
             );
         }
@@ -763,7 +763,7 @@ fn format_alignment_left_space(
                 "{plus_symbol}{:<#width$.precision$o}",
                 octal_message,
                 width = format_width - adjust_width,
-                precision = precision_value as usize,
+                precision = precision_value,
                 plus_symbol = plus_option
             );
         } else {
@@ -771,7 +771,7 @@ fn format_alignment_left_space(
                 "{plus_symbol}{:<width$.precision$o}",
                 octal_message,
                 width = format_width - adjust_width,
-                precision = precision_value as usize,
+                precision = precision_value,
                 plus_symbol = plus_option
             );
         }
@@ -811,7 +811,7 @@ fn format_alignment_right_space(
             "{plus_symbol}{:>width$.precision$}",
             float_message,
             width = format_width - adjust_width,
-            precision = precision_value as usize,
+            precision = precision_value,
             plus_symbol = plus_option
         );
     } else if INT_TYPES.contains(&type_data) {
@@ -820,7 +820,7 @@ fn format_alignment_right_space(
             "{plus_symbol}{:>width$.precision$}",
             int_message,
             width = format_width - adjust_width,
-            precision = precision_value as usize,
+            precision = precision_value,
             plus_symbol = plus_option
         );
     } else if STRING_TYPES.contains(&type_data) {
@@ -831,7 +831,7 @@ fn format_alignment_right_space(
             "{plus_symbol}{:>width$.precision$}",
             message,
             width = format_width - adjust_width,
-            precision = precision_value as usize,
+            precision = precision_value,
             plus_symbol = plus_option
         );
     } else if HEX_TYPES.contains(&type_data) {
@@ -841,7 +841,7 @@ fn format_alignment_right_space(
                 "{plus_symbol}{:>#width$.precision$X}",
                 hex_message,
                 width = format_width - adjust_width,
-                precision = precision_value as usize,
+                precision = precision_value,
                 plus_symbol = plus_option
             );
         } else {
@@ -849,7 +849,7 @@ fn format_alignment_right_space(
                 "{plus_symbol}{:>width$.precision$X}",
                 hex_message,
                 width = format_width - adjust_width,
-                precision = precision_value as usize,
+                precision = precision_value,
                 plus_symbol = plus_option
             );
         }
@@ -860,7 +860,7 @@ fn format_alignment_right_space(
                 "{plus_symbol}{:>#width$.precision$o}",
                 octal_message,
                 width = format_width - adjust_width,
-                precision = precision_value as usize,
+                precision = precision_value,
                 plus_symbol = plus_option
             );
         } else {
@@ -868,7 +868,7 @@ fn format_alignment_right_space(
                 "{plus_symbol}{:>width$.precision$o}",
                 octal_message,
                 width = format_width - adjust_width,
-                precision = precision_value as usize,
+                precision = precision_value,
                 plus_symbol = plus_option
             );
         }
@@ -905,7 +905,7 @@ fn format_left(
         message = format!(
             "{plus_symbol}{:<.precision$}",
             float_message,
-            precision = precision_value as usize,
+            precision = precision_value,
             plus_symbol = plus_option
         );
     } else if INT_TYPES.contains(&type_data) {
@@ -913,7 +913,7 @@ fn format_left(
         message = format!(
             "{plus_symbol}{:<.precision$}",
             int_message,
-            precision = precision_value as usize,
+            precision = precision_value,
             plus_symbol = plus_option
         );
     } else if STRING_TYPES.contains(&type_data) {
@@ -923,7 +923,7 @@ fn format_left(
         message = format!(
             "{plus_symbol}{:<.precision$}",
             message,
-            precision = precision_value as usize,
+            precision = precision_value,
             plus_symbol = plus_option
         );
     } else if HEX_TYPES.contains(&type_data) {
@@ -932,14 +932,14 @@ fn format_left(
             message = format!(
                 "{plus_symbol}{:<#.precision$X}",
                 hex_message,
-                precision = precision_value as usize,
+                precision = precision_value,
                 plus_symbol = plus_option
             );
         } else {
             message = format!(
                 "{plus_symbol}{:<.precision$X}",
                 hex_message,
-                precision = precision_value as usize,
+                precision = precision_value,
                 plus_symbol = plus_option
             );
         }
@@ -949,14 +949,14 @@ fn format_left(
             message = format!(
                 "{plus_symbol}{:<#.precision$o}",
                 octal_message,
-                precision = precision_value as usize,
+                precision = precision_value,
                 plus_symbol = plus_option
             );
         } else {
             message = format!(
                 "{plus_symbol}{:<.precision$o}",
                 octal_message,
-                precision = precision_value as usize,
+                precision = precision_value,
                 plus_symbol = plus_option
             );
         }
@@ -993,7 +993,7 @@ fn format_right(
         message = format!(
             "{plus_symbol}{:>.precision$}",
             float_message,
-            precision = precision_value as usize,
+            precision = precision_value,
             plus_symbol = plus_option
         );
     } else if INT_TYPES.contains(&type_data) {
@@ -1001,7 +1001,7 @@ fn format_right(
         message = format!(
             "{plus_symbol}{:>.precision$}",
             int_message,
-            precision = precision_value as usize,
+            precision = precision_value,
             plus_symbol = plus_option
         );
     } else if STRING_TYPES.contains(&type_data) {
@@ -1011,7 +1011,7 @@ fn format_right(
         message = format!(
             "{plus_symbol}{:>.precision$}",
             message,
-            precision = precision_value as usize,
+            precision = precision_value,
             plus_symbol = plus_option
         );
     } else if HEX_TYPES.contains(&type_data) {
@@ -1020,14 +1020,14 @@ fn format_right(
             message = format!(
                 "{plus_symbol}{:>#.precision$X}",
                 hex_message,
-                precision = precision_value as usize,
+                precision = precision_value,
                 plus_symbol = plus_option
             );
         } else {
             message = format!(
                 "{plus_symbol}{:>.precision$X}",
                 hex_message,
-                precision = precision_value as usize,
+                precision = precision_value,
                 plus_symbol = plus_option
             );
         }
@@ -1036,7 +1036,7 @@ fn format_right(
         message = format!(
             "{plus_symbol}{:>#.precision$o}",
             octal_message,
-            precision = precision_value as usize,
+            precision = precision_value,
             plus_symbol = plus_option
         );
     }

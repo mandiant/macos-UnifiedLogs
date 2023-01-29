@@ -5,14 +5,13 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
+use crate::util::{decode_standard, extract_string};
 use log::{error, warn};
 use nom::{
     bytes::complete::{take, take_while},
     number::complete::{le_i32, le_u32, le_u8},
 };
 use std::mem::size_of;
-
-use crate::util::extract_string;
 
 /// Convert Open Directory error codes to message
 pub(crate) fn errors(oderror: &str) -> String {
@@ -121,7 +120,7 @@ pub(crate) fn member_id_type(member_string: &str) -> String {
 
 /// Convert Open Directory member details to string
 pub(crate) fn member_details(member_string: &str) -> String {
-    let decoded_data_result = base64::decode(member_string);
+    let decoded_data_result = decode_standard(member_string);
     let decoded_data = match decoded_data_result {
         Ok(result) => result,
         Err(err) => {
@@ -147,7 +146,7 @@ pub(crate) fn member_details(member_string: &str) -> String {
 
 /// Parse SID log data to SID string
 pub(crate) fn sid_details(sid_string: &str) -> String {
-    let decoded_data_result = base64::decode(sid_string);
+    let decoded_data_result = decode_standard(sid_string);
     let decoded_data = match decoded_data_result {
         Ok(result) => result,
         Err(err) => {
@@ -272,9 +271,12 @@ fn get_sid_data(data: &[u8]) -> nom::IResult<&[u8], String> {
 
 #[cfg(test)]
 mod tests {
-    use crate::decoders::opendirectory::{
-        errors, get_member_data, get_member_id, get_member_string, get_sid_data, member_details,
-        member_id_type, sid_details,
+    use crate::{
+        decoders::opendirectory::{
+            errors, get_member_data, get_member_id, get_member_string, get_sid_data,
+            member_details, member_id_type, sid_details,
+        },
+        util::decode_standard,
     };
 
     #[test]
@@ -316,7 +318,7 @@ mod tests {
     #[test]
     fn test_get_member_data() {
         let test_data = "I/7///8vTG9jYWwvRGVmYXVsdAA=";
-        let decoded_data_result = base64::decode(test_data).unwrap();
+        let decoded_data_result = decode_standard(test_data).unwrap();
 
         let (_, result) = get_member_data(&decoded_data_result).unwrap();
         assert_eq!(result, "user: -2@/Local/Default");
@@ -351,7 +353,7 @@ mod tests {
     #[test]
     fn test_get_sid_data() {
         let test_data = "AQUAAAAAAAUVAAAAxbsdAg3Yp1FTmi50HAYAAA==";
-        let decoded_data_result = base64::decode(test_data).unwrap();
+        let decoded_data_result = decode_standard(test_data).unwrap();
 
         let (_, result) = get_sid_data(&decoded_data_result).unwrap();
         assert_eq!(result, "S-1-5-21-35503045-1369954317-1949211219-1564");
