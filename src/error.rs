@@ -84,7 +84,7 @@ pub enum ParserError {
 impl std::error::Error for ParserError {}
 
 impl fmt::Display for ParserError {
-    fn fmt<'a>(&self, f: &mut fmt::Formatter<'a>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ParserError::Path => write!(f, "Failed to open file path"),
             ParserError::Dir => write!(f, "Failed to open directory path"),
