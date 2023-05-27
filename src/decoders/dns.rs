@@ -445,6 +445,7 @@ pub(crate) fn dns_records(data: &str) -> String {
         "109" => "EUI64",
         "249" => "TKEY",
         "250" => "TSIG",
+        "255" => "ANY",
         "256" => "URI",
         "257" => "CAA",
         "32768" => "TA",
