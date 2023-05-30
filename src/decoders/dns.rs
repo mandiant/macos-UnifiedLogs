@@ -629,6 +629,7 @@ pub(crate) fn dns_acceptable(data: &str) -> String {
 /// Translate DNS getaddrinfo log values
 pub(crate) fn dns_getaddrinfo_opts(data: &str) -> String {
     let message = match data {
+        "0" => "0x0 {}",
         "8" => "0x8 {use-failover}",
         "12" => "0xC {in-app-browser, use-failover}",
         "24" => "0x18 {use-failover, prohibit-encrypted-dns}",
