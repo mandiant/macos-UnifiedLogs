@@ -1221,8 +1221,10 @@ mod tests {
             },
             firehose_trace: FirehoseTrace {
                 unknown_pc_id: 0,
-                message_value: 0,
-                unknown_data: Vec::new(),
+                message_data: FirehoseItemData {
+                    item_info: Vec::new(),
+                    backtrace_strings: Vec::new(),
+                },
             },
             firehose_signpost: FirehoseSignpost {
                 unknown_pc_id: 0,

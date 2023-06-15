@@ -509,8 +509,10 @@ impl FirehosePreamble {
             },
             firehose_trace: FirehoseTrace {
                 unknown_pc_id: 0,
-                message_value: 0,
-                unknown_data: Vec::new(),
+                message_data: FirehoseItemData {
+                    item_info: Vec::new(),
+                    backtrace_strings: Vec::new(),
+                },
             },
             firehose_signpost: FirehoseSignpost {
                 unknown_pc_id: 0,
@@ -612,10 +614,7 @@ impl FirehosePreamble {
             firehose_results.firehose_trace = firehose_trace;
             firehose_input = trace_data;
 
-            // Trace entries are odd, they dont follow the format of other log entries
-            firehose_results.message = FirehoseTrace::get_trace_message_string(
-                firehose_results.firehose_trace.message_value,
-            );
+            firehose_results.message = firehose_results.firehose_trace.message_data.clone();
         } else if firehose_unknown_log_activity_type == unknown_remnant_data {
             return Ok((input, firehose_results));
         } else {
