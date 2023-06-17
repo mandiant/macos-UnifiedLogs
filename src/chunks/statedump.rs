@@ -6,7 +6,7 @@
 // See the License for the specific language governing permissions and limitations under the License.
 
 use crate::decoders::location;
-use crate::util::{clean_uuid, extract_string};
+use crate::util::{clean_uuid, encode_standard, extract_string};
 use log::{error, info};
 use nom::bytes::complete::take;
 use nom::number::complete::{le_u32, le_u64, le_u8};
@@ -167,7 +167,10 @@ impl Statedump {
             "CLClientManagerStateTracker" => location::get_state_tracker_data(object_data),
             "CLLocationManagerStateTracker" => location::get_location_tracker_state(object_data),
             _ => {
-                return format!("Unsupported Statedump object: {}", name);
+                return format!(
+                    "Unsupported Statedump object: {name}-{}",
+                    encode_standard(object_data)
+                );
             }
         };
         match message_result {
