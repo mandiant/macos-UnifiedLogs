@@ -27,9 +27,9 @@ pub struct Statedump {
     pub uuid: String,
     pub unknown_data_type: u32, // 1 = plist, 3 = custom object?, 2 = (protocol buffer?)
     pub unknown_data_size: u32, // Size of statedump data
-    pub unknown_object_type_string_1: String,
-    pub unknown_object_type_string_2: String,
-    pub unknown_name: String,
+    pub decoder_library: String,
+    pub decoder_type: String,
+    pub title_name: String,
     pub statedump_data: Vec<u8>,
 }
 
@@ -49,9 +49,9 @@ impl Statedump {
             uuid: String::new(),
             unknown_data_type: 0,
             unknown_data_size: 0,
-            unknown_object_type_string_1: String::new(),
-            unknown_object_type_string_2: String::new(),
-            unknown_name: String::new(),
+            decoder_library: String::new(),
+            decoder_type: String::new(),
+            title_name: String::new(),
             statedump_data: Vec::new(),
         };
         let (input, chunk_tag) = take(size_of::<u32>())(data)?;
@@ -79,14 +79,35 @@ impl Statedump {
         let (_, statedump_activity_id) = le_u64(activity_id)?;
         let (_, statedump_unknown_data_type) = le_u32(unknown_data_type)?;
 
-        let (input, unknown_data_size) = take(size_of::<u32>())(input)?;
+        let (mut input, unknown_data_size) = take(size_of::<u32>())(input)?;
         let (_, statedump_unknown_data_size) = le_u32(unknown_data_size)?;
 
+        let custom_decoder = 3;
         let string_size: u8 = 64;
-        let (input, unknown_object_type_string_1) = take(string_size)(input)?;
-        let (input, unknown_object_type_string_2) = take(string_size)(input)?;
-        let (input, unknown_name) = take(string_size)(input)?;
 
+        // Nom unknown data if data type is not custom
+        if statedump_unknown_data_type != custom_decoder {
+            let (remaining_input, _unknown) = take(string_size)(input)?;
+            let (remaining_input, _unknown) = take(string_size)(remaining_input)?;
+            input = remaining_input;
+        }
+
+        if statedump_unknown_data_type == custom_decoder {
+            let (remaining_input, library_data) = take(string_size)(input)?;
+            let (remaining_input, type_data) = take(string_size)(remaining_input)?;
+            let (_, decoder_library) = extract_string(library_data)?;
+            let (_, decoder_type) = extract_string(type_data)?;
+
+            statedump_results.decoder_library = decoder_library;
+            statedump_results.decoder_type = decoder_type;
+
+            input = remaining_input;
+        }
+
+        let (input, title_data) = take(string_size)(input)?;
+        let (_, title_name) = extract_string(title_data)?;
+
+        statedump_results.title_name = title_name;
         statedump_results.chunk_tag = statedump_chunk_tag;
         statedump_results.chunk_subtag = statedump_chunk_sub_tag;
         statedump_results.chunk_data_size = statedump_chunk_data_size;
@@ -101,16 +122,10 @@ impl Statedump {
 
         let uuid_string = format!("{:02X?}", uuid);
         statedump_results.uuid = clean_uuid(&uuid_string);
-        let (_, statedump_name) = extract_string(unknown_name)?;
-        statedump_results.unknown_name = statedump_name;
-        let (_, object_string_1) = extract_string(unknown_object_type_string_1)?;
-        let (_, object_string_2) = extract_string(unknown_object_type_string_2)?;
 
-        statedump_results.unknown_object_type_string_1 = object_string_1;
-        statedump_results.unknown_object_type_string_2 = object_string_2;
         let (input, statedump_data) = take(statedump_unknown_data_size)(input)?;
-
         statedump_results.statedump_data = statedump_data.to_vec();
+
         Ok((input, statedump_results))
     }
 
@@ -203,12 +218,9 @@ mod tests {
         assert_eq!(results.uuid, "5CD8DDEE04383A38887710227C5A0A56");
         assert_eq!(results.unknown_data_type, 3);
         assert_eq!(results.unknown_data_size, 40);
-        assert_eq!(results.unknown_object_type_string_1, "location");
-        assert_eq!(
-            results.unknown_object_type_string_2,
-            "_CLDaemonStatusStateTrackerState"
-        );
-        assert_eq!(results.unknown_name, "CLDaemonStatusStateTracker");
+        assert_eq!(results.decoder_library, "location");
+        assert_eq!(results.decoder_type, "_CLDaemonStatusStateTrackerState");
+        assert_eq!(results.title_name, "CLDaemonStatusStateTracker");
         assert_eq!(
             results.statedump_data,
             vec![
@@ -635,9 +647,9 @@ mod tests {
         assert_eq!(statedump_results.uuid, "7E5D9855D1CC382DB8EB25A030D4B2FA");
         assert_eq!(statedump_results.unknown_data_type, 1); // plist
         assert_eq!(statedump_results.unknown_data_size, 7611);
-        assert_eq!(statedump_results.unknown_object_type_string_1, "");
-        assert_eq!(statedump_results.unknown_object_type_string_2, "");
-        assert_eq!(statedump_results.unknown_name, "WebContent state");
+        assert_eq!(statedump_results.decoder_library, "");
+        assert_eq!(statedump_results.decoder_type, "");
+        assert_eq!(statedump_results.title_name, "WebContent state");
         assert_eq!(
             statedump_results.statedump_data,
             [

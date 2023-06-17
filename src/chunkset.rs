@@ -2378,7 +2378,7 @@ mod tests {
         ChunksetChunk::get_chunkset_data(&buffer, statedump_chunk, &mut unified_log);
         assert_eq!(unified_log.statedump.len(), 1);
         assert_eq!(
-            unified_log.statedump[0].unknown_name,
+            unified_log.statedump[0].title_name,
             "CLDaemonStatusStateTracker"
         );
         assert_eq!(
@@ -2389,13 +2389,10 @@ mod tests {
             ]
         );
         assert_eq!(
-            unified_log.statedump[0].unknown_object_type_string_2,
+            unified_log.statedump[0].decoder_type,
             "_CLDaemonStatusStateTrackerState"
         );
-        assert_eq!(
-            unified_log.statedump[0].unknown_object_type_string_1,
-            "location"
-        );
+        assert_eq!(unified_log.statedump[0].decoder_library, "location");
         assert_eq!(unified_log.statedump[0].continuous_time, 3906319117);
         assert_eq!(unified_log.statedump[0].first_proc_id, 113);
         assert_eq!(unified_log.statedump[0].second_proc_id, 464);

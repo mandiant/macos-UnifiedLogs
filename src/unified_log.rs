@@ -652,7 +652,7 @@ impl LogData {
                     0x2 => String::from("Statedump Protocol Buffer"),
                     0x3 => Statedump::parse_statedump_object(
                         &statedump.statedump_data,
-                        &statedump.unknown_name,
+                        &statedump.title_name,
                     ),
                     _ => {
                         warn!(
@@ -690,9 +690,9 @@ impl LogData {
                     process: String::new(),
                     message: format!(
                         "title: {:?}\nObject Type: {:?}\n Object Type: {:?}\n{:?}",
-                        statedump.unknown_name,
-                        statedump.unknown_object_type_string_1,
-                        statedump.unknown_object_type_string_2,
+                        statedump.title_name,
+                        statedump.decoder_library,
+                        statedump.decoder_type,
                         data_string
                     ),
                     log_type: String::new(),
