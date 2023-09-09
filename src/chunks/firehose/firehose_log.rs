@@ -156,7 +156,7 @@ impl FirehosePreamble {
         let (mut input, mut public_data) =
             take(firehose_public_data_size - public_data_size_offset)(log_data)?;
 
-        let log_types = vec![0x2, 0x6, 0x4, 0x7, 0x3];
+        let log_types = [0x2, 0x6, 0x4, 0x7, 0x3];
 
         let remnant_data = 0x0;
         // Go through all the public data associated with log Firehose entry

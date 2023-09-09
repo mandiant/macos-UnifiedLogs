@@ -368,7 +368,7 @@ fn parse_formatter<'a>(
     formatter_message = input;
 
     let mut type_data = length_data;
-    let length_values = vec!["h", "hh", "l", "ll", "w", "I", "z", "t", "q"];
+    let length_values = ["h", "hh", "l", "ll", "w", "I", "z", "t", "q"];
     if length_values.contains(&length_data) {
         let (_, type_format) = is_a("cmCdiouxXeEfgGaAnpsSZP@")(formatter_message)?;
         type_data = type_format;
