@@ -55,7 +55,7 @@ impl MessageData {
                     continue;
                 }
 
-                if let Some(ranges) = shared_string.ranges.get(0) {
+                if let Some(ranges) = shared_string.ranges.first() {
                     message_data.library = shared_string.uuids[ranges.unknown_uuid_index as usize]
                         .path_string
                         .to_owned();
@@ -146,7 +146,7 @@ impl MessageData {
             }
 
             // Still get the image path/library for the log entry
-            if let Some(ranges) = shared_string.ranges.get(0) {
+            if let Some(ranges) = shared_string.ranges.first() {
                 message_data.library = shared_string.uuids[ranges.unknown_uuid_index as usize]
                     .path_string
                     .to_owned();
