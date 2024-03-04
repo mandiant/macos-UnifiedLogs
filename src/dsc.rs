@@ -6,14 +6,14 @@
 // See the License for the specific language governing permissions and limitations under the License.
 
 use crate::util::extract_string;
-
 use log::error;
 use nom::bytes::complete::take;
 use nom::number::complete::{be_u128, le_u16, le_u32, le_u64};
 use nom::Needed;
+use serde::{Deserialize, Serialize};
 use std::mem::size_of;
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SharedCacheStrings {
     pub signature: u32,
     pub major_version: u16, // Version 1 up to Big Sur. Monterey has Version 2!
@@ -25,7 +25,7 @@ pub struct SharedCacheStrings {
     pub dsc_uuid: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct RangeDescriptor {
     pub range_offset: u64, // In Major version 2 this is 8 bytes, in version 1 its 4 bytes
     pub data_offset: u32,
@@ -34,7 +34,7 @@ pub struct RangeDescriptor {
     pub strings: Vec<u8>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct UUIDDescriptor {
     pub text_offset: u64, // Size appears to be 8 bytes in Major version: 2. 4 bytes in Major Version 1
     pub text_size: u32,

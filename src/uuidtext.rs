@@ -9,9 +9,10 @@ use log::error;
 use nom::bytes::complete::take;
 use nom::number::complete::le_u32;
 use nom::Needed;
+use serde::{Deserialize, Serialize};
 use std::mem::size_of;
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct UUIDText {
     pub uuid: String,
     pub signature: u32,
@@ -21,7 +22,7 @@ pub struct UUIDText {
     pub entry_descriptors: Vec<UUIDTextEntry>,
     pub footer_data: Vec<u8>, // Collection of strings containing sender process/library with end of string characters
 }
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct UUIDTextEntry {
     pub range_start_offset: u32,
     pub entry_size: u32,

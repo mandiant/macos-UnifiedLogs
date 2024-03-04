@@ -29,7 +29,7 @@ use crate::{
 /// Check if we support one of Apple's custom logging objects
 pub(crate) fn check_objects(
     format_string: &str,
-    message_values: &Vec<FirehoseItemInfo>,
+    message_values: &[FirehoseItemInfo],
     item_type: &u8,
     item_index: usize,
 ) -> String {

@@ -9,9 +9,10 @@ use log::error;
 use nom::bytes::complete::take;
 use nom::number::complete::{be_u128, le_i64, le_u16, le_u32, le_u64};
 use nom::Needed;
+use serde::{Deserialize, Serialize};
 use std::mem::size_of;
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct TimesyncBoot {
     pub signature: u16,
     pub header_size: u16,
@@ -25,7 +26,7 @@ pub struct TimesyncBoot {
     pub timesync: Vec<Timesync>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Timesync {
     // Timestamps are in UTC
     pub signature: u32,

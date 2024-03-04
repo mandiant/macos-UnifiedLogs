@@ -259,7 +259,7 @@ pub fn format_firehose_log_message(
 // Format strings are based on C printf formats. Parse format specification
 fn parse_formatter<'a>(
     formatter: &'a str,
-    message_value: &'a Vec<FirehoseItemInfo>,
+    message_value: &'a [FirehoseItemInfo],
     item_type: &'a u8,
     item_index: usize,
 ) -> nom::IResult<&'a str, String> {
@@ -448,7 +448,7 @@ fn parse_formatter<'a>(
 // Function to parse formatters containing types. Ex: %{errno}d, %{public}s, %{private}s, %{sensitive}
 fn parse_type_formatter<'a>(
     formatter: &'a str,
-    message_value: &'a Vec<FirehoseItemInfo>,
+    message_value: &'a [FirehoseItemInfo],
     item_type: &'a u8,
     item_index: usize,
 ) -> nom::IResult<&'a str, String> {
