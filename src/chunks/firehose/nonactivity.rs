@@ -27,7 +27,7 @@ pub struct FirehoseNonActivity {
     pub unknown_message_string_ref: u32, // if flag 0x0008
     pub subsystem_value: u16,            // if flag 0x200, has_subsystem
     pub ttl_value: u8,                   // if flag 0x0400, has_rules
-    pub data_ref_value: u16,             // if flag 0x0800, has_oversize
+    pub data_ref_value: u32,             // if flag 0x0800, has_oversize
     pub unknown_pc_id: u32, // Appears to be used to calculate string offset for firehose events with Absolute flag
     pub firehose_formatters: FirehoseFormatters,
 }
@@ -121,8 +121,8 @@ impl FirehoseNonActivity {
         let data_ref: u16 = 0x800; // has_oversize flag
         if (firehose_flags & data_ref) != 0 {
             debug!("[macos-unifiedlogs] Non-Activity Firehose log chunk has has_oversize flag");
-            let (firehose_input, data_ref_value) = take(size_of::<u16>())(input)?;
-            let (_, firehose_data_ref) = le_u16(data_ref_value)?;
+            let (firehose_input, data_ref_value) = take(size_of::<u32>())(input)?;
+            let (_, firehose_data_ref) = le_u32(data_ref_value)?;
             non_activity.data_ref_value = firehose_data_ref;
             input = firehose_input;
         }
