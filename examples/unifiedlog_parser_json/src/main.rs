@@ -280,7 +280,7 @@ fn parse_trace_file(
 
             // Track Oversize entries
             oversize_strings.oversize = log_data.oversize;
-            // Oversize entries have not been seen in logs in HighVolume
+            // Track missing logs
             missing_data.push(missing_logs);
             log_count += results.len();
 
