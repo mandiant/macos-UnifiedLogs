@@ -27,7 +27,7 @@ pub struct FirehoseSignpost {
     pub private_strings_offset: u16, // if flag 0x0100
     pub private_strings_size: u16,   // if flag 0x0100
     pub ttl_value: u8,
-    pub data_ref_value: u16, // if flag 0x0800, has_oversize
+    pub data_ref_value: u32, // if flag 0x0800, has_oversize
     pub firehose_formatters: FirehoseFormatters,
 }
 
@@ -125,8 +125,8 @@ impl FirehoseSignpost {
         let data_ref: u16 = 0x800; // has_oversize flag
         if (firehose_flags & data_ref) != 0 {
             debug!("[macos-unifiedlogs] Signpost Firehose log chunk has has_oversize flag");
-            let (firehose_input, data_ref_value) = take(size_of::<u16>())(input)?;
-            let (_, firehose_data_ref) = le_u16(data_ref_value)?;
+            let (firehose_input, data_ref_value) = take(size_of::<u32>())(input)?;
+            let (_, firehose_data_ref) = le_u32(data_ref_value)?;
             firehose_signpost.data_ref_value = firehose_data_ref;
             input = firehose_input;
         }
