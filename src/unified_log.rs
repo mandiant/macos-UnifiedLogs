@@ -746,6 +746,16 @@ impl LogData {
         Ok((input, unified_log_data_true))
     }
 
+    pub fn iter_log<'a>(
+        unified_log_data: &'a UnifiedLogData,
+        strings_data: &'a [UUIDText],
+        shared_strings: &'a [SharedCacheStrings],
+        timesync_data: &'a [TimesyncBoot],
+        exclude_missing: bool,        
+    ) -> Result<impl Iterator<Item = (Vec<LogData>, UnifiedLogData)> + 'a, regex::Error> {
+        LogIterator::new(unified_log_data, strings_data, shared_strings, timesync_data, exclude_missing)
+    }
+
     /// Reconstruct Unified Log entries using the binary strings data, cached strings data, timesync data, and unified log. Provide bool to ignore log entries that are not able to be recontructed (additional tracev3 files needed)
     /// Return a reconstructed log entries and any leftover Unified Log entries that could not be reconstructed (data may be stored in other tracev3 files)
     pub fn build_log(
