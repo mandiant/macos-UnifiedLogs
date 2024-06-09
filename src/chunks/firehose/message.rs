@@ -56,13 +56,13 @@ impl MessageData {
                 }
 
                 if let Some(ranges) = shared_string.ranges.first() {
-                    message_data.library = shared_string.uuids[ranges.unknown_uuid_index as usize]
+                    shared_string.uuids[ranges.unknown_uuid_index as usize]
                         .path_string
-                        .to_owned();
-                    message_data.library_uuid = shared_string.uuids
-                        [ranges.unknown_uuid_index as usize]
+                        .clone_into(&mut message_data.library);
+
+                    shared_string.uuids[ranges.unknown_uuid_index as usize]
                         .uuid
-                        .to_owned();
+                        .clone_into(&mut message_data.library_uuid);
                     message_data.format_string = String::from("%s");
                     message_data.process_uuid = main_uuid;
 
@@ -117,13 +117,13 @@ impl MessageData {
                     let (_, message_string) = extract_string(message_start)?;
                     message_data.format_string = message_string;
 
-                    message_data.library = shared_string.uuids[ranges.unknown_uuid_index as usize]
+                    shared_string.uuids[ranges.unknown_uuid_index as usize]
                         .path_string
-                        .to_owned();
-                    message_data.library_uuid = shared_string.uuids
-                        [ranges.unknown_uuid_index as usize]
+                        .clone_into(&mut message_data.library);
+
+                    shared_string.uuids[ranges.unknown_uuid_index as usize]
                         .uuid
-                        .to_owned();
+                        .clone_into(&mut message_data.library_uuid);
                     message_data.process_uuid = main_uuid;
 
                     // Extract image path from second UUIDtext file
@@ -147,12 +147,13 @@ impl MessageData {
 
             // Still get the image path/library for the log entry
             if let Some(ranges) = shared_string.ranges.first() {
-                message_data.library = shared_string.uuids[ranges.unknown_uuid_index as usize]
+                shared_string.uuids[ranges.unknown_uuid_index as usize]
                     .path_string
-                    .to_owned();
-                message_data.library_uuid = shared_string.uuids[ranges.unknown_uuid_index as usize]
+                    .clone_into(&mut message_data.library);
+
+                shared_string.uuids[ranges.unknown_uuid_index as usize]
                     .uuid
-                    .to_owned();
+                    .clone_into(&mut message_data.library_uuid);
                 message_data.format_string = String::from("Error: Invalid shared string offset");
                 message_data.process_uuid = main_uuid;
 
@@ -203,7 +204,7 @@ impl MessageData {
 
                     let (_, process_string) =
                         MessageData::uuidtext_image_path(footer_data, &data.entry_descriptors)?;
-                    message_data.process = process_string.to_owned();
+                    process_string.clone_into(&mut message_data.process);
                     message_data.library = process_string;
                     message_data.format_string = String::from("%s");
 
@@ -244,7 +245,7 @@ impl MessageData {
 
                     message_data.format_string = message_string;
                     // Process and library path are the same for log entries with main_exe
-                    message_data.process = process_string.to_owned();
+                    process_string.clone_into(&mut message_data.process);
                     message_data.library = process_string;
 
                     return Ok((&[], message_data));
@@ -262,7 +263,7 @@ impl MessageData {
 
                 let (_, process_string) =
                     MessageData::uuidtext_image_path(footer_data, &data.entry_descriptors)?;
-                message_data.process = process_string.to_owned();
+                process_string.clone_into(&mut message_data.process);
                 message_data.library = process_string;
                 message_data.format_string = format!(
                     "Error: Invalid offset {} for UUID {}",
@@ -313,7 +314,7 @@ impl MessageData {
                             "[macos-unifiedlogs] Absolute uuid file is: {:?}",
                             uuids.uuid
                         );
-                        uuid = uuids.uuid.to_owned();
+                        uuids.uuid.clone_into(&mut uuid);
                         break;
                     }
                 }
@@ -613,8 +614,8 @@ impl MessageData {
             if first_proc_id == &process_info.first_number_proc_id
                 && second_proc_id == &process_info.second_number_proc_id
             {
-                dsc_uuid = process_info.dsc_uuid.to_owned();
-                main_uuid = process_info.main_uuid.to_owned();
+                process_info.dsc_uuid.clone_into(&mut dsc_uuid);
+                process_info.main_uuid.clone_into(&mut main_uuid);
                 break;
             }
         }

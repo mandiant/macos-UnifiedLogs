@@ -29,7 +29,7 @@ use nom::bytes::complete::take;
 use regex::Regex;
 use serde::Serialize;
 
-use crate::util::{extract_string, padding_size};
+use crate::util::{extract_string, padding_size, unixepoch_to_iso};
 use crate::uuidtext::UUIDText;
 
 #[derive(Debug, Clone)]
@@ -68,6 +68,7 @@ pub struct LogData {
     pub boot_uuid: String,
     pub timezone_name: String,
     pub message_entries: Vec<FirehoseItemInfo>,
+    pub timestamp: String,
 }
 
 impl LogData {
@@ -267,6 +268,7 @@ impl LogData {
                         library: String::new(),
                         activity_id: 0,
                         time: timestamp,
+                        timestamp: unixepoch_to_iso(&(timestamp as i64)),
                         category: String::new(),
                         log_type: LogData::get_log_type(
                             &firehose.unknown_log_type,
@@ -319,15 +321,13 @@ impl LogData {
                                     log_data.library_uuid = results.library_uuid;
                                     log_data.process = results.process;
                                     log_data.process_uuid = results.process_uuid;
-                                    log_data.raw_message = results.format_string.to_owned();
+                                    results.format_string.clone_into(&mut log_data.raw_message);
 
                                     // If the non-activity log entry has a data ref value then the message strings are stored in an oversize log entry
                                     let log_message =
                                         if firehose.firehose_non_activity.data_ref_value != 0 {
                                             let oversize_strings = Oversize::get_oversize_strings(
-                                                u32::from(
-                                                    firehose.firehose_non_activity.data_ref_value,
-                                                ),
+                                                firehose.firehose_non_activity.data_ref_value,
                                                 preamble.first_number_proc_id,
                                                 preamble.second_number_proc_id,
                                                 &unified_log_data.oversize,
@@ -417,7 +417,7 @@ impl LogData {
                                     log_data.library_uuid = results.library_uuid;
                                     log_data.process = results.process;
                                     log_data.process_uuid = results.process_uuid;
-                                    log_data.raw_message = results.format_string.to_owned();
+                                    results.format_string.clone_into(&mut log_data.raw_message);
 
                                     let log_message = format_firehose_log_message(
                                         results.format_string,
@@ -471,14 +471,12 @@ impl LogData {
                                     log_data.library_uuid = results.library_uuid;
                                     log_data.process = results.process;
                                     log_data.process_uuid = results.process_uuid;
-                                    log_data.raw_message = results.format_string.to_owned();
+                                    results.format_string.clone_into(&mut log_data.raw_message);
 
                                     let mut log_message =
                                         if firehose.firehose_non_activity.data_ref_value != 0 {
                                             let oversize_strings = Oversize::get_oversize_strings(
-                                                u32::from(
-                                                    firehose.firehose_non_activity.data_ref_value,
-                                                ),
+                                                firehose.firehose_non_activity.data_ref_value,
                                                 preamble.first_number_proc_id,
                                                 preamble.second_number_proc_id,
                                                 &unified_log_data.oversize,
@@ -611,18 +609,21 @@ impl LogData {
 
             for simpledump in &catalog_data.simpledump {
                 let no_firehose_preamble = 1;
+
+                let timestamp = TimesyncBoot::get_timestamp(
+                    timesync_data,
+                    &unified_log_data.header[0].boot_uuid,
+                    simpledump.continous_time,
+                    no_firehose_preamble,
+                );
                 let log_data = LogData {
                     subsystem: simpledump.subsystem.to_owned(),
                     thread_id: simpledump.thread_id,
                     pid: simpledump.first_proc_id,
                     library: String::new(),
                     activity_id: 0,
-                    time: TimesyncBoot::get_timestamp(
-                        timesync_data,
-                        &unified_log_data.header[0].boot_uuid,
-                        simpledump.continous_time,
-                        no_firehose_preamble,
-                    ),
+                    time: timestamp,
+                    timestamp: unixepoch_to_iso(&(timestamp as i64)),
                     category: String::new(),
                     log_type: String::new(),
                     process: String::new(),
@@ -672,19 +673,20 @@ impl LogData {
                         }
                     }
                 };
-
+                let timestamp = TimesyncBoot::get_timestamp(
+                    timesync_data,
+                    &unified_log_data.header[0].boot_uuid,
+                    statedump.continuous_time,
+                    no_firehose_preamble,
+                );
                 let log_data = LogData {
                     subsystem: String::new(),
                     thread_id: 0,
                     pid: statedump.first_proc_id,
                     library: String::new(),
                     activity_id: statedump.activity_id,
-                    time: TimesyncBoot::get_timestamp(
-                        timesync_data,
-                        &unified_log_data.header[0].boot_uuid,
-                        statedump.continuous_time,
-                        no_firehose_preamble,
-                    ),
+                    time: timestamp,
+                    timestamp: unixepoch_to_iso(&(timestamp as i64)),
                     category: String::new(),
                     event_type: String::from("Statedump"),
                     process: String::new(),
@@ -850,7 +852,7 @@ impl LogData {
         };
 
         missing_unified_log_data.firehose.push(missing_firehose);
-        missing_unified_log_data_vec.header = header.to_owned();
+        header.clone_into(&mut missing_unified_log_data_vec.header);
 
         missing_unified_log_data_vec
             .catalog_data
@@ -969,6 +971,7 @@ mod tests {
         assert_eq!(results[0].boot_uuid, "80D194AF56A34C54867449D2130D41BB");
         assert_eq!(results[0].timezone_name, "Pacific");
         assert_eq!(results[0].raw_message, "LOMD Start");
+        assert_eq!(results[0].timestamp, "2022-01-16T03:05:26.434850816Z")
     }
 
     #[test]
