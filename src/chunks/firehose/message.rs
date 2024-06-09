@@ -84,6 +84,7 @@ impl MessageData {
             if shared_string.dsc_uuid != dsc_uuid {
                 continue;
             }
+
             debug!(
                 "[macos-unifiedlogs] Associated dsc file with log entry: {:?}",
                 dsc_uuid
