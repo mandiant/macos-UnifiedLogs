@@ -344,7 +344,7 @@ fn parse_trace_file(
     println!("Parsed {} log entries", log_count);
 }
 
-// Create JSON files in jsonl format
+// Create JSON files in JSONL format
 fn output(results: &Vec<LogData>, output_name: &str) -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
     let mut json_file = OpenOptions::new()
