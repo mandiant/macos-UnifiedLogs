@@ -285,7 +285,7 @@ impl CatalogChunk {
                         error!("Catalog Process UUID Index greater than Catalog UUID Array. Log is likely corrupted");
                         return Err(nom::Err::Incomplete(Needed::Unknown));
                     }
-                    uuid_data.uuid = uuids[uuid_data.catalog_uuid_index as usize].to_owned();
+                    uuids[uuid_data.catalog_uuid_index as usize].clone_into(&mut uuid_data.uuid);
                     input = process_input;
                     uuid_entries += 1;
                     catalog_process_entry.uuid_info_entries.push(uuid_data);
