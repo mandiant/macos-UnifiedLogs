@@ -61,6 +61,23 @@ pub fn parse_log(full_path: &str) -> Result<UnifiedLogData, ParserError> {
     }
 }
 
+pub fn iter_log<'a>(
+    unified_log_data: &'a UnifiedLogData,
+    strings_data: &'a [UUIDText],
+    shared_strings: &'a [SharedCacheStrings],
+    timesync_data: &'a [TimesyncBoot],
+    exclude_missing: bool,
+) -> Result<impl Iterator<Item = (Vec<LogData>, UnifiedLogData)> + 'a, regex::Error> {
+    LogData::iter_log(
+        unified_log_data,
+        strings_data,
+        shared_strings,
+        timesync_data,
+        exclude_missing,
+    )
+}
+
+
 /// Reconstruct Unified Log entries using the strings data, cached strings data, timesync data, and unified log. Provide bool to ignore log entries that are not able to be recontructed (additional tracev3 files needed)
 /// Return a reconstructed log entries and any leftover Unified Log entries that could not be reconstructed (data may be stored in other tracev3 files)
 // Log entries with Oversize string entries may have the data in a different tracev3 file.
