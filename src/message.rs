@@ -270,6 +270,11 @@ fn parse_formatter<'a>(
     if precision_items.contains(item_type) {
         precision_value = message_value[index].item_size as usize;
         index += 1;
+
+        if index >= message_value.len() {
+            error!("[macos-unifiedlogs] Index now greater than messages array. This should not have happened. Index: {index}. Message Array len: {}", message_value.len());
+            return Ok(("", String::from("Failed to format string due index length")));
+        }
     }
 
     let mut message = message_value[index].message_strings.to_owned();

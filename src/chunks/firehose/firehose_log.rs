@@ -272,7 +272,8 @@ impl FirehosePreamble {
         // Dynamic precision item types?
         let precision_items = [0x10, 0x12];
         //  Likely realted to private string. Seen only "<private>" values
-        let sensitive_items = [0x45];
+        // 0x85 and 0x5 added in macOS Sequioa
+        let sensitive_items = [0x5, 0x45, 0x85];
         let object_items = [0x40, 0x42];
 
         while &item_count < firehose_number_items {
@@ -332,7 +333,8 @@ impl FirehosePreamble {
             }
         }
 
-        let private_strings: Vec<u8> = vec![0x21, 0x25, 0x35, 0x31, 0x41];
+        // 0x81 Added in macOS Sequioa
+        let private_strings: Vec<u8> = vec![0x21, 0x25, 0x35, 0x31, 0x41, 0x81];
         let private_number = 0x1;
         // Now at the end of firehose item types.
         // Remaining data (if any) contains strings for the string item types
@@ -403,7 +405,7 @@ impl FirehosePreamble {
         data: &'a [u8],
         firehose_item_data: &mut FirehoseItemData,
     ) -> nom::IResult<&'a [u8], ()> {
-        let private_strings: Vec<u8> = vec![0x21, 0x25, 0x41, 0x35, 0x31];
+        let private_strings: Vec<u8> = vec![0x21, 0x25, 0x41, 0x35, 0x31, 0x81];
         let private_number = 0x1;
 
         let mut private_string_start = data;
@@ -738,7 +740,7 @@ impl FirehosePreamble {
 
         // Firehose string item values
         let string_item: Vec<u8> = vec![
-            0x20, 0x21, 0x22, 0x25, 0x40, 0x41, 0x42, 0x30, 0x31, 0x32, 0xf2, 0x35,
+            0x20, 0x21, 0x22, 0x25, 0x40, 0x41, 0x42, 0x30, 0x31, 0x32, 0xf2, 0x35, 0x81,
         ];
         let private_number = 0x1;
         // String and private number items metadata is 4 bytes
@@ -762,7 +764,7 @@ impl FirehosePreamble {
             let (input, _) = take(item.item_size)(firehose_input)?;
             firehose_input = input;
         }
-        let sensitive_items = [0x45];
+        let sensitive_items = [0x5, 0x45, 0x85];
         if sensitive_items.contains(&item.item_type) {
             let (input, offset) = take(size_of::<u16>())(firehose_input)?;
             let (_, message_offset) = le_u16(offset)?;
@@ -829,7 +831,7 @@ impl FirehosePreamble {
                     "[macos-unifiedlogs] Unknown number size support: {:?}",
                     item_size
                 );
-                debug!("[macos-unifiedlogs] Item data: {:?}", data);
+                panic!("[macos-unifiedlogs] Item data: {:?}", data);
                 -9999
             }
         };
