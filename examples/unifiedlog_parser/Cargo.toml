@@ -6,9 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-simplelog = "0.12.0"
-csv = "1.1.6"
-chrono = "0.4.19"
-log = "0.4.14"
+simplelog = "0.12.2"
+csv = "1.3.0"
+chrono = "0.4.38"
+log = "0.4.22"
 macos-unifiedlogs = {path = "../../"}
-clap = {version = "3.2.22", features = ["derive"]}
+clap = {version = "4.5.15", features = ["derive"]}

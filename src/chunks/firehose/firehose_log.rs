@@ -67,7 +67,6 @@ pub struct FirehoseItemType {
     offset: u16,
     message_string_size: u16,
     pub message_strings: String,
-    pub backtrace_strings: Vec<String>, // Only exists if log entry flag "has_context_data" is set
 }
 
 #[derive(Debug, Clone)]
@@ -735,7 +734,6 @@ impl FirehosePreamble {
             offset: 0,
             message_string_size: 0,
             message_strings: String::new(),
-            backtrace_strings: Vec::new(),
         };
 
         // Firehose string item values
@@ -831,7 +829,7 @@ impl FirehosePreamble {
                     "[macos-unifiedlogs] Unknown number size support: {:?}",
                     item_size
                 );
-                panic!("[macos-unifiedlogs] Item data: {:?}", data);
+                debug!("[macos-unifiedlogs] Item data: {:?}", data);
                 -9999
             }
         };

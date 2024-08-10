@@ -1,0 +1,26 @@
+name: Security audit
+on:
+  pull_request:
+    paths:
+      - "**/Cargo.toml"
+      - "**/Cargo.lock"
+  schedule:
+    - cron: "0 0 * * *"
+jobs:
+  security_audit:
+    strategy:
+      fail-fast: false
+      matrix:
+        info:
+          - {
+              os: "ubuntu-latest",
+              target: "x86_64-unknown-linux-gnu",
+              cross: false,
+            }
+    runs-on: ${{ matrix.info.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run audit action to view any security issues
+        uses: rustsec/audit-check@v1.4.1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
