@@ -239,8 +239,8 @@ impl FirehosePreamble {
                 let string_offset = data.firehose_non_activity.private_strings_offset
                     - firehose_private_data_virtual_offset;
                 let (private_string_start, _) = take(string_offset)(private_input)?;
-                let (_, _) =
-                    FirehosePreamble::parse_private_data(private_string_start, &mut data.message)?;
+                let _ =
+                    FirehosePreamble::parse_private_data(private_string_start, &mut data.message);
             }
             input = private_input;
         }
