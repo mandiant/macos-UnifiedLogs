@@ -110,7 +110,7 @@ impl LogData {
         let chunkset_chunk = 0x600d;
         // Loop through traceV3 file until all file contents are read
         while !input.is_empty() {
-            let (_, preamble) = LogPreamble::detect_preamble(input)?;
+            let (_, preamble) = LogPreamble::parse(input)?;
             let chunk_size = preamble.chunk_data_size;
 
             // Grab all data associated with Unified Log entry (chunk)

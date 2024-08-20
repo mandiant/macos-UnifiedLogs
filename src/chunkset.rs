@@ -125,7 +125,7 @@ impl ChunksetChunk {
 
         // Loop through decompressed chunkset data until all log entries (chunks) are read
         while !input.is_empty() {
-            let (_, preamble) = LogPreamble::detect_preamble(input)?;
+            let (_, preamble) = LogPreamble::parse(input)?;
             let chunk_size = preamble.chunk_data_size;
 
             // Grab all data associated with log (chunk) data

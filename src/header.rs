@@ -21,33 +21,39 @@ pub struct HeaderChunk {
     pub mach_time_numerator: u32,
     pub mach_time_denominator: u32,
     pub continous_time: u64,
-    pub unknown_time: u64, // possibly start time
+    /// possibly start time
+    pub unknown_time: u64,
     pub unknown: u32,
     pub bias_min: u32,
-    pub daylight_savings: u32, // 0 no DST, 1 DST
+    /// 0 no DST, 1 DST
+    pub daylight_savings: u32,
     pub unknown_flags: u32,
-    pub sub_chunk_tag: u32, // 0x6100
+    /// 0x6100
+    pub sub_chunk_tag: u32,
     pub sub_chunk_data_size: u32,
     pub sub_chunk_continous_time: u64,
-    pub sub_chunk_tag_2: u32, // 0x6101
+    /// 0x6101
+    pub sub_chunk_tag_2: u32,
     pub sub_chunk_tag_data_size_2: u32,
     pub unknown_2: u32,
     pub unknown_3: u32,
     pub build_version_string: String,
     pub hardware_model_string: String,
-    pub sub_chunk_tag_3: u32, // 0x6102
+    /// 0x6102
+    pub sub_chunk_tag_3: u32,
     pub sub_chunk_tag_data_size_3: u32,
     pub boot_uuid: String,
     pub logd_pid: u32,
     pub logd_exit_status: u32,
-    pub sub_chunk_tag_4: u32, // 0x6103
+    /// 0x6103
+    pub sub_chunk_tag_4: u32,
     pub sub_chunk_tag_data_size_4: u32,
     pub timezone_path: String,
 }
 
 impl HeaderChunk {
     /// Parse the Unified Log tracev3 header data
-    pub fn parse_header(data: &[u8]) -> nom::IResult<&[u8], HeaderChunk> {
+    pub fn parse_header(data: &[u8]) -> nom::IResult<&[u8], Self> {
         let mut header_chunk = HeaderChunk {
             chunk_tag: 0,
             chunk_sub_tag: 0,
