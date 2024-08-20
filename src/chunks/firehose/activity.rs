@@ -276,6 +276,7 @@ mod tests {
         assert_eq!(results.firehose_formatters.large_shared_cache, 2);
     }
 
+    #[cfg(feature = "test_data")]
     #[test]
     fn test_get_firehose_activity_big_sur() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));

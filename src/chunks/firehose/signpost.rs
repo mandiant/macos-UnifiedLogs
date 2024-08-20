@@ -303,6 +303,7 @@ mod tests {
         assert_eq!(results.firehose_formatters.main_exe_alt_index, 0);
     }
 
+    #[cfg(feature = "test_data")]
     #[test]
     fn test_get_firehose_signpost_big_sur() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));

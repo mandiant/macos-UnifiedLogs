@@ -593,7 +593,6 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "called `Result::unwrap()` on an `Err` value: Incomplete(Unknown)")]
     fn test_parse_catalog_subchunk_bad_compression() {
         let test_bad_compression = &[
             246, 113, 118, 43, 250, 233, 2, 0, 62, 195, 90, 26, 9, 234, 2, 0, 120, 255, 0, 0, 0, 2,
@@ -609,9 +608,10 @@ mod tests {
             68, 234, 2, 0, 119, 171, 170, 119, 76, 234, 2, 0, 240, 254, 0, 0, 0, 1, 0, 0, 1, 0, 0,
             0, 0, 0, 3, 0, 0, 0, 0, 0, 19, 0, 47, 0,
         ];
-        let (_, _) = catalog_subchunk(test_bad_compression).unwrap();
+        assert!(matches!(catalog_subchunk(test_bad_compression), Err(_)));
     }
 
+    #[cfg(feature = "test_data")]
     #[test]
     fn test_get_big_sur_subsystem() -> anyhow::Result<()> {
         let subsystem_value = 4;

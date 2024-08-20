@@ -223,6 +223,7 @@ mod tests {
     use std::fs;
     use std::path::PathBuf;
 
+    #[cfg(feature = "test_data")]
     #[test]
     fn test_parse_dsc_version_one() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -256,6 +257,7 @@ mod tests {
         assert_eq!(results.number_uuids, 532);
     }
 
+    #[cfg(feature = "test_data")]
     #[test]
     fn test_parse_dsc_version_two() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -289,6 +291,7 @@ mod tests {
         assert_eq!(results.number_uuids, 2250);
     }
 
+    #[cfg(feature = "test_data")]
     #[test]
     #[should_panic(expected = "Incomplete(Unknown)")]
     fn test_bad_header() {
@@ -301,6 +304,7 @@ mod tests {
         let (_, _) = SharedCacheStrings::parse_dsc(&buffer).unwrap();
     }
 
+    #[cfg(feature = "test_data")]
     #[test]
     #[should_panic(expected = "Eof")]
     fn test_bad_content() {
@@ -313,6 +317,7 @@ mod tests {
         let (_, _) = SharedCacheStrings::parse_dsc(&buffer).unwrap();
     }
 
+    #[cfg(feature = "test_data")]
     #[test]
     #[should_panic(expected = "Incomplete(Unknown)")]
     fn test_bad_file() {

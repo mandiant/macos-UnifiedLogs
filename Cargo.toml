@@ -6,8 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["need_test_data"]
-need_test_data = []
+default = ["test_data"]
+# this feature is usefull for testing, you can run only tests with 'cargo t --no-default-features'
+test_data = []
 
 [dependencies]
 nom = "7.1.3"

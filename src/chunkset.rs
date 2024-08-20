@@ -2208,6 +2208,7 @@ mod tests {
         assert_eq!(chunkset.footer, 607417954); // "bv4$"
     }
 
+    #[cfg(feature = "test_data")]
     #[test]
     fn test_parse_chunkset_data() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -2255,6 +2256,7 @@ mod tests {
         assert_eq!(unified_log.firehose[0].private_data_virtual_offset, 4096);
     }
 
+    #[cfg(feature = "test_data")]
     #[test]
     fn test_parse_firehose_chunkset() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -2298,6 +2300,7 @@ mod tests {
         assert_eq!(unified_log.firehose[0].private_data_virtual_offset, 4096);
     }
 
+    #[cfg(feature = "test_data")]
     #[test]
     fn test_parse_oversize_chunkset() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -2345,6 +2348,7 @@ mod tests {
         assert_eq!(unified_log.oversize[0].private_data_size, 0);
     }
 
+    #[cfg(feature = "test_data")]
     #[test]
     fn test_parse_statedump_chunkset() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -2404,6 +2408,7 @@ mod tests {
         assert_eq!(unified_log.statedump[0].chunk_data_size, 288);
     }
 
+    #[cfg(feature = "test_data")]
     #[test]
     fn test_parse_simpledump_chunkset() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));

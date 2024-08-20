@@ -879,12 +879,13 @@ mod tests {
             trace::FirehoseTrace,
         },
         parser::{collect_shared_strings, collect_strings, collect_timesync, parse_log},
-        preamble::{self, LogPreamble},
+        preamble::LogPreamble,
         unified_log::UnifiedLogCatalogData,
     };
 
     use super::{LogData, UnifiedLogData};
 
+    #[cfg(feature = "test_data")]
     #[test]
     fn test_parse_unified_log() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -900,6 +901,7 @@ mod tests {
         assert_eq!(results.oversize.len(), 12);
     }
 
+    #[cfg(feature = "test_data")]
     #[test]
     fn test_bad_log_header() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -912,6 +914,7 @@ mod tests {
         assert_eq!(results.oversize.len(), 28);
     }
 
+    #[cfg(feature = "test_data")]
     #[test]
     #[should_panic(expected = "Eof")]
     fn test_bad_log_content() {
@@ -922,6 +925,7 @@ mod tests {
         let (_, _) = LogData::parse_unified_log(&buffer).unwrap();
     }
 
+    #[cfg(feature = "test_data")]
     #[test]
     #[should_panic(expected = "Eof")]
     fn test_bad_log_file() {
@@ -932,6 +936,7 @@ mod tests {
         let (_, _) = LogData::parse_unified_log(&buffer).unwrap();
     }
 
+    #[cfg(feature = "test_data")]
     #[test]
     fn test_build_log() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -1075,7 +1080,7 @@ mod tests {
         };
 
         let (input, preamble) = LogPreamble::parse(test_chunk_catalog)?;
-        LogData::get_catalog_data(test_chunk_catalog, preamble, &mut data);
+        LogData::get_catalog_data(input, preamble, &mut data);
         assert_eq!(data.catalog.chunk_tag, 0x600b);
         assert_eq!(data.catalog.chunk_sub_tag, 17);
         assert_eq!(data.catalog.chunk_data_size, 464);
@@ -1117,6 +1122,7 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(feature = "test_data")]
     #[test]
     fn test_get_chunkset_data() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -1279,6 +1285,7 @@ mod tests {
         assert_eq!(missing_firehose.base_continous_time, time);
     }
 
+    #[cfg(feature = "test_data")]
     #[test]
     fn test_add_missing() {
         let mut missing_unified_log_data_vec = UnifiedLogData {

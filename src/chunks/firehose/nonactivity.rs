@@ -292,6 +292,7 @@ mod tests {
         assert_eq!(nonactivity_results.unknown_pc_id, 218936186);
     }
 
+    #[cfg(feature = "test_data")]
     #[test]
     fn test_get_firehose_non_activity_big_sur() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
