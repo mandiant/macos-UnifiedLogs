@@ -37,7 +37,7 @@ impl FirehoseNonActivity {
     // Ex: tp 728 + 202: log debug (has_current_aid, main_exe, has_subsystem, has_rules)
     pub fn parse_non_activity<'a>(
         data: &'a [u8],
-        firehose_flags: &u16,
+        firehose_flags: u16,
     ) -> nom::IResult<&'a [u8], FirehoseNonActivity> {
         let mut non_activity = FirehoseNonActivity {
             unknown_activity_id: 0,
@@ -136,8 +136,8 @@ impl FirehoseNonActivity {
         strings_data: &'a [UUIDText],
         shared_strings: &'a [SharedCacheStrings],
         string_offset: u64,
-        first_proc_id: &u64,
-        second_proc_id: &u32,
+        first_proc_id: u64,
+        second_proc_id: u32,
         catalogs: &CatalogChunk,
     ) -> nom::IResult<&'a [u8], MessageData> {
         if firehose.firehose_formatters.shared_cache
@@ -265,7 +265,7 @@ mod tests {
         ];
         let test_flags = 556;
         let (_, nonactivity_results) =
-            FirehoseNonActivity::parse_non_activity(&test_data, &test_flags).unwrap();
+            FirehoseNonActivity::parse_non_activity(&test_data, test_flags).unwrap();
         assert_eq!(nonactivity_results.unknown_activity_id, 0);
         assert_eq!(nonactivity_results.unknown_sentinal, 0);
         assert_eq!(nonactivity_results.private_strings_offset, 0);
@@ -319,8 +319,8 @@ mod tests {
                                 &string_results,
                                 &shared_strings_results,
                                 firehose.format_string_location as u64,
-                                &preamble.first_number_proc_id,
-                                &preamble.second_number_proc_id,
+                                preamble.first_number_proc_id,
+                                preamble.second_number_proc_id,
                                 &catalog_data.catalog,
                             )
                             .unwrap();

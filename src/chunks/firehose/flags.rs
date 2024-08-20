@@ -28,7 +28,7 @@ impl FirehoseFormatters {
     /// Identify formatter flags associated with the log entry. Formatter flags determine the file where the base format string is located
     pub fn firehose_formatter_flags<'a>(
         data: &'a [u8],
-        firehose_flags: &u16,
+        firehose_flags: u16,
     ) -> nom::IResult<&'a [u8], FirehoseFormatters> {
         let mut formatter_flags = FirehoseFormatters {
             main_exe: false,
@@ -143,7 +143,7 @@ mod tests {
         ];
         let test_flags = 557;
         let (_, results) =
-            FirehoseFormatters::firehose_formatter_flags(&test_data, &test_flags).unwrap();
+            FirehoseFormatters::firehose_formatter_flags(&test_data, test_flags).unwrap();
         assert_eq!(results.has_large_offset, 1);
         assert_eq!(results.large_shared_cache, 2);
     }
@@ -153,7 +153,7 @@ mod tests {
         let test_data = [8, 0, 17, 166, 251, 2, 128, 255, 0, 0];
         let test_flags = 8;
         let (_, results) =
-            FirehoseFormatters::firehose_formatter_flags(&test_data, &test_flags).unwrap();
+            FirehoseFormatters::firehose_formatter_flags(&test_data, test_flags).unwrap();
         assert_eq!(results.main_exe_alt_index, 8)
     }
 
@@ -162,7 +162,7 @@ mod tests {
         let test_data = [186, 0, 0, 0];
         let test_flags = 514;
         let (_, results) =
-            FirehoseFormatters::firehose_formatter_flags(&test_data, &test_flags).unwrap();
+            FirehoseFormatters::firehose_formatter_flags(&test_data, test_flags).unwrap();
         assert_eq!(results.main_exe, true);
     }
 
@@ -175,7 +175,7 @@ mod tests {
         ];
         let test_flags = 516;
         let (_, results) =
-            FirehoseFormatters::firehose_formatter_flags(&test_data, &test_flags).unwrap();
+            FirehoseFormatters::firehose_formatter_flags(&test_data, test_flags).unwrap();
         assert_eq!(results.shared_cache, true);
     }
 
@@ -191,7 +191,7 @@ mod tests {
         ];
         let test_flags = 8;
         let (_, results) =
-            FirehoseFormatters::firehose_formatter_flags(&test_data, &test_flags).unwrap();
+            FirehoseFormatters::firehose_formatter_flags(&test_data, test_flags).unwrap();
         assert_eq!(results.absolute, true);
         assert_eq!(results.main_exe_alt_index, 65408);
     }
@@ -203,7 +203,7 @@ mod tests {
         ];
         let test_flags = 0xa;
         let (_, results) =
-            FirehoseFormatters::firehose_formatter_flags(&test_data, &test_flags).unwrap();
+            FirehoseFormatters::firehose_formatter_flags(&test_data, test_flags).unwrap();
         assert_eq!(results.uuid_relative, "7B0D3775F1903E21BA130447C41B8743");
     }
 }

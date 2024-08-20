@@ -103,7 +103,7 @@ impl Oversize {
         let empty_flags = 0;
         // Grab all message items from oversize data
         let (oversize_private_data, mut firehose_item_data) =
-            FirehosePreamble::collect_items(message_data, &oversize_item_count, &empty_flags)?;
+            FirehosePreamble::collect_items(message_data, oversize_item_count, empty_flags)?;
         let (_, _) =
             FirehosePreamble::parse_private_data(oversize_private_data, &mut firehose_item_data)?;
         oversize_results.message_items = firehose_item_data;

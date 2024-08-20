@@ -81,7 +81,7 @@ impl SharedCacheStrings {
 
         let mut range_count = 0;
         while range_count < shared_cache_strings.number_ranges {
-            let (range_input, range_data) = SharedCacheStrings::get_ranges(input, &dsc_major)?;
+            let (range_input, range_data) = SharedCacheStrings::get_ranges(input, dsc_major)?;
             input = range_input;
             shared_cache_strings.ranges.push(range_data);
             range_count += 1;
@@ -89,7 +89,7 @@ impl SharedCacheStrings {
 
         let mut uuid_count = 0;
         while uuid_count < shared_cache_strings.number_uuids {
-            let (uuid_input, uuid_data) = SharedCacheStrings::get_uuids(input, &dsc_major)?;
+            let (uuid_input, uuid_data) = SharedCacheStrings::get_uuids(input, dsc_major)?;
             input = uuid_input;
             shared_cache_strings.uuids.push(uuid_data);
             uuid_count += 1;
@@ -110,7 +110,7 @@ impl SharedCacheStrings {
     }
 
     // Get range data, used by log entries to determine where the base string entry is located.
-    fn get_ranges<'a>(data: &'a [u8], version: &u16) -> nom::IResult<&'a [u8], RangeDescriptor> {
+    fn get_ranges<'a>(data: &'a [u8], version: u16) -> nom::IResult<&'a [u8], RangeDescriptor> {
         let version_number: u16 = 2;
         let mut input = data;
         let mut range_data = RangeDescriptor {
@@ -124,7 +124,7 @@ impl SharedCacheStrings {
         // Version 2 (Monterey and higher) changed the Range format a bit
         // range offset is now 8 bytes (vs 4 bytes) and starts at beginning
         // The uuid index was moved to end
-        range_data.range_offset = if version == &version_number {
+        range_data.range_offset = if version == version_number {
             let (data_input, value_range_offset) = take(size_of::<u64>())(input)?;
             input = data_input;
             let (_, dsc_range_offset) = le_u64(value_range_offset)?;
@@ -151,7 +151,7 @@ impl SharedCacheStrings {
         range_data.range_size = dsc_range_size;
 
         // UUID index is now located at the end of the format (instead of beginning)
-        if version == &version_number {
+        if version == version_number {
             let (version_two_input, unknown) = take(size_of::<u64>())(input)?;
             let (_, dsc_unknown) = le_u64(unknown)?;
             range_data.unknown_uuid_index = dsc_unknown;
@@ -161,7 +161,7 @@ impl SharedCacheStrings {
     }
 
     // Get UUID entries related to ranges
-    fn get_uuids<'a>(data: &'a [u8], version: &u16) -> nom::IResult<&'a [u8], UUIDDescriptor> {
+    fn get_uuids<'a>(data: &'a [u8], version: u16) -> nom::IResult<&'a [u8], UUIDDescriptor> {
         let mut uuid_data = UUIDDescriptor {
             text_offset: 0,
             text_size: 0,
@@ -172,7 +172,7 @@ impl SharedCacheStrings {
 
         let version_number: u16 = 2;
         let mut input = data;
-        if version == &version_number {
+        if version == version_number {
             let (version_two_input, text_offset) = take(size_of::<u64>())(input)?;
             let (_, dsc_text_offset) = le_u64(text_offset)?;
             uuid_data.text_offset = dsc_text_offset;

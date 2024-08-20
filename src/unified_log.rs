@@ -269,12 +269,12 @@ impl LogData {
                         time: timestamp,
                         category: String::new(),
                         log_type: LogData::get_log_type(
-                            &firehose.unknown_log_type,
-                            &firehose.unknown_log_activity_type,
+                            firehose.unknown_log_type,
+                            firehose.unknown_log_activity_type,
                         ),
                         process: String::new(),
                         message: String::new(),
-                        event_type: LogData::get_event_type(&firehose.unknown_log_activity_type),
+                        event_type: LogData::get_event_type(firehose.unknown_log_activity_type),
                         euid: catalog_data.catalog.get_euid(
                             preamble.first_number_proc_id,
                             preamble.second_number_proc_id,
@@ -307,8 +307,8 @@ impl LogData {
                                     strings_data,
                                     shared_strings,
                                     u64::from(firehose.format_string_location),
-                                    &preamble.first_number_proc_id,
-                                    &preamble.second_number_proc_id,
+                                    preamble.first_number_proc_id,
+                                    preamble.second_number_proc_id,
                                     &catalog_data.catalog,
                                 );
 
@@ -405,8 +405,8 @@ impl LogData {
                                 strings_data,
                                 shared_strings,
                                 u64::from(firehose.format_string_location),
-                                &preamble.first_number_proc_id,
-                                &preamble.second_number_proc_id,
+                                preamble.first_number_proc_id,
+                                preamble.second_number_proc_id,
                                 &catalog_data.catalog,
                             );
                             match message_data {
@@ -459,8 +459,8 @@ impl LogData {
                                 strings_data,
                                 shared_strings,
                                 u64::from(firehose.format_string_location),
-                                &preamble.first_number_proc_id,
-                                &preamble.second_number_proc_id,
+                                preamble.first_number_proc_id,
+                                preamble.second_number_proc_id,
                                 &catalog_data.catalog,
                             );
                             match message_data {
@@ -552,8 +552,8 @@ impl LogData {
                             let message_data = FirehoseTrace::get_firehose_trace_strings(
                                 strings_data,
                                 u64::from(firehose.format_string_location),
-                                &preamble.first_number_proc_id,
-                                &preamble.second_number_proc_id,
+                                preamble.first_number_proc_id,
+                                preamble.second_number_proc_id,
                                 &catalog_data.catalog,
                             );
                             match message_data {
@@ -714,11 +714,11 @@ impl LogData {
     }
 
     /// Return log type based on parsed log data
-    fn get_log_type(log_type: &u8, activity_type: &u8) -> String {
+    fn get_log_type(log_type: u8, activity_type: u8) -> String {
         match log_type {
             0x1 => {
                 let activity = 2;
-                if activity_type == &activity {
+                if activity_type == activity {
                     String::from("Create")
                 } else {
                     String::from("Info")
@@ -742,7 +742,7 @@ impl LogData {
     }
 
     /// Return the log event type based on parsed log data
-    fn get_event_type(event_type: &u8) -> String {
+    fn get_event_type(event_type: u8) -> String {
         match event_type {
             0x4 => String::from("Log"),
             0x2 => String::from("Activity"),
@@ -989,17 +989,17 @@ mod tests {
         let mut log_type = 0x2;
         let activity_type = 0x2;
 
-        let mut log_string = LogData::get_log_type(&log_type, &activity_type);
+        let mut log_string = LogData::get_log_type(log_type, activity_type);
         assert_eq!(log_string, "Debug");
         log_type = 0x1;
-        log_string = LogData::get_log_type(&log_type, &activity_type);
+        log_string = LogData::get_log_type(log_type, activity_type);
         assert_eq!(log_string, "Create");
     }
 
     #[test]
     fn test_get_event_type() {
         let event_type = 0x2;
-        let event_string = LogData::get_event_type(&event_type);
+        let event_string = LogData::get_event_type(event_type);
         assert_eq!(event_string, "Activity");
     }
 
