@@ -5,13 +5,17 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-use std::{mem::size_of, str::from_utf8};
+use std::mem::size_of;
 
-use log::warn;
+use super::*;
 use nom::{
     bytes::complete::take,
+    combinator::map,
     number::complete::{be_u128, le_u32, le_u64},
+    sequence::tuple,
 };
+
+use crate::preamble::LogPreamble;
 
 #[derive(Debug, Clone)]
 pub struct HeaderChunk {
@@ -53,166 +57,83 @@ pub struct HeaderChunk {
 
 impl HeaderChunk {
     /// Parse the Unified Log tracev3 header data
-    pub fn parse_header(data: &[u8]) -> nom::IResult<&[u8], Self> {
-        let mut header_chunk = HeaderChunk {
-            chunk_tag: 0,
-            chunk_sub_tag: 0,
-            chunk_data_size: 0,
-            mach_time_numerator: 0,
-            mach_time_denominator: 0,
-            continous_time: 0,
-            unknown_time: 0,
-            unknown: 0,
-            bias_min: 0,
-            daylight_savings: 0,
-            unknown_flags: 0,
-            sub_chunk_tag: 0,
-            sub_chunk_data_size: 0,
-            sub_chunk_continous_time: 0,
-            sub_chunk_tag_2: 0,
-            sub_chunk_tag_data_size_2: 0,
-            unknown_2: 0,
-            unknown_3: 0,
-            build_version_string: String::new(),
-            hardware_model_string: String::new(),
-            sub_chunk_tag_3: 0,
-            sub_chunk_tag_data_size_3: 0,
-            boot_uuid: String::new(),
-            logd_pid: 0,
-            logd_exit_status: 0,
-            sub_chunk_tag_4: 0,
-            sub_chunk_tag_data_size_4: 0,
-            timezone_path: String::new(),
-        };
-        let (input, chunk_tag) = take(size_of::<u32>())(data)?;
-        let (input, chunk_sub_tag) = take(size_of::<u32>())(input)?;
-        let (input, chunk_data_size) = take(size_of::<u64>())(input)?;
-        let (input, mach_time_numerator) = take(size_of::<u32>())(input)?;
-        let (input, mach_time_denominator) = take(size_of::<u32>())(input)?;
-        let (input, continous_time) = take(size_of::<u64>())(input)?;
-        let (input, unknown_time) = take(size_of::<u64>())(input)?;
-        let (input, unknown) = take(size_of::<u32>())(input)?;
-        let (input, bias_min) = take(size_of::<u32>())(input)?;
-        let (input, daylight_savings) = take(size_of::<u32>())(input)?;
-        let (input, unknown_flags) = take(size_of::<u32>())(input)?;
-        let (input, sub_chunk_tag) = take(size_of::<u32>())(input)?;
-        let (input, sub_chunk_data_size) = take(size_of::<u32>())(input)?;
-        let (input, sub_chunk_continous_time) = take(size_of::<u64>())(input)?;
-        let (input, sub_chunk_tag_2) = take(size_of::<u32>())(input)?;
-        let (input, sub_chunk_tag_data_size_2) = take(size_of::<u32>())(input)?;
-        let (input, unknown_2) = take(size_of::<u32>())(input)?;
-        let (input, unknown_3) = take(size_of::<u32>())(input)?;
-        let (input, build_version_string) = take(size_of::<u128>())(input)?;
+    pub fn parse(input: Bytes<'_>, preamble: LogPreamble) -> nom::IResult<Bytes<'_>, Self> {
+        const HARDWARE_MODEL_SIZE: u8 = 32;
+        const TIMEZONE_PATH_SIZE: u8 = 48;
 
-        let hardware_model_size: u8 = 32;
-        let (input, hardware_model_string) = take(hardware_model_size)(input)?;
-        let (input, sub_chunk_tag_3) = take(size_of::<u32>())(input)?;
-        let (input, sub_chunk_tag_data_size_3) = take(size_of::<u32>())(input)?;
-        let (input, boot_uuid) = take(size_of::<u128>())(input)?;
-        let (input, logd_pid) = take(size_of::<u32>())(input)?;
-        let (input, logd_exit_status) = take(size_of::<u32>())(input)?;
-        let (input, sub_chunk_tag_4) = take(size_of::<u32>())(input)?;
-        let (input, sub_chunk_tag_data_size_4) = take(size_of::<u32>())(input)?;
+        let (input, (mach_time_numerator, mach_time_denominator, continous_time)) =
+            tuple((le_u32, le_u32, le_u64))(input)?;
+        let (input, (unknown_time, unknown, bias_min, daylight_savings)) =
+            tuple((le_u64, le_u32, le_u32, le_u32))(input)?;
+        let (input, (unknown_flags, sub_chunk_tag, sub_chunk_data_size)) =
+            tuple((le_u32, le_u32, le_u32))(input)?;
+        let (input, (sub_chunk_continous_time, sub_chunk_tag_2, sub_chunk_tag_data_size_2)) =
+            tuple((le_u64, le_u32, le_u32))(input)?;
+        let (input, (unknown_2, unknown_3, build_version_string)) = tuple((
+            le_u32,
+            le_u32,
+            map(take(size_of::<u128>()), |s| {
+                parstr(s, "build version from header")
+            }),
+        ))(input)?;
+        let (input, (hardware_model_string, sub_chunk_tag_3, sub_chunk_tag_data_size_3)) =
+            tuple((
+                map(take(HARDWARE_MODEL_SIZE), |s| {
+                    parstr(s, "hardware info from header")
+                }),
+                le_u32,
+                le_u32,
+            ))(input)?;
+        let (input, (boot_uuid, logd_pid, logd_exit_status)) =
+            tuple((map(be_u128, |x| format!("{x:X}")), le_u32, le_u32))(input)?;
+        let (input, (sub_chunk_tag_4, sub_chunk_tag_data_size_4)) = tuple((le_u32, le_u32))(input)?;
+        let (input, timezone_path) = map(take(TIMEZONE_PATH_SIZE), |s| {
+            parstr(s, "timezone path from header")
+        })(input)?;
 
-        let timezone_path_size: u8 = 48;
-        let (input, timezone_path) = take(timezone_path_size)(input)?;
-
-        let (_, header_chunk_tag) = le_u32(chunk_tag)?;
-        let (_, header_chunk_sub_tag) = le_u32(chunk_sub_tag)?;
-        let (_, header_chunk_data_size) = le_u64(chunk_data_size)?;
-        let (_, header_mach_time_numerator) = le_u32(mach_time_numerator)?;
-        let (_, header_mach_time_denominator) = le_u32(mach_time_denominator)?;
-        let (_, header_continous_time) = le_u64(continous_time)?;
-        let (_, header_unknown_time) = le_u64(unknown_time)?;
-        let (_, header_unknown) = le_u32(unknown)?;
-        let (_, header_bias_min) = le_u32(bias_min)?;
-        let (_, header_daylight_savings) = le_u32(daylight_savings)?;
-        let (_, header_unknown_flags) = le_u32(unknown_flags)?;
-        let (_, header_sub_chunk_tag) = le_u32(sub_chunk_tag)?;
-        let (_, header_sub_chunk_data_size) = le_u32(sub_chunk_data_size)?;
-        let (_, header_sub_chunk_continous_time) = le_u64(sub_chunk_continous_time)?;
-        let (_, header_sub_chunk_tag_2) = le_u32(sub_chunk_tag_2)?;
-        let (_, header_sub_chunk_tag_data_size_2) = le_u32(sub_chunk_tag_data_size_2)?;
-        let (_, header_unknown_2) = le_u32(unknown_2)?;
-        let (_, header_unknown_3) = le_u32(unknown_3)?;
-        let (_, header_sub_chunk_tag_3) = le_u32(sub_chunk_tag_3)?;
-        let (_, header_sub_chunk_tag_data_size_3) = le_u32(sub_chunk_tag_data_size_3)?;
-        let (_, header_logd_pid) = le_u32(logd_pid)?;
-        let (_, header_logd_exit_status) = le_u32(logd_exit_status)?;
-        let (_, header_sub_chunk_tag_4) = le_u32(sub_chunk_tag_4)?;
-        let (_, header_sub_chunk_tag_data_size_4) = le_u32(sub_chunk_tag_data_size_4)?;
-
-        header_chunk.chunk_tag = header_chunk_tag;
-        header_chunk.chunk_sub_tag = header_chunk_sub_tag;
-        header_chunk.chunk_data_size = header_chunk_data_size;
-        header_chunk.mach_time_numerator = header_mach_time_numerator;
-        header_chunk.mach_time_denominator = header_mach_time_denominator;
-        header_chunk.continous_time = header_continous_time;
-        header_chunk.unknown_time = header_unknown_time;
-        header_chunk.unknown = header_unknown;
-        header_chunk.bias_min = header_bias_min;
-        header_chunk.daylight_savings = header_daylight_savings;
-        header_chunk.unknown_flags = header_unknown_flags;
-        header_chunk.sub_chunk_tag = header_sub_chunk_tag;
-        header_chunk.sub_chunk_data_size = header_sub_chunk_data_size;
-        header_chunk.sub_chunk_continous_time = header_sub_chunk_continous_time;
-        header_chunk.sub_chunk_tag_2 = header_sub_chunk_tag_2;
-        header_chunk.sub_chunk_tag_data_size_2 = header_sub_chunk_tag_data_size_2;
-        header_chunk.unknown_2 = header_unknown_2;
-        header_chunk.unknown_3 = header_unknown_3;
-        header_chunk.sub_chunk_tag_3 = header_sub_chunk_tag_3;
-        header_chunk.sub_chunk_tag_data_size_3 = header_sub_chunk_tag_data_size_3;
-        header_chunk.logd_pid = header_logd_pid;
-        header_chunk.logd_exit_status = header_logd_exit_status;
-        header_chunk.sub_chunk_tag_4 = header_sub_chunk_tag_4;
-        header_chunk.sub_chunk_tag_data_size_4 = header_sub_chunk_tag_data_size_4;
-
-        let path_data = from_utf8(timezone_path);
-        match path_data {
-            Ok(results) => header_chunk.timezone_path = results.trim_end_matches('\0').to_string(),
-            Err(err) => warn!(
-                "[macos-unifiedlogs] Failed to get timezone path from header: {:?}",
-                err
-            ),
-        }
-
-        let build_version = from_utf8(build_version_string);
-        match build_version {
-            Ok(results) => {
-                header_chunk.build_version_string = results.trim_end_matches('\0').to_string()
-            }
-            Err(err) => warn!(
-                "[macos-unifiedlogs] Failed to get build version from header: {:?}",
-                err
-            ),
-        }
-
-        let hardware_info = from_utf8(hardware_model_string);
-        match hardware_info {
-            Ok(results) => {
-                header_chunk.hardware_model_string = results.trim_end_matches('\0').to_string()
-            }
-            Err(err) => warn!(
-                "[macos-unifiedlogs] Failed to get hardware info from header: {:?}",
-                err
-            ),
-        }
-
-        let (_, boot_uuid_be) = be_u128(boot_uuid)?;
-        header_chunk.boot_uuid = format!("{:X}", boot_uuid_be);
-
-        Ok((input, header_chunk))
+        Ok((
+            input,
+            HeaderChunk {
+                chunk_tag: preamble.chunk_tag,
+                chunk_sub_tag: preamble.chunk_sub_tag,
+                chunk_data_size: preamble.chunk_data_size,
+                mach_time_numerator,
+                mach_time_denominator,
+                continous_time,
+                unknown_time,
+                unknown,
+                bias_min,
+                daylight_savings,
+                unknown_flags,
+                sub_chunk_tag,
+                sub_chunk_data_size,
+                sub_chunk_continous_time,
+                sub_chunk_tag_2,
+                sub_chunk_tag_data_size_2,
+                unknown_2,
+                unknown_3,
+                build_version_string,
+                hardware_model_string,
+                sub_chunk_tag_3,
+                sub_chunk_tag_data_size_3,
+                boot_uuid,
+                logd_pid,
+                logd_exit_status,
+                sub_chunk_tag_4,
+                sub_chunk_tag_data_size_4,
+                timezone_path,
+            },
+        ))
     }
 }
 
 #[cfg(test)]
 mod tests {
-
-    use super::HeaderChunk;
+    use super::*;
 
     #[test]
-    fn test_detect_preamble() {
-        let test_chunk_header = [
+    fn test_detect_preamble() -> anyhow::Result<()> {
+        let test_chunk_header = &[
             0, 16, 0, 0, 17, 0, 0, 0, 208, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 15, 105,
             217, 162, 204, 126, 0, 0, 48, 215, 18, 98, 0, 0, 0, 0, 203, 138, 9, 0, 44, 1, 0, 0, 0,
             0, 0, 0, 1, 0, 0, 0, 0, 97, 0, 0, 8, 0, 0, 0, 6, 112, 124, 198, 169, 153, 1, 0, 1, 97,
@@ -225,7 +146,8 @@ mod tests {
             101, 119, 95, 89, 111, 114, 107, 0, 0, 0, 0, 0, 0,
         ];
 
-        let (_, header_data) = HeaderChunk::parse_header(&test_chunk_header).unwrap();
+        let (input, preamble) = LogPreamble::parse(test_chunk_header)?;
+        let (_, header_data) = HeaderChunk::parse(input, preamble)?;
 
         assert_eq!(header_data.chunk_tag, 0x1000);
         assert_eq!(header_data.chunk_sub_tag, 0x11);
@@ -257,5 +179,7 @@ mod tests {
             header_data.timezone_path,
             "/var/db/timezone/zoneinfo/America/New_York"
         );
+
+        Ok(())
     }
 }

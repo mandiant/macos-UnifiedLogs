@@ -12,7 +12,7 @@ use nom::{
     IResult,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LogPreamble {
     pub chunk_tag: u32,
     pub chunk_sub_tag: u32,
@@ -40,22 +40,24 @@ mod tests {
     use super::LogPreamble;
 
     #[test]
-    fn test_detect_preamble() {
-        let test_preamble_header = [
+    fn test_detect_preamble() -> anyhow::Result<()> {
+        let test_preamble_header = &[
             0, 16, 0, 0, 17, 0, 0, 0, 208, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0,
         ];
 
-        let (_, preamble_data) = LogPreamble::parse(&test_preamble_header).unwrap();
+        let (_, preamble) = LogPreamble::parse(test_preamble_header)?;
 
-        assert_eq!(preamble_data.chunk_tag, 0x1000);
-        assert_eq!(preamble_data.chunk_sub_tag, 0x11);
-        assert_eq!(preamble_data.chunk_data_size, 0xd0);
+        assert_eq!(preamble.chunk_tag, 0x1000);
+        assert_eq!(preamble.chunk_sub_tag, 0x11);
+        assert_eq!(preamble.chunk_data_size, 0xd0);
 
-        let test_catalog_chunk = [11, 96, 0, 0, 17, 0, 0, 0, 176, 31, 0, 0, 0, 0, 0, 0];
-        let (_, preamble_data) = LogPreamble::parse(&test_catalog_chunk).unwrap();
+        let test_catalog_chunk = &[11, 96, 0, 0, 17, 0, 0, 0, 176, 31, 0, 0, 0, 0, 0, 0];
+        let (_, preamble) = LogPreamble::parse(test_catalog_chunk)?;
 
-        assert_eq!(preamble_data.chunk_tag, 0x600b);
-        assert_eq!(preamble_data.chunk_sub_tag, 0x11);
-        assert_eq!(preamble_data.chunk_data_size, 0x1fb0);
+        assert_eq!(preamble.chunk_tag, 0x600b);
+        assert_eq!(preamble.chunk_sub_tag, 0x11);
+        assert_eq!(preamble.chunk_data_size, 0x1fb0);
+
+        Ok(())
     }
 }

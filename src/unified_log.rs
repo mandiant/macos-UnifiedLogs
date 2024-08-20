@@ -24,6 +24,7 @@ use crate::header::HeaderChunk;
 use crate::message::format_firehose_log_message;
 use crate::preamble::LogPreamble;
 use crate::timesync::TimesyncBoot;
+use crate::Bytes;
 use log::{error, warn};
 use nom::bytes::complete::take;
 use regex::Regex;
@@ -117,7 +118,7 @@ impl LogData {
             let (data, chunk_data) = take(chunk_size + chunk_preamble_size)(input)?;
 
             if preamble.chunk_tag == header_chunk {
-                LogData::get_header_data(chunk_data, &mut unified_log_data_true);
+                LogData::get_header_data(chunk_data, preamble.clone(), &mut unified_log_data_true);
             } else if preamble.chunk_tag == catalog_chunk {
                 if catalog_data.catalog.chunk_tag != 0 {
                     unified_log_data_true.catalog_data.push(catalog_data);
@@ -757,8 +758,12 @@ impl LogData {
     }
 
     /// Get the header of the Unified Log data (tracev3 file)
-    fn get_header_data(data: &[u8], unified_log_data: &mut UnifiedLogData) {
-        let header_results = HeaderChunk::parse_header(data);
+    fn get_header_data(
+        data: Bytes<'_>,
+        preamble: LogPreamble,
+        unified_log_data: &mut UnifiedLogData,
+    ) {
+        let header_results = HeaderChunk::parse(data, preamble);
         match header_results {
             Ok((_, header_data)) => unified_log_data.header.push(header_data),
             Err(err) => error!("[macos-unifiedlogs] Failed to parse header data: {:?}", err),
@@ -766,7 +771,7 @@ impl LogData {
     }
 
     /// Get the Catalog of the Unified Log data (tracev3 file)
-    fn get_catalog_data(data: &[u8], unified_log_data: &mut UnifiedLogCatalogData) {
+    fn get_catalog_data(data: Bytes<'_>, unified_log_data: &mut UnifiedLogCatalogData) {
         let catalog_results = CatalogChunk::parse_catalog(data);
         match catalog_results {
             Ok((_, catalog_data)) => unified_log_data.catalog = catalog_data,
@@ -864,14 +869,17 @@ mod tests {
 
     use crate::{
         catalog::CatalogChunk,
-        chunks::firehose::activity::FirehoseActivity,
-        chunks::firehose::firehose_log::{Firehose, FirehoseItemData},
-        chunks::firehose::flags::FirehoseFormatters,
-        chunks::firehose::loss::FirehoseLoss,
-        chunks::firehose::nonactivity::FirehoseNonActivity,
-        chunks::firehose::signpost::FirehoseSignpost,
-        chunks::firehose::trace::FirehoseTrace,
+        chunks::firehose::{
+            activity::FirehoseActivity,
+            firehose_log::{Firehose, FirehoseItemData},
+            flags::FirehoseFormatters,
+            loss::FirehoseLoss,
+            nonactivity::FirehoseNonActivity,
+            signpost::FirehoseSignpost,
+            trace::FirehoseTrace,
+        },
         parser::{collect_shared_strings, collect_strings, collect_timesync, parse_log},
+        preamble::{self, LogPreamble},
         unified_log::UnifiedLogCatalogData,
     };
 
@@ -991,8 +999,8 @@ mod tests {
     }
 
     #[test]
-    fn test_get_header_data() {
-        let test_chunk_header = [
+    fn test_get_header_data() -> anyhow::Result<()> {
+        let test_chunk_header = &[
             0, 16, 0, 0, 17, 0, 0, 0, 208, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 15, 105,
             217, 162, 204, 126, 0, 0, 48, 215, 18, 98, 0, 0, 0, 0, 203, 138, 9, 0, 44, 1, 0, 0, 0,
             0, 0, 0, 1, 0, 0, 0, 0, 97, 0, 0, 8, 0, 0, 0, 6, 112, 124, 198, 169, 153, 1, 0, 1, 97,
@@ -1004,14 +1012,18 @@ mod tests {
             47, 122, 111, 110, 101, 105, 110, 102, 111, 47, 65, 109, 101, 114, 105, 99, 97, 47, 78,
             101, 119, 95, 89, 111, 114, 107, 0, 0, 0, 0, 0, 0,
         ];
+
         let mut data = UnifiedLogData {
             header: Vec::new(),
             catalog_data: Vec::new(),
             oversize: Vec::new(),
         };
 
-        LogData::get_header_data(&test_chunk_header, &mut data);
+        let (input, preamble) = LogPreamble::parse(test_chunk_header)?;
+        LogData::get_header_data(&input, preamble, &mut data);
         assert_eq!(data.header.len(), 1);
+
+        Ok(())
     }
 
     #[test]
