@@ -5,8 +5,6 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-use std::mem::size_of;
-
 use super::*;
 use nom::{
     bytes::complete::take,
@@ -14,6 +12,8 @@ use nom::{
     number::complete::{be_u128, le_u32, le_u64},
     sequence::tuple,
 };
+use std::mem::size_of;
+use util::parstr;
 
 use crate::preamble::LogPreamble;
 

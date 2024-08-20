@@ -49,15 +49,3 @@ pub mod timesync;
 pub mod unified_log;
 mod util;
 pub mod uuidtext;
-
-fn parstr(s: Bytes<'_>, error_hint: &str) -> String {
-    match std::str::from_utf8(s) {
-        Ok(s) => s.trim_end_matches('\0').to_string(),
-        Err(err) => {
-            log::warn!("[macos-unifiedlogs] Failed to get {error_hint}: {err:?}");
-            String::from_utf8_lossy(s)
-                .trim_end_matches('\0')
-                .to_string()
-        }
-    }
-}

@@ -118,7 +118,7 @@ impl LogData {
             let (data, chunk_data) = take(chunk_size + chunk_preamble_size)(input)?;
 
             if preamble.chunk_tag == header_chunk {
-                LogData::get_header_data(chunk_data, preamble.clone(), &mut unified_log_data_true);
+                LogData::get_header_data(chunk_data, preamble, &mut unified_log_data_true);
             } else if preamble.chunk_tag == catalog_chunk {
                 if catalog_data.catalog.chunk_tag != 0 {
                     unified_log_data_true.catalog_data.push(catalog_data);
@@ -146,7 +146,7 @@ impl LogData {
                     oversize: Vec::new(),
                 };
 
-                LogData::get_catalog_data(chunk_data, &mut catalog_data);
+                LogData::get_catalog_data(chunk_data, preamble, &mut catalog_data);
             } else if preamble.chunk_tag == chunkset_chunk {
                 LogData::get_chunkset_data(
                     chunk_data,
@@ -260,10 +260,9 @@ impl LogData {
                     let mut log_data = LogData {
                         subsystem: String::new(),
                         thread_id: firehose.thread_id,
-                        pid: CatalogChunk::get_pid(
-                            &preamble.first_number_proc_id,
-                            &preamble.second_number_proc_id,
-                            &catalog_data.catalog,
+                        pid: catalog_data.catalog.get_pid(
+                            preamble.first_number_proc_id,
+                            preamble.second_number_proc_id,
                         ),
                         library: String::new(),
                         activity_id: 0,
@@ -276,10 +275,9 @@ impl LogData {
                         process: String::new(),
                         message: String::new(),
                         event_type: LogData::get_event_type(&firehose.unknown_log_activity_type),
-                        euid: CatalogChunk::get_euid(
-                            &preamble.first_number_proc_id,
-                            &preamble.second_number_proc_id,
-                            &catalog_data.catalog,
+                        euid: catalog_data.catalog.get_euid(
+                            preamble.first_number_proc_id,
+                            preamble.second_number_proc_id,
                         ),
                         boot_uuid: unified_log_data.header[0].boot_uuid.to_owned(),
                         timezone_name: unified_log_data.header[0]
@@ -378,11 +376,10 @@ impl LogData {
                             }
 
                             if firehose.firehose_non_activity.subsystem_value != 0 {
-                                let results = CatalogChunk::get_subsystem(
-                                    &firehose.firehose_non_activity.subsystem_value,
-                                    &preamble.first_number_proc_id,
-                                    &preamble.second_number_proc_id,
-                                    &catalog_data.catalog,
+                                let results = catalog_data.catalog.get_subsystem(
+                                    firehose.firehose_non_activity.subsystem_value,
+                                    preamble.first_number_proc_id,
+                                    preamble.second_number_proc_id,
                                 );
                                 match results {
                                     Ok((_, subsystem)) => {
@@ -534,11 +531,10 @@ impl LogData {
                                 }
                             }
                             if firehose.firehose_signpost.subsystem != 0 {
-                                let results = CatalogChunk::get_subsystem(
-                                    &firehose.firehose_signpost.subsystem,
-                                    &preamble.first_number_proc_id,
-                                    &preamble.second_number_proc_id,
-                                    &catalog_data.catalog,
+                                let results = catalog_data.catalog.get_subsystem(
+                                    firehose.firehose_signpost.subsystem,
+                                    preamble.first_number_proc_id,
+                                    preamble.second_number_proc_id,
                                 );
                                 match results {
                                     Ok((_, subsystem)) => {
@@ -771,8 +767,12 @@ impl LogData {
     }
 
     /// Get the Catalog of the Unified Log data (tracev3 file)
-    fn get_catalog_data(data: Bytes<'_>, unified_log_data: &mut UnifiedLogCatalogData) {
-        let catalog_results = CatalogChunk::parse_catalog(data);
+    fn get_catalog_data(
+        data: Bytes<'_>,
+        preamble: LogPreamble,
+        unified_log_data: &mut UnifiedLogCatalogData,
+    ) {
+        let catalog_results = CatalogChunk::parse(data, preamble);
         match catalog_results {
             Ok((_, catalog_data)) => unified_log_data.catalog = catalog_data,
             Err(err) => error!(
@@ -1027,8 +1027,8 @@ mod tests {
     }
 
     #[test]
-    fn test_get_catalog_data() {
-        let test_chunk_catalog = [
+    fn test_get_catalog_data() -> anyhow::Result<()> {
+        let test_chunk_catalog = &[
             11, 96, 0, 0, 17, 0, 0, 0, 208, 1, 0, 0, 0, 0, 0, 0, 32, 0, 96, 0, 1, 0, 160, 0, 7, 0,
             0, 0, 0, 0, 0, 0, 20, 165, 44, 35, 253, 233, 2, 0, 43, 239, 210, 12, 24, 236, 56, 56,
             129, 79, 43, 78, 90, 243, 188, 236, 61, 5, 132, 95, 63, 101, 53, 143, 158, 191, 34, 54,
@@ -1074,7 +1074,8 @@ mod tests {
             oversize: Vec::new(),
         };
 
-        LogData::get_catalog_data(&test_chunk_catalog, &mut data);
+        let (input, preamble) = LogPreamble::parse(test_chunk_catalog)?;
+        LogData::get_catalog_data(test_chunk_catalog, preamble, &mut data);
         assert_eq!(data.catalog.chunk_tag, 0x600b);
         assert_eq!(data.catalog.chunk_sub_tag, 17);
         assert_eq!(data.catalog.chunk_data_size, 464);
@@ -1111,7 +1112,9 @@ mod tests {
             "3D05845F3F65358F9EBF2236E772AC01"
         );
 
-        assert_eq!(data.catalog.catalog_subchunks.len(), 7)
+        assert_eq!(data.catalog.catalog_subchunks.len(), 7);
+
+        Ok(())
     }
 
     #[test]

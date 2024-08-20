@@ -12,7 +12,7 @@ use nom::{
     IResult,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct LogPreamble {
     pub chunk_tag: u32,
     pub chunk_sub_tag: u32,
