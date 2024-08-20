@@ -49,11 +49,11 @@ impl SharedCacheStrings {
         let (input, sig) = take(size_of::<u32>())(data)?;
         let (_, dsc_sig) = le_u32(sig)?;
 
-        let expected_dsc_signature = 0x64736368;
-        if expected_dsc_signature != dsc_sig {
+        const EXPECTED_DSC_SIGNATURE: u32 = 0x64736368;
+        if EXPECTED_DSC_SIGNATURE != dsc_sig {
             error!(
                 "[macos-unifiedlogs] Incorrect DSC file signature. Expected {}. Got: {}",
-                expected_dsc_signature, dsc_sig
+                EXPECTED_DSC_SIGNATURE, dsc_sig
             );
             return Err(nom::Err::Incomplete(Needed::Unknown));
         }

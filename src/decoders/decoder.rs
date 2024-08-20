@@ -30,24 +30,24 @@ use crate::{
 pub(crate) fn check_objects(
     format_string: &str,
     message_values: &[FirehoseItemInfo],
-    item_type: &u8,
+    item_type: u8,
     item_index: usize,
 ) -> String {
     let mut message_value = String::new();
     let mut index = item_index;
-    let precision_item = 0x12;
+    const PRECISION_ITEM: u8 = 0x12;
 
     // Increment index get the actual firehose item data
-    if item_type == &precision_item {
+    if item_type == PRECISION_ITEM {
         index += 1;
         if index > message_values.len() {
             return format!("Index out of bounds for FirehoseItemInfo Vec. Got adjusted index {}, Vec size is {}. This should not have happened", index, message_values.len());
         }
     }
 
-    let masked_hash_type = 0xf2;
+    const MASKED_HASH_TYPE: u8 = 0xf2;
     // Check if the log value is hashed or marked private
-    if (format_string.contains("mask.hash") && message_values[index].item_type == masked_hash_type)
+    if (format_string.contains("mask.hash") && message_values[index].item_type == MASKED_HASH_TYPE)
         || message_values[index].message_strings == "<private>"
     {
         return message_values[index].message_strings.to_owned();
@@ -143,7 +143,7 @@ mod tests {
         let test_type = 0;
         let test_index = 0;
 
-        let results = check_objects(test_format, &vec![test_item_info], &test_type, test_index);
+        let results = check_objects(test_format, &vec![test_item_info], test_type, test_index);
         assert_eq!(results, "true")
     }
 
@@ -158,7 +158,7 @@ mod tests {
         let test_type = 0;
         let test_index = 0;
 
-        let results = check_objects(test_format, &vec![test_item_info], &test_type, test_index);
+        let results = check_objects(test_format, &vec![test_item_info], test_type, test_index);
         assert_eq!(results, "YES")
     }
 
@@ -173,7 +173,7 @@ mod tests {
         let test_type = 50; // 0x32
         let test_index = 0;
 
-        let results = check_objects(test_format, &vec![test_item_info], &test_type, test_index);
+        let results = check_objects(test_format, &vec![test_item_info], test_type, test_index);
         assert_eq!(results, "user: -2@/Local/Default");
     }
 
@@ -188,7 +188,7 @@ mod tests {
         let test_type = 50; // 0x32
         let test_index = 0;
 
-        let results = check_objects(test_format, &vec![test_item_info], &test_type, test_index);
+        let results = check_objects(test_format, &vec![test_item_info], test_type, test_index);
         assert_eq!(results, "85957E1D36C44ED286A80657BCDDE293")
     }
 
@@ -203,7 +203,7 @@ mod tests {
         let test_type = 50; // 0x32
         let test_index = 0;
 
-        let results = check_objects(test_format, &vec![test_item_info], &test_type, test_index);
+        let results = check_objects(test_format, &vec![test_item_info], test_type, test_index);
         assert_eq!(results, "<private>")
     }
 
@@ -218,7 +218,7 @@ mod tests {
         let test_type = 242; // 0x32
         let test_index = 0;
 
-        let results = check_objects(test_format, &vec![test_item_info], &test_type, test_index);
+        let results = check_objects(test_format, &vec![test_item_info], test_type, test_index);
         assert_eq!(results, "hash")
     }
 }

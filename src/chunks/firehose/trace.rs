@@ -215,12 +215,12 @@ mod tests {
         test_path.push("logdata.LiveData.tracev3");
         let log_data = parse_log(&test_path.display().to_string()).unwrap();
 
-        let activity_type = 0x3;
+        const ACTIVITY_TYPE: u8 = 0x3;
 
         for catalog_data in log_data.catalog_data {
             for preamble in catalog_data.firehose {
                 for firehose in preamble.public_data {
-                    if firehose.unknown_log_activity_type == activity_type {
+                    if firehose.unknown_log_activity_type == ACTIVITY_TYPE {
                         let (_, message_data) = FirehoseTrace::get_firehose_trace_strings(
                             &string_results,
                             firehose.format_string_location as u64,

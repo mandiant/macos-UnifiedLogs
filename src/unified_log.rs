@@ -106,9 +106,9 @@ impl LogData {
         let mut input = data;
         let chunk_preamble_size = 16; // Include preamble size in total chunk size
 
-        let header_chunk = 0x1000;
-        let catalog_chunk = 0x600b;
-        let chunkset_chunk = 0x600d;
+        const HEADER_CHUNK: u32 = 0x1000;
+        const CATALOG_CHUNK: u32 = 0x600b;
+        const CHUNKSET_CHUNK: u32 = 0x600d;
         // Loop through traceV3 file until all file contents are read
         while !input.is_empty() {
             let (data, preamble) = LogPreamble::parse(input)?;
@@ -117,9 +117,9 @@ impl LogData {
             // Grab all data associated with Unified Log entry (chunk)
             let (data, chunk_data) = take(chunk_size)(data)?;
 
-            if preamble.chunk_tag == header_chunk {
+            if preamble.chunk_tag == HEADER_CHUNK {
                 LogData::get_header_data(chunk_data, preamble, &mut unified_log_data_true);
-            } else if preamble.chunk_tag == catalog_chunk {
+            } else if preamble.chunk_tag == CATALOG_CHUNK {
                 if catalog_data.catalog.chunk_tag != 0 {
                     unified_log_data_true.catalog_data.push(catalog_data);
                 }
@@ -147,7 +147,7 @@ impl LogData {
                 };
 
                 LogData::get_catalog_data(chunk_data, preamble, &mut catalog_data);
-            } else if preamble.chunk_tag == chunkset_chunk {
+            } else if preamble.chunk_tag == CHUNKSET_CHUNK {
                 LogData::get_chunkset_data(
                     chunk_data,
                     &mut catalog_data,

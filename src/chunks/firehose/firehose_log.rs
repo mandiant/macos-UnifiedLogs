@@ -312,18 +312,18 @@ impl FirehosePreamble {
         // Backtrace data appears before Firehose item strings
         // It only exists if log entry has_context_data flag set
         // Backtrace data can also exist in Oversize log entries. However, Oversize entries do not have has_context_data flags. Instead we check for possible signature
-        let has_context_data: u16 = 0x1000;
-        let backtrace_signature_size: usize = 3;
+        const HAS_CONTEXT_DATA: u16 = 0x1000;
+        const BACKTRACE_SIGNATURE_SIZE: usize = 3;
 
-        if (firehose_flags & has_context_data) != 0 {
+        if (firehose_flags & HAS_CONTEXT_DATA) != 0 {
             debug!("[macos-unifiedlogs] Identified Backtrace data in Firehose log chunk");
             let (backtrace_input, backtrace_data) =
                 FirehosePreamble::get_backtrace_data(firehose_input)?;
             firehose_input = backtrace_input;
             firehose_item_data.backtrace_strings = backtrace_data;
-        } else if firehose_input.len() > backtrace_signature_size {
+        } else if firehose_input.len() > BACKTRACE_SIGNATURE_SIZE {
             let backtrace_signature = [1, 0, 18];
-            let (_, backtrace_sig) = take(backtrace_signature_size)(firehose_input)?;
+            let (_, backtrace_sig) = take(BACKTRACE_SIGNATURE_SIZE)(firehose_input)?;
             if backtrace_signature == backtrace_sig {
                 let (backtrace_input, backtrace_data) =
                     FirehosePreamble::get_backtrace_data(firehose_input)?;

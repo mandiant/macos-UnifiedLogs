@@ -156,12 +156,12 @@ impl ChunksetChunk {
         chunk_type: u32,
         unified_log_data: &mut UnifiedLogCatalogData,
     ) {
-        let firehose_chunk = 0x6001;
-        let oversize_chunk = 0x6002;
-        let statedump_chunk = 0x6003;
-        let simpledump_chunk = 0x6004;
+        const FIREHOSE_CHUNK: u32 = 0x6001;
+        const OVERSIZE_CHUNK: u32 = 0x6002;
+        const STATEDUMP_CHUNK: u32 = 0x6003;
+        const SIMPLEDUMP_CHUNK: u32 = 0x6004;
 
-        if chunk_type == firehose_chunk {
+        if chunk_type == FIREHOSE_CHUNK {
             let firehose_results = FirehosePreamble::parse_firehose_preamble(data);
             match firehose_results {
                 Ok((_, firehose_data)) => unified_log_data.firehose.push(firehose_data),
@@ -170,7 +170,7 @@ impl ChunksetChunk {
                     err
                 ),
             }
-        } else if chunk_type == oversize_chunk {
+        } else if chunk_type == OVERSIZE_CHUNK {
             let oversize_results = Oversize::parse_oversize(data);
             match oversize_results {
                 Ok((_, oversize)) => unified_log_data.oversize.push(oversize),
@@ -179,7 +179,7 @@ impl ChunksetChunk {
                     err
                 ),
             }
-        } else if chunk_type == statedump_chunk {
+        } else if chunk_type == STATEDUMP_CHUNK {
             let statedump_results = Statedump::parse_statedump(data);
             match statedump_results {
                 Ok((_, statedump)) => unified_log_data.statedump.push(statedump),
@@ -188,7 +188,7 @@ impl ChunksetChunk {
                     err
                 ),
             }
-        } else if chunk_type == simpledump_chunk {
+        } else if chunk_type == SIMPLEDUMP_CHUNK {
             let simpledump_results = SimpleDump::parse_simpledump(data);
             match simpledump_results {
                 Ok((_, simpledump)) => unified_log_data.simpledump.push(simpledump),
@@ -2286,8 +2286,8 @@ mod tests {
             oversize: Vec::new(),
         };
 
-        let firehose_chunk: u32 = 0x6001;
-        ChunksetChunk::get_chunkset_data(&buffer, firehose_chunk, &mut unified_log);
+        const FIREHOSE_CHUNK: u32 = 0x6001;
+        ChunksetChunk::get_chunkset_data(&buffer, FIREHOSE_CHUNK, &mut unified_log);
         assert_eq!(unified_log.firehose.len(), 1);
         assert_eq!(
             unified_log.firehose[0].public_data[0].message.item_info[0].message_strings,
@@ -2330,8 +2330,8 @@ mod tests {
             oversize: Vec::new(),
         };
 
-        let oversize_chunk: u32 = 0x6002;
-        ChunksetChunk::get_chunkset_data(&buffer, oversize_chunk, &mut unified_log);
+        const OVERSIZE_CHUNK: u32 = 0x6002;
+        ChunksetChunk::get_chunkset_data(&buffer, OVERSIZE_CHUNK, &mut unified_log);
         assert_eq!(unified_log.oversize.len(), 1);
         assert_eq!(
             unified_log.oversize[0].message_items.item_info[0].message_strings,
@@ -2378,8 +2378,8 @@ mod tests {
             oversize: Vec::new(),
         };
 
-        let statedump_chunk = 0x6003;
-        ChunksetChunk::get_chunkset_data(&buffer, statedump_chunk, &mut unified_log);
+        const STATEDUMP_CHUNK: u32 = 0x6003;
+        ChunksetChunk::get_chunkset_data(&buffer, STATEDUMP_CHUNK, &mut unified_log);
         assert_eq!(unified_log.statedump.len(), 1);
         assert_eq!(
             unified_log.statedump[0].title_name,

@@ -100,9 +100,9 @@ pub fn format_firehose_log_message(
             continue;
         }
 
-        let private_strings = [0x1, 0x21, 0x31, 0x41];
-        let private_number = 0x1;
-        let private_message = 0x8000;
+        const PRIVATE_STRINGS: [u8; 4] = [0x1, 0x21, 0x31, 0x41];
+        const PRIVATE_NUMBER: u8 = 0x1;
+        const PRIVATE_MESSAGE: u16 = 0x8000;
         if formatter_string.starts_with("%{") {
             // If item type is [0x1, 0x21, 0x31, 0x41] and the value is zero. Its appears to be a private string
             /*
@@ -153,11 +153,11 @@ pub fn format_firehose_log_message(
                     Duration: 1.835s, DNS @0.000s took 0.018s, TCP @0.018s took 0.015s, TLS took 0.040s
                     bytes in/out: 9003/941, packets in/out: 8/8, rtt: 0.010s, retransmitted packets: 0, out-of-order packets: 0
             */
-            if private_strings.contains(&item_message[item_index].item_type)
+            if PRIVATE_STRINGS.contains(&item_message[item_index].item_type)
                 && item_message[item_index].message_strings.is_empty()
                 && item_message[item_index].item_size == 0
-                || (item_message[item_index].item_type == private_number
-                    && item_message[item_index].item_size == private_message)
+                || (item_message[item_index].item_type == PRIVATE_NUMBER
+                    && item_message[item_index].item_size == PRIVATE_MESSAGE)
             {
                 formatted_log_message = String::from("<private>");
             } else {
@@ -193,11 +193,11 @@ pub fn format_firehose_log_message(
                     format:         kext submap [0x%lx - 0x%lx], kernel text [0x%lx - 0x%lx]
                 kext submap [0x<private> - 0x<private>], kernel text [0x<private> - 0x<private>]
             */
-            if private_strings.contains(&item_message[item_index].item_type)
+            if PRIVATE_STRINGS.contains(&item_message[item_index].item_type)
                 && item_message[item_index].message_strings.is_empty()
                 && item_message[item_index].item_size == 0
-                || (item_message[item_index].item_type == private_number
-                    && item_message[item_index].item_size == private_message)
+                || (item_message[item_index].item_type == PRIVATE_NUMBER
+                    && item_message[item_index].item_size == PRIVATE_MESSAGE)
             {
                 formatted_log_message = String::from("<private>");
             } else {
@@ -221,8 +221,8 @@ pub fn format_firehose_log_message(
         }
 
         // Also seen number type value 0 also used for dynamic width/precision value
-        let dynamic_precision_value = 0x0;
-        if (item_message[item_index].item_type == dynamic_precision_value
+        const DYNAMIC_PRECISION_VALUE: u8 = 0x0;
+        if (item_message[item_index].item_type == DYNAMIC_PRECISION_VALUE
             && item_message[item_index].item_size == 0)
             && formatter_string.contains("%*")
         {
@@ -330,8 +330,8 @@ fn parse_formatter<'a>(
 
     if formatter_message.starts_with('*') {
         // Also seen number type value 0 used for dynamic width/precision value
-        let dynamic_precision_value = 0x0;
-        if item_type == &dynamic_precision_value && message_value[index].item_size == 0 {
+        const DYNAMIC_PRECISION_VALUE: u8 = 0x0;
+        if item_type == &DYNAMIC_PRECISION_VALUE && message_value[index].item_size == 0 {
             precision_value = message_value[index].item_size as usize;
             index += 1;
             message = message_value[index].message_strings.to_owned();
@@ -454,7 +454,7 @@ fn parse_type_formatter<'a>(
 ) -> nom::IResult<&'a str, String> {
     let (format, format_type) = take_until("}")(formatter)?;
 
-    let apple_object = decoder::check_objects(format_type, message_value, item_type, item_index);
+    let apple_object = decoder::check_objects(format_type, message_value, *item_type, item_index);
 
     // If we successfully decoded an apple object, then there is nothing to format.
     // Signpost entries have not been seen with custom objects

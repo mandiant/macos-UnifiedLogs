@@ -60,8 +60,8 @@ impl TimesyncBoot {
             let (_, signature) = take(size_of::<u32>())(input)?;
             let (_, timesync_signature) = le_u32(signature)?;
 
-            let timesync_sig: u32 = 0x207354;
-            if timesync_signature == timesync_sig {
+            const TIMESYNC_SIG: u32 = 0x207354;
+            if timesync_signature == TIMESYNC_SIG {
                 let (timesync_input, timesync) = TimesyncBoot::parse_timesync(input)?;
                 timesync_boot.timesync.push(timesync);
                 input = timesync_input;

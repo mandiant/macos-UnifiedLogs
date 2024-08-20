@@ -101,8 +101,8 @@ impl FirehoseSignpost {
             FirehoseFormatters::firehose_formatter_flags(input, firehose_flags)?;
         firehose_signpost.firehose_formatters = formatters;
 
-        let subsystem: u16 = 0x200; // has_subsystem flag. In Signpost log entries this is the subsystem flag
-        if (firehose_flags & subsystem) != 0 {
+        const SUBSYSTEM: u16 = 0x200; // has_subsystem flag. In Signpost log entries this is the subsystem flag
+        if (firehose_flags & SUBSYSTEM) != 0 {
             debug!("[macos-unifiedlogs] Signpost Firehose log chunk has has_subsystem flag");
             let (firehose_input, subsystem) = take(size_of::<u16>())(input)?;
             let (_, firehose_subsystem) = le_u16(subsystem)?;
@@ -113,8 +113,8 @@ impl FirehoseSignpost {
         let (_, firehose_signpost_id) = le_u64(signpost_id)?;
         firehose_signpost.signpost_id = firehose_signpost_id;
 
-        let has_rules: u16 = 0x400; // has_rules flag
-        if (firehose_flags & has_rules) != 0 {
+        const HAS_RULES: u16 = 0x400; // has_rules flag
+        if (firehose_flags & HAS_RULES) != 0 {
             debug!("[macos-unifiedlogs] Signpost Firehose log chunk has has_rules flag");
             let (firehose_input, ttl_data) = take(size_of::<u8>())(input)?;
             let (_, firehose_ttl) = le_u8(ttl_data)?;
@@ -122,8 +122,8 @@ impl FirehoseSignpost {
             input = firehose_input;
         }
 
-        let data_ref: u16 = 0x800; // has_oversize flag
-        if (firehose_flags & data_ref) != 0 {
+        const DATA_REF: u16 = 0x800; // has_oversize flag
+        if (firehose_flags & DATA_REF) != 0 {
             debug!("[macos-unifiedlogs] Signpost Firehose log chunk has has_oversize flag");
             let (firehose_input, data_ref_value) = take(size_of::<u32>())(input)?;
             let (_, firehose_data_ref) = le_u32(data_ref_value)?;
@@ -131,8 +131,8 @@ impl FirehoseSignpost {
             input = firehose_input;
         }
 
-        let has_name = 0x8000;
-        if (firehose_flags & has_name) != 0 {
+        const HAS_NAME: u16 = 0x8000;
+        if (firehose_flags & HAS_NAME) != 0 {
             debug!("[macos-unifiedlogs] Signpost Firehose log chunk has has_name flag");
             let (firehose_input, signpost_name) = take(size_of::<u32>())(input)?;
             let (_, firehose_signpost_name) = le_u32(signpost_name)?;
@@ -318,12 +318,12 @@ mod tests {
         test_path.push("Signpost/0000000000000001.tracev3");
         let log_data = parse_log(&test_path.display().to_string()).unwrap();
 
-        let activity_type = 0x6;
+        const ACTIVITY_TYPE: u8 = 0x6;
 
         for catalog_data in log_data.catalog_data {
             for preamble in catalog_data.firehose {
                 for firehose in preamble.public_data {
-                    if firehose.unknown_log_activity_type == activity_type {
+                    if firehose.unknown_log_activity_type == ACTIVITY_TYPE {
                         let (_, message_data) = FirehoseSignpost::get_firehose_signpost(
                             &firehose.firehose_signpost,
                             &string_results,

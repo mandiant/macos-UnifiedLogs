@@ -40,14 +40,14 @@ impl UUIDText {
             footer_data: Vec::new(),
         };
 
-        let expected_uuidtext_signature = 0x66778899;
+        const EXPECTED_UUIDTEXT_SIGNATURE: u32 = 0x66778899;
         let (input, signature) = take(size_of::<u32>())(data)?;
         let (_, uuidtext_signature) = le_u32(signature)?;
 
-        if expected_uuidtext_signature != uuidtext_signature {
+        if EXPECTED_UUIDTEXT_SIGNATURE != uuidtext_signature {
             error!(
                 "[macos-unifiedlogs] Incorrect UUIDText header signature. Expected {}. Got: {}",
-                expected_uuidtext_signature, uuidtext_signature
+                EXPECTED_UUIDTEXT_SIGNATURE, uuidtext_signature
             );
             return Err(nom::Err::Incomplete(Needed::Unknown));
         }
