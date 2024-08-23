@@ -198,7 +198,7 @@ pub fn collect_strings(path: &str) -> Result<Vec<UUIDText>, ParserError> {
                 full_path.display().to_string()
             );
 
-            let uuid_results = UUIDText::parse_uuidtext(&buffer);
+            let uuid_results = UUIDText::parse(&buffer);
             let mut uuidtext_data = match uuid_results {
                 Ok((_, results)) => results,
                 Err(err) => {

@@ -5,10 +5,13 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
+use crate::Bytes;
 use log::error;
-use nom::bytes::complete::take;
+use nom::combinator::map;
+use nom::multi::many_m_n;
 use nom::number::complete::le_u32;
 use nom::Needed;
+use nom::{bytes::complete::take, sequence::tuple};
 use serde::{Deserialize, Serialize};
 use std::mem::size_of;
 
@@ -20,78 +23,99 @@ pub struct UUIDText {
     pub unknown_minor_version: u32,
     pub number_entries: u32,
     pub entry_descriptors: Vec<UUIDTextEntry>,
-    pub footer_data: Vec<u8>, // Collection of strings containing sender process/library with end of string characters
+    /// Collection of strings containing sender process/library with end of string characters
+    pub footer_data: Vec<u8>,
 }
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UUIDTextEntry {
     pub range_start_offset: u32,
     pub entry_size: u32,
 }
+
 impl UUIDText {
     /// Parse the UUID files in uuidinfo directory. Contains the base log message string
-    pub fn parse_uuidtext(data: &[u8]) -> nom::IResult<&[u8], UUIDText> {
-        let mut uuidtext_data = UUIDText {
-            uuid: String::new(),
-            signature: 0,
-            unknown_major_version: 0,
-            unknown_minor_version: 0,
-            number_entries: 0,
-            entry_descriptors: Vec::new(),
-            footer_data: Vec::new(),
-        };
-
+    pub fn parse(input: Bytes<'_>) -> nom::IResult<Bytes<'_>, UUIDText> {
         const EXPECTED_UUIDTEXT_SIGNATURE: u32 = 0x66778899;
-        let (input, signature) = take(size_of::<u32>())(data)?;
-        let (_, uuidtext_signature) = le_u32(signature)?;
+        let (input, signature) = le_u32(input)?;
 
-        if EXPECTED_UUIDTEXT_SIGNATURE != uuidtext_signature {
+        if EXPECTED_UUIDTEXT_SIGNATURE != signature {
             error!(
                 "[macos-unifiedlogs] Incorrect UUIDText header signature. Expected {}. Got: {}",
-                EXPECTED_UUIDTEXT_SIGNATURE, uuidtext_signature
+                EXPECTED_UUIDTEXT_SIGNATURE, signature
             );
             return Err(nom::Err::Incomplete(Needed::Unknown));
         }
 
-        let (input, unknown_major_version) = take(size_of::<u32>())(input)?;
-        let (input, unknown_minor_version) = take(size_of::<u32>())(input)?;
-        let (mut input, number_entries) = take(size_of::<u32>())(input)?;
+        let (input, (unknown_major_version, unknown_minor_version, number_entries)) =
+            tuple((le_u32, le_u32, le_u32))(input)?;
 
-        let (_, uuidtext_unknown_major_version) = le_u32(unknown_major_version)?;
-        let (_, uuidtext_unknown_minor_version) = le_u32(unknown_minor_version)?;
-        let (_, uuidtext_number_entries) = le_u32(number_entries)?;
+        let (input, entry_descriptors) = many_m_n(
+            number_entries as _,
+            number_entries as _,
+            map(
+                tuple((le_u32, le_u32)),
+                |(range_start_offset, entry_size)| UUIDTextEntry {
+                    range_start_offset,
+                    entry_size,
+                },
+            ),
+        )(input)?;
 
-        uuidtext_data.signature = uuidtext_signature;
-        uuidtext_data.unknown_major_version = uuidtext_unknown_major_version;
-        uuidtext_data.unknown_minor_version = uuidtext_unknown_minor_version;
-        uuidtext_data.number_entries = uuidtext_number_entries;
+        let footer_data = input.to_vec();
 
-        let mut count = 0;
-        while count < uuidtext_number_entries {
-            let (entry_input, range_start_offset) = take(size_of::<u32>())(input)?;
-            let (entry_input, entry_size) = take(size_of::<u32>())(entry_input)?;
-
-            let (_, uuidtext_range_start_offset) = le_u32(range_start_offset)?;
-            let (_, uuidtext_entry_size) = le_u32(entry_size)?;
-
-            let entry_data = UUIDTextEntry {
-                range_start_offset: uuidtext_range_start_offset,
-                entry_size: uuidtext_entry_size,
-            };
-            uuidtext_data.entry_descriptors.push(entry_data);
-
-            input = entry_input;
-            count += 1;
-        }
-        uuidtext_data.footer_data = input.to_vec();
-        Ok((input, uuidtext_data))
+        Ok((
+            input,
+            UUIDText {
+                uuid: "TODO".to_string(),
+                signature,
+                unknown_major_version,
+                unknown_minor_version,
+                number_entries,
+                entry_descriptors,
+                footer_data,
+            },
+        ))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::uuidtext::UUIDText;
+    use super::*;
     use std::fs;
     use std::path::PathBuf;
+
+    #[test]
+    fn test_parse_uuidtext_big_sur_() -> anyhow::Result<()> {
+        let input = &[
+            0x99, 0x88, 0x77, 0x66, // Signature
+            0x02, 0x00, 0x00, 0x00, // Unknown Major Version
+            0x01, 0x00, 0x00, 0x00, // Unknown Minor Version
+            0x02, 0x00, 0x00, 0x00, // Number of Entries
+            0x30, 0x7D, 0x00, 0x00, // Entry 1 Range Start Offset
+            0x69, 0x02, 0x00, 0x00, // Entry 1 Size
+            0x33, 0x74, 0x00, 0x00, // Entry 2 Range Start Offset
+            0xFD, 0x08, 0x00, 0x00, // Entry 2 Size
+            0x01, 0x02, 0x03, 0x04, 0x05, // Footer Data
+        ];
+
+        let (_, uuidtext_data) = UUIDText::parse(input)?;
+        assert_eq!(uuidtext_data.signature, 0x66778899);
+        assert_eq!(uuidtext_data.unknown_major_version, 2);
+        assert_eq!(uuidtext_data.unknown_minor_version, 1);
+        assert_eq!(uuidtext_data.number_entries, 2);
+        assert_eq!(uuidtext_data.entry_descriptors[0].range_start_offset, 32048);
+        assert_eq!(uuidtext_data.entry_descriptors[0].entry_size, 617);
+        assert_eq!(uuidtext_data.entry_descriptors[1].range_start_offset, 29747);
+        assert_eq!(uuidtext_data.entry_descriptors[1].entry_size, 2301);
+        assert_eq!(uuidtext_data.footer_data.len(), 5);
+        assert_eq!(
+            uuidtext_data.footer_data,
+            vec![0x01, 0x02, 0x03, 0x04, 0x05]
+        );
+
+        Ok(())
+    }
 
     #[cfg(feature = "test_data")]
     #[test]
@@ -101,7 +125,7 @@ mod tests {
 
         let buffer = fs::read(test_path).unwrap();
 
-        let (_, uuidtext_data) = UUIDText::parse_uuidtext(&buffer).unwrap();
+        let (_, uuidtext_data) = UUIDText::parse(&buffer).unwrap();
         assert_eq!(uuidtext_data.signature, 0x66778899);
         assert_eq!(uuidtext_data.unknown_major_version, 2);
         assert_eq!(uuidtext_data.unknown_minor_version, 1);
@@ -122,7 +146,7 @@ mod tests {
 
         let buffer = fs::read(test_path).unwrap();
 
-        let (_, uuidtext_data) = UUIDText::parse_uuidtext(&buffer).unwrap();
+        let (_, uuidtext_data) = UUIDText::parse(&buffer).unwrap();
         assert_eq!(uuidtext_data.signature, 0x66778899);
         assert_eq!(uuidtext_data.unknown_major_version, 2);
         assert_eq!(uuidtext_data.unknown_minor_version, 1);
@@ -142,7 +166,7 @@ mod tests {
             .push("tests/test_data/Bad Data/UUIDText/Bad_Header_1FE459BBDC3E19BBF82D58415A2AE9");
 
         let buffer = fs::read(test_path).unwrap();
-        let (_, _) = UUIDText::parse_uuidtext(&buffer).unwrap();
+        let (_, _) = UUIDText::parse(&buffer).unwrap();
     }
 
     #[cfg(feature = "test_data")]
@@ -154,7 +178,7 @@ mod tests {
             .push("tests/test_data/Bad Data/UUIDText/Bad_Content_1FE459BBDC3E19BBF82D58415A2AE9");
 
         let buffer = fs::read(test_path).unwrap();
-        let (_, _) = UUIDText::parse_uuidtext(&buffer).unwrap();
+        let (_, _) = UUIDText::parse(&buffer).unwrap();
     }
 
     #[cfg(feature = "test_data")]
@@ -165,6 +189,6 @@ mod tests {
         test_path.push("tests/test_data/Bad Data/UUIDText/Badfile.txt");
 
         let buffer = fs::read(test_path).unwrap();
-        let (_, _) = UUIDText::parse_uuidtext(&buffer).unwrap();
+        let (_, _) = UUIDText::parse(&buffer).unwrap();
     }
 }
