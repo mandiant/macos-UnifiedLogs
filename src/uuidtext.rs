@@ -67,7 +67,7 @@ impl UUIDText {
         Ok((
             input,
             UUIDText {
-                uuid: "TODO".to_string(),
+                uuid: String::new(),
                 signature,
                 unknown_major_version,
                 unknown_minor_version,
