@@ -6,9 +6,11 @@
 // See the License for the specific language governing permissions and limitations under the License.
 
 use crate::util::extract_string;
+use crate::Bytes;
 use log::error;
 use nom::bytes::complete::take;
 use nom::number::complete::{be_u128, le_u16, le_u32, le_u64};
+use nom::sequence::tuple;
 use nom::Needed;
 use serde::{Deserialize, Serialize};
 use std::mem::size_of;
@@ -110,8 +112,9 @@ impl SharedCacheStrings {
     }
 
     // Get range data, used by log entries to determine where the base string entry is located.
-    fn get_ranges<'a>(data: &'a [u8], version: u16) -> nom::IResult<&'a [u8], RangeDescriptor> {
-        let version_number: u16 = 2;
+    fn get_ranges<'a>(data: Bytes<'_>, version: u16) -> nom::IResult<Bytes<'_>, RangeDescriptor> {
+        const VERSION_NUMBER: u16 = 2;
+
         let mut input = data;
         let mut range_data = RangeDescriptor {
             range_offset: 0,
@@ -124,7 +127,7 @@ impl SharedCacheStrings {
         // Version 2 (Monterey and higher) changed the Range format a bit
         // range offset is now 8 bytes (vs 4 bytes) and starts at beginning
         // The uuid index was moved to end
-        range_data.range_offset = if version == version_number {
+        range_data.range_offset = if version == VERSION_NUMBER {
             let (data_input, value_range_offset) = take(size_of::<u64>())(input)?;
             input = data_input;
             let (_, dsc_range_offset) = le_u64(value_range_offset)?;
@@ -151,7 +154,7 @@ impl SharedCacheStrings {
         range_data.range_size = dsc_range_size;
 
         // UUID index is now located at the end of the format (instead of beginning)
-        if version == version_number {
+        if version == VERSION_NUMBER {
             let (version_two_input, unknown) = take(size_of::<u64>())(input)?;
             let (_, dsc_unknown) = le_u64(unknown)?;
             range_data.unknown_uuid_index = dsc_unknown;
@@ -161,7 +164,7 @@ impl SharedCacheStrings {
     }
 
     // Get UUID entries related to ranges
-    fn get_uuids<'a>(data: &'a [u8], version: u16) -> nom::IResult<&'a [u8], UUIDDescriptor> {
+    fn get_uuids<'a>(data: Bytes<'_>, version: u16) -> nom::IResult<Bytes<'_>, UUIDDescriptor> {
         let mut uuid_data = UUIDDescriptor {
             text_offset: 0,
             text_size: 0,
@@ -170,9 +173,10 @@ impl SharedCacheStrings {
             path_string: String::new(),
         };
 
-        let version_number: u16 = 2;
+        const VERSION_NUMBER: u16 = 2;
+
         let mut input = data;
-        if version == version_number {
+        if version == VERSION_NUMBER {
             let (version_two_input, text_offset) = take(size_of::<u64>())(input)?;
             let (_, dsc_text_offset) = le_u64(text_offset)?;
             uuid_data.text_offset = dsc_text_offset;
@@ -222,6 +226,53 @@ mod tests {
     use crate::dsc::SharedCacheStrings;
     use std::fs;
     use std::path::PathBuf;
+
+    #[test]
+    fn test_parse_dsc_version_one_() -> anyhow::Result<()> {
+        let input = &[
+            0x68, 0x63, 0x73, 0x64, // Signature
+            0x01, 0x00, 0x00, 0x00, // Major - Minor
+            0x01, 0x00, 0x00, 0x00, // number of ranges
+            0x01, 0x00, 0x00, 0x00, // number of uuids
+            0x00, 0x00, 0x00, 0x00, // Unknown UUID index
+            0xa8, 0x39, 0x1, 0x0, // Range offset
+            0x3c, 0x0, 0x0, 0x0, // Data offset
+            0x5, 0x0, 0x0, 0x0, // Range size
+            0x0, 0x20, 0x1, 0x0, //  text offset
+            0x0, 0x20, 0x0, 0x0, //  text size
+            0x4d, 0xf6, 0xd8, 0xf5, 0xd9, 0xc2, 0x3a, 0x96, 0x8d, 0xe4, 0x5e, 0x99, 0xd6, 0xb7,
+            0x3d, 0xc8, // UUID
+            0x45, 0x0, 0x0, 0x0, // Path offset
+            0x48, 0x65, 0x4c, 0x4c, 0x30, // a string "HeLL0"
+            0x00, 0x00, 0x00, 0x00, // from empty data (just for fun)
+            0x68, 0xc3, 0xa9, 0x6c, 0x6c, 0x6f, // Path string "héllo"
+        ];
+
+        let (_, results) = SharedCacheStrings::parse_dsc(input)?;
+
+        assert_eq!(results.signature, 1685283688); // hcsd
+        assert_eq!(results.major_version, 1);
+        assert_eq!(results.minor_version, 0);
+        assert_eq!(results.dsc_uuid, "");
+        assert_eq!(results.number_ranges, 1);
+        assert_eq!(results.number_uuids, 1);
+
+        assert_eq!(results.ranges.len(), 1);
+        assert_eq!(results.ranges[0].unknown_uuid_index, 0);
+        assert_eq!(results.ranges[0].range_offset, 80296);
+        assert_eq!(results.ranges[0].data_offset, 60);
+        assert_eq!(results.ranges[0].range_size, 5);
+        assert_eq!(results.ranges[0].strings, [0x48, 0x65, 0x4c, 0x4c, 0x30]);
+
+        assert_eq!(results.uuids.len(), 1);
+        assert_eq!(results.uuids[0].text_offset, 73728);
+        assert_eq!(results.uuids[0].text_size, 8192);
+        assert_eq!(results.uuids[0].uuid, "4DF6D8F5D9C23A968DE45E99D6B73DC8");
+        assert_eq!(results.uuids[0].path_offset, 69);
+        assert_eq!(results.uuids[0].path_string, "héllo");
+
+        Ok(())
+    }
 
     #[cfg(feature = "test_data")]
     #[test]
