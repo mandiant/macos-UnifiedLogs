@@ -96,8 +96,8 @@ pub(crate) fn extract_string_size(data: &[u8], message_size: u64) -> nom::IResul
 }
 
 /// Extract strings that contain end of string characters
-pub(crate) fn extract_string(data: &[u8]) -> nom::IResult<&[u8], String> {
-    let last_value = data.last();
+pub(crate) fn extract_string(input: &[u8]) -> nom::IResult<&[u8], String> {
+    let last_value = input.last();
     match last_value {
         Some(value) => {
             let has_end_of_string: u8 = 0;
@@ -105,8 +105,7 @@ pub(crate) fn extract_string(data: &[u8]) -> nom::IResult<&[u8], String> {
             // If message data does not end with end of string character (0)
             // just grab everything and convert what we have to string
             if value != &has_end_of_string {
-                let (input, path) = take(data.len())(data)?;
-                let path_string = from_utf8(path);
+                let path_string = from_utf8(input);
                 match path_string {
                     Ok(results) => return Ok((input, results.to_string())),
                     Err(err) => {
@@ -121,11 +120,11 @@ pub(crate) fn extract_string(data: &[u8]) -> nom::IResult<&[u8], String> {
         }
         None => {
             error!("[macos-unifiedlogs] Cannot extract string. Empty input.");
-            return Ok((data, String::from("Cannot extract string. Empty input.")));
+            return Ok((input, String::from("Cannot extract string. Empty input.")));
         }
     }
 
-    let (input, path) = take_while(|b: u8| b != 0)(data)?;
+    let (input, path) = take_while(|b: u8| b != 0)(input)?;
     let path_string = from_utf8(path);
     match path_string {
         Ok(results) => {
