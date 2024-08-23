@@ -271,7 +271,7 @@ pub fn collect_shared_strings(path: &str) -> Result<Vec<SharedCacheStrings>, Par
             }
         };
 
-        let shared_strings_data_results = SharedCacheStrings::parse_dsc(&buffer);
+        let shared_strings_data_results = SharedCacheStrings::parse(&buffer);
         let mut shared_strings_data = match shared_strings_data_results {
             Ok((_, results)) => results,
             Err(err) => {
