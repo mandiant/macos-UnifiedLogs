@@ -100,9 +100,9 @@ pub fn format_firehose_log_message(
             continue;
         }
 
-        let private_strings = [0x1, 0x21, 0x31, 0x41];
-        let private_number = 0x1;
-        let private_message = 0x8000;
+        const PRIVATE_STRINGS: [u8; 4] = [0x1, 0x21, 0x31, 0x41];
+        const PRIVATE_NUMBER: u8 = 0x1;
+        const PRIVATE_MESSAGE: u16 = 0x8000;
         if formatter_string.starts_with("%{") {
             // If item type is [0x1, 0x21, 0x31, 0x41] and the value is zero. Its appears to be a private string
             /*
@@ -153,18 +153,18 @@ pub fn format_firehose_log_message(
                     Duration: 1.835s, DNS @0.000s took 0.018s, TCP @0.018s took 0.015s, TLS took 0.040s
                     bytes in/out: 9003/941, packets in/out: 8/8, rtt: 0.010s, retransmitted packets: 0, out-of-order packets: 0
             */
-            if private_strings.contains(&item_message[item_index].item_type)
+            if PRIVATE_STRINGS.contains(&item_message[item_index].item_type)
                 && item_message[item_index].message_strings.is_empty()
                 && item_message[item_index].item_size == 0
-                || (item_message[item_index].item_type == private_number
-                    && item_message[item_index].item_size == private_message)
+                || (item_message[item_index].item_type == PRIVATE_NUMBER
+                    && item_message[item_index].item_size == PRIVATE_MESSAGE)
             {
                 formatted_log_message = String::from("<private>");
             } else {
                 let results = parse_type_formatter(
                     formatter_string,
                     item_message,
-                    &item_message[item_index].item_type,
+                    item_message[item_index].item_type,
                     item_index,
                 );
                 match results {
@@ -193,18 +193,18 @@ pub fn format_firehose_log_message(
                     format:         kext submap [0x%lx - 0x%lx], kernel text [0x%lx - 0x%lx]
                 kext submap [0x<private> - 0x<private>], kernel text [0x<private> - 0x<private>]
             */
-            if private_strings.contains(&item_message[item_index].item_type)
+            if PRIVATE_STRINGS.contains(&item_message[item_index].item_type)
                 && item_message[item_index].message_strings.is_empty()
                 && item_message[item_index].item_size == 0
-                || (item_message[item_index].item_type == private_number
-                    && item_message[item_index].item_size == private_message)
+                || (item_message[item_index].item_type == PRIVATE_NUMBER
+                    && item_message[item_index].item_size == PRIVATE_MESSAGE)
             {
                 formatted_log_message = String::from("<private>");
             } else {
                 let results = parse_formatter(
                     formatter_string,
                     item_message,
-                    &item_message[item_index].item_type,
+                    item_message[item_index].item_type,
                     item_index,
                 );
                 match results {
@@ -221,8 +221,8 @@ pub fn format_firehose_log_message(
         }
 
         // Also seen number type value 0 also used for dynamic width/precision value
-        let dynamic_precision_value = 0x0;
-        if (item_message[item_index].item_type == dynamic_precision_value
+        const DYNAMIC_PRECISION_VALUE: u8 = 0x0;
+        if (item_message[item_index].item_type == DYNAMIC_PRECISION_VALUE
             && item_message[item_index].item_size == 0)
             && formatter_string.contains("%*")
         {
@@ -260,14 +260,14 @@ pub fn format_firehose_log_message(
 fn parse_formatter<'a>(
     formatter: &'a str,
     message_value: &'a [FirehoseItemInfo],
-    item_type: &'a u8,
+    item_type: u8,
     item_index: usize,
 ) -> nom::IResult<&'a str, String> {
     let mut index = item_index;
 
-    let precision_items = [0x10, 0x12];
+    const PRECISION_ITEMS: [u8; 2] = [0x10, 0x12];
     let mut precision_value = 0;
-    if precision_items.contains(item_type) {
+    if PRECISION_ITEMS.contains(&item_type) {
         precision_value = message_value[index].item_size as usize;
         index += 1;
     }
@@ -330,8 +330,8 @@ fn parse_formatter<'a>(
 
     if formatter_message.starts_with('*') {
         // Also seen number type value 0 used for dynamic width/precision value
-        let dynamic_precision_value = 0x0;
-        if item_type == &dynamic_precision_value && message_value[index].item_size == 0 {
+        const DYNAMIC_PRECISION_VALUE: u8 = 0x0;
+        if item_type == DYNAMIC_PRECISION_VALUE && message_value[index].item_size == 0 {
             precision_value = message_value[index].item_size as usize;
             index += 1;
             message_value[index]
@@ -451,7 +451,7 @@ fn parse_formatter<'a>(
 fn parse_type_formatter<'a>(
     formatter: &'a str,
     message_value: &'a [FirehoseItemInfo],
-    item_type: &'a u8,
+    item_type: u8,
     item_index: usize,
 ) -> nom::IResult<&'a str, String> {
     let (format, format_type) = take_until("}")(formatter)?;
@@ -1112,7 +1112,7 @@ mod tests {
         let (_, formatted_results) = parse_formatter(
             test_format,
             &test_message,
-            &test_message[0].item_type,
+            test_message[0].item_type,
             item_index,
         )
         .unwrap();
@@ -1122,7 +1122,7 @@ mod tests {
         let (_, formatted_results) = parse_formatter(
             test_format,
             &test_message,
-            &test_message[0].item_type,
+            test_message[0].item_type,
             item_index,
         )
         .unwrap();
@@ -1132,7 +1132,7 @@ mod tests {
         let (_, formatted_results) = parse_formatter(
             test_format,
             &test_message,
-            &test_message[0].item_type,
+            test_message[0].item_type,
             item_index,
         )
         .unwrap();
@@ -1143,7 +1143,7 @@ mod tests {
         let (_, formatted_results) = parse_formatter(
             test_format,
             &test_message,
-            &test_message[0].item_type,
+            test_message[0].item_type,
             item_index,
         )
         .unwrap();
@@ -1153,7 +1153,7 @@ mod tests {
         let (_, formatted_results) = parse_formatter(
             test_format,
             &test_message,
-            &test_message[0].item_type,
+            test_message[0].item_type,
             item_index,
         )
         .unwrap();
@@ -1164,7 +1164,7 @@ mod tests {
         let (_, formatted_results) = parse_formatter(
             test_format,
             &test_message,
-            &test_message[0].item_type,
+            test_message[0].item_type,
             item_index,
         )
         .unwrap();
@@ -1175,7 +1175,7 @@ mod tests {
         let (_, formatted_results) = parse_formatter(
             test_float,
             &test_message,
-            &test_message[0].item_type,
+            test_message[0].item_type,
             item_index,
         )
         .unwrap();
@@ -1185,7 +1185,7 @@ mod tests {
         let (_, formatted_results) = parse_formatter(
             test_float,
             &test_message,
-            &test_message[0].item_type,
+            test_message[0].item_type,
             item_index,
         )
         .unwrap();
@@ -1195,7 +1195,7 @@ mod tests {
         let (_, formatted_results) = parse_formatter(
             test_float,
             &test_message,
-            &test_message[0].item_type,
+            test_message[0].item_type,
             item_index,
         )
         .unwrap();
@@ -1206,7 +1206,7 @@ mod tests {
         let (_, formatted_results) = parse_formatter(
             test_float,
             &test_message,
-            &test_message[0].item_type,
+            test_message[0].item_type,
             item_index,
         )
         .unwrap();
@@ -1217,7 +1217,7 @@ mod tests {
         let (_, formatted_results) = parse_formatter(
             test_int,
             &test_message,
-            &test_message[0].item_type,
+            test_message[0].item_type,
             item_index,
         )
         .unwrap();
@@ -1228,7 +1228,7 @@ mod tests {
         let (_, formatted_results) = parse_formatter(
             test_float,
             &test_message,
-            &test_message[0].item_type,
+            test_message[0].item_type,
             item_index,
         )
         .unwrap();
@@ -1239,7 +1239,7 @@ mod tests {
         let (_, formatted_results) = parse_formatter(
             test_float,
             &test_message,
-            &test_message[0].item_type,
+            test_message[0].item_type,
             item_index,
         )
         .unwrap();
@@ -1250,7 +1250,7 @@ mod tests {
         let (_, formatted_results) = parse_formatter(
             test_string,
             &test_message,
-            &test_message[0].item_type,
+            test_message[0].item_type,
             item_index,
         )
         .unwrap();
@@ -1261,7 +1261,7 @@ mod tests {
         let (_, formatted_results) = parse_formatter(
             test_string,
             &test_message,
-            &test_message[0].item_type,
+            test_message[0].item_type,
             item_index,
         )
         .unwrap();
@@ -1279,7 +1279,7 @@ mod tests {
         let (_, formatted_results) = parse_formatter(
             test_string,
             &test_message,
-            &test_message[0].item_type,
+            test_message[0].item_type,
             item_index,
         )
         .unwrap();
@@ -1302,7 +1302,7 @@ mod tests {
         let (_, formatted_results) = parse_type_formatter(
             test_format,
             &test_message,
-            &test_message[0].item_type,
+            test_message[0].item_type,
             item_index,
         )
         .unwrap();
@@ -1322,7 +1322,7 @@ mod tests {
         let (_, formatted_results) = parse_type_formatter(
             test_format,
             &test_message,
-            &test_message[0].item_type,
+            test_message[0].item_type,
             item_index,
         )
         .unwrap();

@@ -16,20 +16,17 @@ use std::fs;
 
 /// Parse the UUID files on a live system
 pub fn collect_strings_system() -> Result<Vec<UUIDText>, ParserError> {
-    let uuidtext_path = String::from("/private/var/db/uuidtext");
-    collect_strings(&uuidtext_path)
+    collect_strings("/private/var/db/uuidtext")
 }
 
 /// Parse the dsc (shared cache strings) files on a live system
 pub fn collect_shared_strings_system() -> Result<Vec<SharedCacheStrings>, ParserError> {
-    let dsc_path = String::from("/private/var/db/uuidtext/dsc");
-    collect_shared_strings(&dsc_path)
+    collect_shared_strings("/private/var/db/uuidtext/dsc")
 }
 
 /// Parse the timesync files on a live system
 pub fn collect_timesync_system() -> Result<Vec<TimesyncBoot>, ParserError> {
-    let timesync = String::from("/private/var/db/diagnostics/timesync");
-    collect_timesync(&timesync)
+    collect_timesync("/private/var/db/diagnostics/timesync")
 }
 
 /// Parse a tracev3 file and return the deconstructed log data
@@ -76,7 +73,6 @@ pub fn iter_log<'a>(
         exclude_missing,
     )
 }
-
 
 /// Reconstruct Unified Log entries using the strings data, cached strings data, timesync data, and unified log. Provide bool to ignore log entries that are not able to be recontructed (additional tracev3 files needed)
 /// Return a reconstructed log entries and any leftover Unified Log entries that could not be reconstructed (data may be stored in other tracev3 files)
@@ -202,7 +198,7 @@ pub fn collect_strings(path: &str) -> Result<Vec<UUIDText>, ParserError> {
                 full_path.display().to_string()
             );
 
-            let uuid_results = UUIDText::parse_uuidtext(&buffer);
+            let uuid_results = UUIDText::parse(&buffer);
             let mut uuidtext_data = match uuid_results {
                 Ok((_, results)) => results,
                 Err(err) => {
@@ -275,7 +271,7 @@ pub fn collect_shared_strings(path: &str) -> Result<Vec<SharedCacheStrings>, Par
             }
         };
 
-        let shared_strings_data_results = SharedCacheStrings::parse_dsc(&buffer);
+        let shared_strings_data_results = SharedCacheStrings::parse(&buffer);
         let mut shared_strings_data = match shared_strings_data_results {
             Ok((_, results)) => results,
             Err(err) => {
@@ -375,18 +371,21 @@ mod tests {
 
     use std::path::PathBuf;
 
+    #[cfg(feature = "test_data")]
     #[test]
     fn test_collect_strings_system() {
         let uuidtext_results = collect_strings_system().unwrap();
         assert!(uuidtext_results.len() > 100);
     }
 
+    #[cfg(feature = "test_data")]
     #[test]
     fn test_collect_timesync_system() {
         let timesync_results = collect_timesync_system().unwrap();
         assert!(timesync_results.len() > 1);
     }
 
+    #[cfg(feature = "test_data")]
     #[test]
     fn test_collect_timesync_archive() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -409,6 +408,7 @@ mod tests {
         assert_eq!(timesync_data[0].timezone_offset_mins, 0);
     }
 
+    #[cfg(feature = "test_data")]
     #[test]
     fn test_collect_shared_strings_system() {
         let shared_strings_results = collect_shared_strings_system().unwrap();
@@ -418,6 +418,7 @@ mod tests {
         assert!(shared_strings_results[0].number_uuids > 1000);
     }
 
+    #[cfg(feature = "test_data")]
     #[test]
     fn test_shared_strings_archive() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -437,6 +438,7 @@ mod tests {
         assert_eq!(shared_strings_results[0].uuids.len(), 1976);
     }
 
+    #[cfg(feature = "test_data")]
     #[test]
     fn test_collect_strings_archive() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -453,6 +455,7 @@ mod tests {
         assert_eq!(strings_results[0].unknown_major_version, 2);
     }
 
+    #[cfg(feature = "test_data")]
     #[test]
     fn test_parse_log() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -474,6 +477,7 @@ mod tests {
         assert_eq!(log_data.catalog_data[0].statedump.len(), 0);
     }
 
+    #[cfg(feature = "test_data")]
     #[test]
     fn test_build_log() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));

@@ -251,8 +251,8 @@ impl FirehosePreamble {
     /// Collect all the Firehose items (log message entries) in the log entry (chunk)
     pub fn collect_items<'a>(
         data: &'a [u8],
-        firehose_number_items: &u8,
-        firehose_flags: &u16,
+        firehose_number_items: u8,
+        firehose_flags: u16,
     ) -> nom::IResult<&'a [u8], FirehoseItemData> {
         /*
            Firehose Items are message types related to the log entry (chunk). There appear to be four (4) types:
@@ -275,7 +275,7 @@ impl FirehosePreamble {
         let sensitive_items = [0x45];
         let object_items = [0x40, 0x42];
 
-        while &item_count < firehose_number_items {
+        while item_count < firehose_number_items {
             // Get non-number values first since the values are at the end of the of the log (chunk) entry data
             let (item_value_input, mut item) =
                 FirehosePreamble::get_firehose_items(firehose_input)?;
@@ -312,18 +312,18 @@ impl FirehosePreamble {
         // Backtrace data appears before Firehose item strings
         // It only exists if log entry has_context_data flag set
         // Backtrace data can also exist in Oversize log entries. However, Oversize entries do not have has_context_data flags. Instead we check for possible signature
-        let has_context_data: u16 = 0x1000;
-        let backtrace_signature_size: usize = 3;
+        const HAS_CONTEXT_DATA: u16 = 0x1000;
+        const BACKTRACE_SIGNATURE_SIZE: usize = 3;
 
-        if (firehose_flags & has_context_data) != 0 {
+        if (firehose_flags & HAS_CONTEXT_DATA) != 0 {
             debug!("[macos-unifiedlogs] Identified Backtrace data in Firehose log chunk");
             let (backtrace_input, backtrace_data) =
                 FirehosePreamble::get_backtrace_data(firehose_input)?;
             firehose_input = backtrace_input;
             firehose_item_data.backtrace_strings = backtrace_data;
-        } else if firehose_input.len() > backtrace_signature_size {
+        } else if firehose_input.len() > BACKTRACE_SIGNATURE_SIZE {
             let backtrace_signature = [1, 0, 18];
-            let (_, backtrace_sig) = take(backtrace_signature_size)(firehose_input)?;
+            let (_, backtrace_sig) = take(BACKTRACE_SIGNATURE_SIZE)(firehose_input)?;
             if backtrace_signature == backtrace_sig {
                 let (backtrace_input, backtrace_data) =
                     FirehosePreamble::get_backtrace_data(firehose_input)?;
@@ -371,7 +371,7 @@ impl FirehosePreamble {
             if string_item.contains(&item.item_type) {
                 let (item_value_input, message_string) = FirehosePreamble::parse_item_string(
                     firehose_input,
-                    &item.item_type,
+                    item.item_type,
                     item.message_string_size,
                 )?;
                 firehose_input = item_value_input;
@@ -590,19 +590,19 @@ impl FirehosePreamble {
         if firehose_unknown_log_activity_type == activity {
             let (activity_data, activity) = FirehoseActivity::parse_activity(
                 firehose_input,
-                &firehose_flags,
-                &firehose_unknown_log_type,
+                firehose_flags,
+                firehose_unknown_log_type,
             )?;
             firehose_input = activity_data;
             firehose_results.firehose_activity = activity;
         } else if firehose_unknown_log_activity_type == nonactivity {
             let (non_activity_data, non_activity) =
-                FirehoseNonActivity::parse_non_activity(firehose_input, &firehose_flags)?;
+                FirehoseNonActivity::parse_non_activity(firehose_input, firehose_flags)?;
             firehose_input = non_activity_data;
             firehose_results.firehose_non_activity = non_activity;
         } else if firehose_unknown_log_activity_type == signpost {
             let (process_data, firehose_signpost) =
-                FirehoseSignpost::parse_signpost(firehose_input, &firehose_flags)?;
+                FirehoseSignpost::parse_signpost(firehose_input, firehose_flags)?;
             firehose_input = process_data;
             firehose_results.firehose_signpost = firehose_signpost;
         } else if firehose_unknown_log_activity_type == loss {
@@ -645,11 +645,8 @@ impl FirehosePreamble {
         firehose_results.unknown_item = firehose_unknown_item;
         firehose_results.number_items = firehose_number_items;
 
-        let (_, firehose_item_data) = FirehosePreamble::collect_items(
-            firehose_input,
-            &firehose_number_items,
-            &firehose_flags,
-        )?;
+        let (_, firehose_item_data) =
+            FirehosePreamble::collect_items(firehose_input, firehose_number_items, firehose_flags)?;
 
         firehose_results.message = firehose_item_data;
 
@@ -779,7 +776,7 @@ impl FirehosePreamble {
     // Parse the item string
     fn parse_item_string<'a>(
         data: &'a [u8],
-        item_type: &u8,
+        item_type: u8,
         message_size: u16,
     ) -> nom::IResult<&'a [u8], String> {
         // If message item size is greater than the remaining data, just use the rest of the data
@@ -791,12 +788,12 @@ impl FirehosePreamble {
         let arbitrary: Vec<u8> = vec![0x30, 0x31, 0x32];
         // 0x30, 0x31, and 0x32 represent arbitrary data, need to be decoded again
         // Ex: name: %{private, mask.hash, mdnsresponder:domain_name}.*P, type: A, rdata: %{private, mask.hash, network:in_addr}.4P
-        if arbitrary.contains(item_type) {
+        if arbitrary.contains(&item_type) {
             return Ok((input, encode_standard(message_data)));
         }
 
-        let base64_raw_bytes: u8 = 0xf2;
-        if item_type == &base64_raw_bytes {
+        const BASE64_RAW_BYTES: u8 = 0xf2;
+        if item_type == BASE64_RAW_BYTES {
             return Ok((input, encode_standard(message_data)));
         }
 
@@ -3079,7 +3076,7 @@ mod tests {
         let test_item = 34;
         let test_size = 8;
         let (_, results) =
-            FirehosePreamble::parse_item_string(&test_data, &test_item, test_size).unwrap();
+            FirehosePreamble::parse_item_string(&test_data, test_item, test_size).unwrap();
         assert_eq!(results, "796.100");
     }
 
@@ -3283,13 +3280,14 @@ mod tests {
         let firehose_number_items = 1;
         let firehose_flags = 513;
         let (_, results) =
-            FirehosePreamble::collect_items(&test_data, &firehose_number_items, &firehose_flags)
+            FirehosePreamble::collect_items(&test_data, firehose_number_items, firehose_flags)
                 .unwrap();
         assert_eq!(results.item_info[0].message_strings, "<private>");
         assert_eq!(results.item_info[0].item_type, 65);
         assert_eq!(results.backtrace_strings.len(), 0);
     }
 
+    #[cfg(feature = "test_data")]
     #[test]
     fn test_parse_firehose_preamble_private_public_values() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -3327,7 +3325,7 @@ mod tests {
         let firehose_number_items = 1;
         let firehose_flags = 513;
         let (_, _) =
-            FirehosePreamble::collect_items(&test_data, &firehose_number_items, &firehose_flags)
+            FirehosePreamble::collect_items(&test_data, firehose_number_items, firehose_flags)
                 .unwrap();
     }
 
@@ -3385,7 +3383,7 @@ mod tests {
         let firehose_number_items = 1;
         let firehose_flags = 513;
         let (_, results) =
-            FirehosePreamble::collect_items(&test_data, &firehose_number_items, &firehose_flags)
+            FirehosePreamble::collect_items(&test_data, firehose_number_items, firehose_flags)
                 .unwrap();
         assert_eq!(results.item_info[0].message_strings, "");
         assert_eq!(results.item_info[0].item_type, 99);

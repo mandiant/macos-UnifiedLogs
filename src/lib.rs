@@ -31,6 +31,10 @@
     clippy::checked_conversions,
     clippy::unnecessary_cast
 )]
+
+/// Bytes type alias for a slice of u8
+type Bytes<'a> = &'a [u8];
+
 mod catalog;
 mod chunks;
 mod chunkset;

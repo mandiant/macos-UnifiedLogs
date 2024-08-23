@@ -22,9 +22,9 @@ pub(crate) fn lowercase_bool(bool_data: &str) -> String {
 }
 
 /// Return int value to bool
-pub(crate) fn lowercase_int_bool(bool_data: &u8) -> String {
+pub(crate) fn lowercase_int_bool(bool_data: u8) -> String {
     let false_bool = 0;
-    if bool_data == &false_bool {
+    if bool_data == false_bool {
         return String::from("false");
     }
     String::from("true")
@@ -59,7 +59,7 @@ mod tests {
     #[test]
     fn test_lowercase_int_bool() {
         let test_data = 0;
-        let results = lowercase_int_bool(&test_data);
+        let results = lowercase_int_bool(test_data);
         assert_eq!(results, "false");
     }
 }

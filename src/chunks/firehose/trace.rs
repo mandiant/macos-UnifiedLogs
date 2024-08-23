@@ -141,8 +141,8 @@ impl FirehoseTrace {
     pub fn get_firehose_trace_strings<'a>(
         strings_data: &'a [UUIDText],
         string_offset: u64,
-        first_proc_id: &u64,
-        second_proc_id: &u32,
+        first_proc_id: u64,
+        second_proc_id: u32,
         catalogs: &CatalogChunk,
     ) -> nom::IResult<&'a [u8], MessageData> {
         // Only main_exe flag has been seen for format strings
@@ -205,6 +205,7 @@ mod tests {
         assert_eq!(results.item_info[0].message_strings, "200");
     }
 
+    #[cfg(feature = "test_data")]
     #[test]
     fn test_get_firehose_trace_strings() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -214,17 +215,17 @@ mod tests {
         test_path.push("logdata.LiveData.tracev3");
         let log_data = parse_log(&test_path.display().to_string()).unwrap();
 
-        let activity_type = 0x3;
+        const ACTIVITY_TYPE: u8 = 0x3;
 
         for catalog_data in log_data.catalog_data {
             for preamble in catalog_data.firehose {
                 for firehose in preamble.public_data {
-                    if firehose.unknown_log_activity_type == activity_type {
+                    if firehose.unknown_log_activity_type == ACTIVITY_TYPE {
                         let (_, message_data) = FirehoseTrace::get_firehose_trace_strings(
                             &string_results,
                             firehose.format_string_location as u64,
-                            &preamble.first_number_proc_id,
-                            &preamble.second_number_proc_id,
+                            preamble.first_number_proc_id,
+                            preamble.second_number_proc_id,
                             &catalog_data.catalog,
                         )
                         .unwrap();

@@ -5,6 +5,7 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
+use super::*;
 use base64::engine::general_purpose;
 use base64::DecodeError;
 use base64::Engine;
@@ -28,6 +29,36 @@ pub(crate) fn padding_size_four(data: u64) -> u64 {
     let alignment = 4;
     // Calculate padding to achieve 64-bit alignment
     (alignment - (data & (alignment - 1))) & (alignment - 1)
+}
+
+/// Returns the padding to consume in order to align to 8 bytes
+pub(crate) fn missing_padding_8(n: usize, size: usize) -> usize {
+    missing_padding(n, size, 8)
+}
+
+/// Returns the padding to consume in order to align to 'alignment' bytes
+pub(crate) fn missing_padding(n: usize, size: usize, alignment: usize) -> usize {
+    let total_size = n * size;
+    let rest = total_size % alignment;
+    if rest == 0 {
+        0
+    } else {
+        alignment - rest
+    }
+}
+
+/// Parse the utf8 string from the provided bytes.
+/// If the string is not valid utf8, log a warning and returns a lossy conversion
+pub(crate) fn parstr(s: Bytes<'_>, error_hint: &str) -> String {
+    match std::str::from_utf8(s) {
+        Ok(s) => s.trim_end_matches('\0').to_string(),
+        Err(err) => {
+            log::warn!("[macos-unifiedlogs] Failed to get {error_hint}: {err:?}");
+            String::from_utf8_lossy(s)
+                .trim_end_matches('\0')
+                .to_string()
+        }
+    }
 }
 
 /// Extract a size based on provided string size from Firehose string item entries
@@ -65,8 +96,8 @@ pub(crate) fn extract_string_size(data: &[u8], message_size: u64) -> nom::IResul
 }
 
 /// Extract strings that contain end of string characters
-pub(crate) fn extract_string(data: &[u8]) -> nom::IResult<&[u8], String> {
-    let last_value = data.last();
+pub(crate) fn extract_string(input: &[u8]) -> nom::IResult<&[u8], String> {
+    let last_value = input.last();
     match last_value {
         Some(value) => {
             let has_end_of_string: u8 = 0;
@@ -74,8 +105,7 @@ pub(crate) fn extract_string(data: &[u8]) -> nom::IResult<&[u8], String> {
             // If message data does not end with end of string character (0)
             // just grab everything and convert what we have to string
             if value != &has_end_of_string {
-                let (input, path) = take(data.len())(data)?;
-                let path_string = from_utf8(path);
+                let path_string = from_utf8(input);
                 match path_string {
                     Ok(results) => return Ok((input, results.to_string())),
                     Err(err) => {
@@ -90,11 +120,11 @@ pub(crate) fn extract_string(data: &[u8]) -> nom::IResult<&[u8], String> {
         }
         None => {
             error!("[macos-unifiedlogs] Cannot extract string. Empty input.");
-            return Ok((data, String::from("Cannot extract string. Empty input.")));
+            return Ok((input, String::from("Cannot extract string. Empty input.")));
         }
     }
 
-    let (input, path) = take_while(|b: u8| b != 0)(data)?;
+    let (input, path) = take_while(|b: u8| b != 0)(input)?;
     let path_string = from_utf8(path);
     match path_string {
         Ok(results) => {
@@ -130,8 +160,7 @@ pub(crate) fn unixepoch_to_iso(timestamp: &i64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_standard, encode_standard, unixepoch_to_iso};
-    use crate::util::{extract_string, extract_string_size, padding_size, padding_size_four};
+    use super::*;
 
     #[test]
     fn test_padding_size() {
@@ -145,6 +174,17 @@ mod tests {
         let data = 4;
         let results = padding_size_four(data);
         assert_eq!(results, 0);
+    }
+
+    #[test]
+    fn test_missing_padding() {
+        assert_eq!(missing_padding(0, 1, 8), 0);
+        assert_eq!(missing_padding(1, 1, 8), 7);
+        assert_eq!(missing_padding(6, 1, 8), 2);
+        assert_eq!(missing_padding(7, 1, 8), 1);
+        assert_eq!(missing_padding(8, 1, 8), 0);
+        assert_eq!(missing_padding(9, 1, 8), 7);
+        assert_eq!(missing_padding(2, 2, 5), 1);
     }
 
     #[test]

@@ -31,8 +31,8 @@ impl MessageData {
         shared_strings: &'a [SharedCacheStrings],
         strings_data: &'a [UUIDText],
         string_offset: u64,
-        first_proc_id: &u64,
-        second_proc_id: &u32,
+        first_proc_id: u64,
+        second_proc_id: u32,
         catalogs: &CatalogChunk,
         original_offset: u64,
     ) -> nom::IResult<&'a [u8], MessageData> {
@@ -178,8 +178,8 @@ impl MessageData {
     pub fn extract_format_strings<'a>(
         strings_data: &'a [UUIDText],
         string_offset: u64,
-        first_proc_id: &u64,
-        second_proc_id: &u32,
+        first_proc_id: u64,
+        second_proc_id: u32,
         catalogs: &CatalogChunk,
         original_offset: u64,
     ) -> nom::IResult<&'a [u8], MessageData> {
@@ -292,8 +292,8 @@ impl MessageData {
         strings_data: &'a [UUIDText],
         absolute_offset: u64,
         string_offset: u64,
-        first_proc_id: &u64,
-        second_proc_id: &u32,
+        first_proc_id: u64,
+        second_proc_id: u32,
         catalogs: &CatalogChunk,
         original_offset: u64,
     ) -> nom::IResult<&'a [u8], MessageData> {
@@ -301,8 +301,8 @@ impl MessageData {
         let mut uuid = String::new();
         // Go through Catalog associated with log entry and find UUID entry associated with log message (first_proc_id@second_proc_id)
         for process_info in &catalogs.catalog_process_info_entries {
-            if first_proc_id == &process_info.first_number_proc_id
-                && second_proc_id == &process_info.second_number_proc_id
+            if first_proc_id == process_info.first_number_proc_id
+                && second_proc_id == process_info.second_number_proc_id
             {
                 // In addition to first_proc_id and second_proc_id, we need to go through UUID entries in the catalog
                 // Entries with the Absolute flag have the UUID stored in an Vec of UUIDs and offsets/load_address
@@ -440,8 +440,8 @@ impl MessageData {
         strings_data: &'a [UUIDText],
         string_offset: u64,
         uuid: &str,
-        first_proc_id: &u64,
-        second_proc_id: &u32,
+        first_proc_id: u64,
+        second_proc_id: u32,
         catalogs: &CatalogChunk,
         original_offset: u64,
     ) -> nom::IResult<&'a [u8], MessageData> {
@@ -605,15 +605,15 @@ impl MessageData {
     // Grab dsc file name from the Catalog data based on first and second proc ids from the Firehose log
     fn get_catalog_dsc(
         catalogs: &CatalogChunk,
-        first_proc_id: &u64,
-        second_proc_id: &u32,
+        first_proc_id: u64,
+        second_proc_id: u32,
     ) -> (String, String) {
         let mut dsc_uuid = String::new();
         let mut main_uuid = String::new();
 
         for process_info in &catalogs.catalog_process_info_entries {
-            if first_proc_id == &process_info.first_number_proc_id
-                && second_proc_id == &process_info.second_number_proc_id
+            if first_proc_id == process_info.first_number_proc_id
+                && second_proc_id == process_info.second_number_proc_id
             {
                 process_info.dsc_uuid.clone_into(&mut dsc_uuid);
                 process_info.main_uuid.clone_into(&mut main_uuid);
@@ -633,6 +633,7 @@ mod tests {
         parser::{collect_shared_strings, collect_strings, parse_log},
     };
 
+    #[cfg(feature = "test_data")]
     #[test]
     fn test_extract_shared_strings_nonactivity() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -655,8 +656,8 @@ mod tests {
             &shared_strings_results,
             &strings,
             test_offset,
-            &test_first_proc_id,
-            &test_second_proc_id,
+            test_first_proc_id,
+            test_second_proc_id,
             &log_data.catalog_data[0].catalog,
             0,
         )
@@ -673,6 +674,7 @@ mod tests {
         assert_eq!(results.format_string, "%@ start")
     }
 
+    #[cfg(feature = "test_data")]
     #[test]
     fn test_extract_shared_strings_nonactivity_bad_offset() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -695,8 +697,8 @@ mod tests {
             &shared_strings_results,
             &strings,
             bad_offset,
-            &test_first_proc_id,
-            &test_second_proc_id,
+            test_first_proc_id,
+            test_second_proc_id,
             &log_data.catalog_data[0].catalog,
             0,
         )
@@ -710,6 +712,7 @@ mod tests {
         assert_eq!(results.format_string, "Error: Invalid shared string offset")
     }
 
+    #[cfg(feature = "test_data")]
     #[test]
     fn test_extract_shared_strings_nonactivity_dynamic() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -731,8 +734,8 @@ mod tests {
             &shared_strings_results,
             &strings,
             test_offset,
-            &test_first_proc_id,
-            &test_second_proc_id,
+            test_first_proc_id,
+            test_second_proc_id,
             &log_data.catalog_data[2].catalog,
             test_offset,
         )
@@ -750,6 +753,7 @@ mod tests {
         assert_eq!(results.format_string, "%s")
     }
 
+    #[cfg(feature = "test_data")]
     #[test]
     fn test_extract_format_strings_nonactivity() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -765,8 +769,8 @@ mod tests {
         let (_, results) = MessageData::extract_format_strings(
             &strings,
             test_offset,
-            &test_first_proc_id,
-            &test_second_proc_id,
+            test_first_proc_id,
+            test_second_proc_id,
             &log_data.catalog_data[0].catalog,
             test_offset,
         )
@@ -781,6 +785,7 @@ mod tests {
         assert_eq!(results.format_string, "LOMD Start")
     }
 
+    #[cfg(feature = "test_data")]
     #[test]
     fn test_extract_format_strings_nonactivity_bad_offset() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -796,8 +801,8 @@ mod tests {
         let (_, results) = MessageData::extract_format_strings(
             &strings,
             bad_offset,
-            &test_first_proc_id,
-            &test_second_proc_id,
+            test_first_proc_id,
+            test_second_proc_id,
             &log_data.catalog_data[0].catalog,
             0,
         )
@@ -810,6 +815,7 @@ mod tests {
         )
     }
 
+    #[cfg(feature = "test_data")]
     #[test]
     fn test_extract_format_strings_nonactivity_dynamic() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -826,8 +832,8 @@ mod tests {
         let (_, results) = MessageData::extract_format_strings(
             &strings,
             test_offset,
-            &test_first_proc_id,
-            &test_second_proc_id,
+            test_first_proc_id,
+            test_second_proc_id,
             &log_data.catalog_data[4].catalog,
             test_offset,
         )
@@ -842,6 +848,7 @@ mod tests {
         assert_eq!(results.format_string, "%s")
     }
 
+    #[cfg(feature = "test_data")]
     #[test]
     fn test_extract_format_strings_nonactivity_dynamic_bad_offset() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -858,8 +865,8 @@ mod tests {
         let (_, results) = MessageData::extract_format_strings(
             &strings,
             bad_offset,
-            &test_first_proc_id,
-            &test_second_proc_id,
+            test_first_proc_id,
+            test_second_proc_id,
             &log_data.catalog_data[4].catalog,
             bad_offset,
         )
@@ -872,6 +879,7 @@ mod tests {
         )
     }
 
+    #[cfg(feature = "test_data")]
     #[test]
     fn test_extract_absolute_strings_nonactivity() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -889,8 +897,8 @@ mod tests {
             &strings,
             test_absolute_offset,
             test_offset,
-            &test_first_proc_id,
-            &test_second_proc_id,
+            test_first_proc_id,
+            test_second_proc_id,
             &log_data.catalog_data[0].catalog,
             0,
         )
@@ -902,6 +910,7 @@ mod tests {
         assert_eq!(results.format_string, "%s")
     }
 
+    #[cfg(feature = "test_data")]
     #[test]
     fn test_extract_absolute_strings_nonactivity_bad_offset() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -919,8 +928,8 @@ mod tests {
             &strings,
             bad_offset,
             test_offset,
-            &test_first_proc_id,
-            &test_second_proc_id,
+            test_first_proc_id,
+            test_second_proc_id,
             &log_data.catalog_data[0].catalog,
             0,
         )
@@ -932,6 +941,7 @@ mod tests {
         )
     }
 
+    #[cfg(feature = "test_data")]
     #[test]
     fn test_extract_absolute_strings_nonactivity_dynamic() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -952,8 +962,8 @@ mod tests {
             &strings,
             test_absolute_offset,
             test_offset,
-            &test_first_proc_id,
-            &test_second_proc_id,
+            test_first_proc_id,
+            test_second_proc_id,
             &log_data.catalog_data[1].catalog,
             test_offset,
         )
@@ -966,6 +976,7 @@ mod tests {
         assert_eq!(results.format_string, "%s")
     }
 
+    #[cfg(feature = "test_data")]
     #[test]
     fn test_extract_absolute_strings_nonactivity_dynamic_bad_offset() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -986,8 +997,8 @@ mod tests {
             &strings,
             test_absolute_offset,
             bad_offset,
-            &test_first_proc_id,
-            &test_second_proc_id,
+            test_first_proc_id,
+            test_second_proc_id,
             &log_data.catalog_data[1].catalog,
             bad_offset,
         )
@@ -1003,6 +1014,7 @@ mod tests {
         )
     }
 
+    #[cfg(feature = "test_data")]
     #[test]
     fn test_extract_alt_uuid_strings() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -1020,8 +1032,8 @@ mod tests {
             &strings,
             test_offset,
             test_uuid,
-            &first_proc_id,
-            &second_proc_id,
+            first_proc_id,
+            second_proc_id,
             &log_data.catalog_data[0].catalog,
             0,
         )
@@ -1036,6 +1048,7 @@ mod tests {
         assert_eq!(results.process_uuid, "B736DF1625F538248E9527A8CEC4991E");
     }
 
+    #[cfg(feature = "test_data")]
     #[test]
     fn test_get_catalog_dsc() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -1048,14 +1061,15 @@ mod tests {
         let test_second_proc_id = 342;
         let (dsc_uuid, main_uuid) = MessageData::get_catalog_dsc(
             &log_data.catalog_data[0].catalog,
-            &test_first_proc_id,
-            &test_second_proc_id,
+            test_first_proc_id,
+            test_second_proc_id,
         );
 
         assert_eq!(dsc_uuid, "80896B329EB13A10A7C5449B15305DE2");
         assert_eq!(main_uuid, "87721013944F3EA7A42C604B141CCDAA");
     }
 
+    #[cfg(feature = "test_data")]
     #[test]
     fn test_get_uuid_image_path() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
