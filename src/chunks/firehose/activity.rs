@@ -154,7 +154,8 @@ impl FirehoseActivity {
                 } else if firehose.firehose_formatters.shared_cache {
                     // Large offset is 8 if shared_cache flag is set
                     large_offset = 8;
-                    extra_offset_value = format!("{:X}{:07X}", large_offset, string_offset);
+                    let add_offset = 0x10000000 * u64::from(large_offset);
+                    extra_offset_value = format!("{:X}", add_offset + string_offset);
                 } else {
                     extra_offset_value = format!("{:X}{:08X}", large_offset, string_offset);
                 }

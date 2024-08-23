@@ -344,7 +344,7 @@ fn parse_trace_file(
     println!("Parsed {} log entries", log_count);
 }
 
-// Create JSON files
+// Create JSON files in JSONL format
 fn output(results: &Vec<LogData>, output_name: &str) -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
     let mut json_file = OpenOptions::new()
@@ -352,9 +352,11 @@ fn output(results: &Vec<LogData>, output_name: &str) -> Result<(), Box<dyn Error
         .create(true)
         .open(format!("{}/{}.json", args.output, output_name))?;
 
-    let serde_data = serde_json::to_string(&results)?;
-
-    json_file.write_all(serde_data.as_bytes())?;
+    for log_data in results.iter() {
+        let serde_data = serde_json::to_string(log_data)?;
+        json_file.write_all(serde_data.as_bytes())?;
+        json_file.write_all(b"\n")?; // Add a newline after each JSON entry
+    }
 
     Ok(())
 }

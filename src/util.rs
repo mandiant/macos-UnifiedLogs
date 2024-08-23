@@ -9,6 +9,9 @@ use super::*;
 use base64::engine::general_purpose;
 use base64::DecodeError;
 use base64::Engine;
+use chrono::SecondsFormat;
+use chrono::TimeZone;
+use chrono::Utc;
 use log::{error, warn};
 use nom::bytes::complete::take;
 use nom::bytes::complete::take_while;
@@ -150,6 +153,12 @@ pub(crate) fn decode_standard(data: &str) -> Result<Vec<u8>, DecodeError> {
     general_purpose::STANDARD.decode(data)
 }
 
+/// Convert `UnixEpoch` time to ISO RFC 3339
+pub(crate) fn unixepoch_to_iso(timestamp: &i64) -> String {
+    let date_time_result = Utc.timestamp_nanos(*timestamp);
+    date_time_result.to_rfc3339_opts(SecondsFormat::Nanos, true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -206,5 +215,11 @@ mod tests {
         let test = "SGVsbG8gd29yZCE=";
         let result = decode_standard(test).unwrap();
         assert_eq!(result, b"Hello word!")
+    }
+
+    #[test]
+    fn test_unixepoch_to_iso() {
+        let result = unixepoch_to_iso(&1650767813342574583);
+        assert_eq!(result, "2022-04-24T02:36:53.342574583Z");
     }
 }

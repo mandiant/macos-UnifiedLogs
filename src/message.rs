@@ -334,7 +334,9 @@ fn parse_formatter<'a>(
         if item_type == DYNAMIC_PRECISION_VALUE && message_value[index].item_size == 0 {
             precision_value = message_value[index].item_size as usize;
             index += 1;
-            message = message_value[index].message_strings.to_owned();
+            message_value[index]
+                .message_strings
+                .clone_into(&mut message);
         }
 
         width_value = format!("{}", precision_value);
