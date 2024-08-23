@@ -329,8 +329,8 @@ mod tests {
                             &string_results,
                             &shared_strings_results,
                             firehose.format_string_location as u64,
-                            &preamble.first_number_proc_id,
-                            &preamble.second_number_proc_id,
+                            preamble.first_number_proc_id,
+                            preamble.second_number_proc_id,
                             &catalog_data.catalog,
                         )
                         .unwrap();
