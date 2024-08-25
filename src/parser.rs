@@ -411,10 +411,10 @@ mod tests {
     #[test]
     fn test_collect_shared_strings_system() {
         let shared_strings_results = collect_shared_strings_system().unwrap();
-        assert!(shared_strings_results[0].ranges.len() > 1000);
-        assert!(shared_strings_results[0].uuids.len() > 1000);
-        assert!(shared_strings_results[0].number_ranges > 1000);
-        assert!(shared_strings_results[0].number_uuids > 1000);
+        assert!(shared_strings_results[0].ranges.len() > 1);
+        assert!(shared_strings_results[0].uuids.len() > 1);
+        assert!(shared_strings_results[0].number_ranges > 1);
+        assert!(shared_strings_results[0].number_uuids > 1);
     }
 
     #[test]

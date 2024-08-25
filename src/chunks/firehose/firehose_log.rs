@@ -332,8 +332,8 @@ impl FirehosePreamble {
             }
         }
 
-        // 0x81 Added in macOS Sequioa
-        let private_strings: Vec<u8> = vec![0x21, 0x25, 0x35, 0x31, 0x41, 0x81];
+        // 0x81 and 0xf1 Added in macOS Sequioa
+        let private_strings: Vec<u8> = vec![0x21, 0x25, 0x35, 0x31, 0x41, 0x81, 0xf1];
         let private_number = 0x1;
         // Now at the end of firehose item types.
         // Remaining data (if any) contains strings for the string item types
@@ -404,7 +404,7 @@ impl FirehosePreamble {
         data: &'a [u8],
         firehose_item_data: &mut FirehoseItemData,
     ) -> nom::IResult<&'a [u8], ()> {
-        let private_strings: Vec<u8> = vec![0x21, 0x25, 0x41, 0x35, 0x31, 0x81];
+        let private_strings: Vec<u8> = vec![0x21, 0x25, 0x41, 0x35, 0x31, 0x81, 0xf1];
         let private_number = 0x1;
 
         let mut private_string_start = data;
@@ -738,7 +738,7 @@ impl FirehosePreamble {
 
         // Firehose string item values
         let string_item: Vec<u8> = vec![
-            0x20, 0x21, 0x22, 0x25, 0x40, 0x41, 0x42, 0x30, 0x31, 0x32, 0xf2, 0x35, 0x81,
+            0x20, 0x21, 0x22, 0x25, 0x40, 0x41, 0x42, 0x30, 0x31, 0x32, 0xf2, 0x35, 0x81, 0xf1,
         ];
         let private_number = 0x1;
         // String and private number items metadata is 4 bytes
