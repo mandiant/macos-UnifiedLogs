@@ -672,14 +672,14 @@ impl LogData {
         const CHUNKSET_CHUNK: u32 = 0x600d;
         // Loop through traceV3 file until all file contents are read
         while !input.is_empty() {
-            let (data, preamble) = LogPreamble::parse(input)?;
+            let (_, preamble) = LogPreamble::parse(input)?;
             let chunk_size = preamble.chunk_data_size;
 
             // Grab all data associated with Unified Log entry (chunk)
-            let (data, chunk_data) = take(chunk_size)(data)?;
+            let (data, chunk_data) = take(chunk_size + chunk_preamble_size)(data)?;
 
             if preamble.chunk_tag == HEADER_CHUNK {
-                LogData::get_header_data(chunk_data, preamble, &mut unified_log_data_true);
+                LogData::get_header_data(chunk_data, &mut unified_log_data_true);
             } else if preamble.chunk_tag == CATALOG_CHUNK {
                 if catalog_data.catalog.chunk_tag != 0 {
                     unified_log_data_true.catalog_data.push(catalog_data);
@@ -707,7 +707,7 @@ impl LogData {
                     oversize: Vec::new(),
                 };
 
-                LogData::get_catalog_data(chunk_data, preamble, &mut catalog_data);
+                LogData::get_catalog_data(chunk_data, &mut catalog_data);
             } else if preamble.chunk_tag == CHUNKSET_CHUNK {
                 LogData::get_chunkset_data(
                     chunk_data,
@@ -844,12 +844,8 @@ impl LogData {
     }
 
     /// Get the header of the Unified Log data (tracev3 file)
-    fn get_header_data(
-        data: Bytes<'_>,
-        preamble: LogPreamble,
-        unified_log_data: &mut UnifiedLogData,
-    ) {
-        let header_results = HeaderChunk::parse(data, preamble);
+    fn get_header_data(data: Bytes<'_>, unified_log_data: &mut UnifiedLogData) {
+        let header_results = HeaderChunk::parse(data);
         match header_results {
             Ok((_, header_data)) => unified_log_data.header.push(header_data),
             Err(err) => error!("[macos-unifiedlogs] Failed to parse header data: {:?}", err),
@@ -857,12 +853,8 @@ impl LogData {
     }
 
     /// Get the Catalog of the Unified Log data (tracev3 file)
-    fn get_catalog_data(
-        data: Bytes<'_>,
-        preamble: LogPreamble,
-        unified_log_data: &mut UnifiedLogCatalogData,
-    ) {
-        let catalog_results = CatalogChunk::parse(data, preamble);
+    fn get_catalog_data(data: Bytes<'_>, unified_log_data: &mut UnifiedLogCatalogData) {
+        let catalog_results = CatalogChunk::parse(data);
         match catalog_results {
             Ok((_, catalog_data)) => unified_log_data.catalog = catalog_data,
             Err(err) => error!(
@@ -1110,8 +1102,7 @@ mod tests {
             oversize: Vec::new(),
         };
 
-        let (input, preamble) = LogPreamble::parse(test_chunk_header)?;
-        LogData::get_header_data(&input, preamble, &mut data);
+        LogData::get_header_data(test_chunk_header, &mut data);
         assert_eq!(data.header.len(), 1);
 
         Ok(())
@@ -1165,8 +1156,7 @@ mod tests {
             oversize: Vec::new(),
         };
 
-        let (input, preamble) = LogPreamble::parse(test_chunk_catalog)?;
-        LogData::get_catalog_data(input, preamble, &mut data);
+        LogData::get_catalog_data(test_chunk_catalog, &mut data);
         assert_eq!(data.catalog.chunk_tag, 0x600b);
         assert_eq!(data.catalog.chunk_sub_tag, 17);
         assert_eq!(data.catalog.chunk_data_size, 464);

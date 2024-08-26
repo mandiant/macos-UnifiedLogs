@@ -57,7 +57,9 @@ pub struct HeaderChunk {
 
 impl HeaderChunk {
     /// Parse the Unified Log tracev3 header data
-    pub fn parse(input: Bytes<'_>, preamble: LogPreamble) -> nom::IResult<Bytes<'_>, Self> {
+    pub fn parse(input: Bytes<'_>) -> nom::IResult<Bytes<'_>, Self> {
+        let (input, preamble) = LogPreamble::parse(input)?;
+
         const HARDWARE_MODEL_SIZE: u8 = 32;
         const TIMEZONE_PATH_SIZE: u8 = 48;
 
@@ -146,8 +148,7 @@ mod tests {
             101, 119, 95, 89, 111, 114, 107, 0, 0, 0, 0, 0, 0,
         ];
 
-        let (input, preamble) = LogPreamble::parse(test_chunk_header)?;
-        let (_, header_data) = HeaderChunk::parse(input, preamble)?;
+        let (_, header_data) = HeaderChunk::parse(test_chunk_header)?;
 
         assert_eq!(header_data.chunk_tag, 0x1000);
         assert_eq!(header_data.chunk_sub_tag, 0x11);

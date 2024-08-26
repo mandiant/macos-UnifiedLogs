@@ -112,7 +112,9 @@ pub struct SubsystemInfo {
 }
 
 impl CatalogChunk {
-    pub fn parse(input: Bytes<'_>, preamble: LogPreamble) -> IResult<Bytes<'_>, Self> {
+    pub fn parse(input: Bytes<'_>) -> IResult<Bytes<'_>, Self> {
+        let (input, preamble) = LogPreamble::parse(input)?;
+
         let (
             input,
             (
@@ -424,8 +426,7 @@ mod tests {
             0, 0, 0, 3, 0, 0, 0, 0, 0, 19, 0, 47, 0,
         ];
 
-        let (input, preamble) = LogPreamble::parse(test_chunk_catalog)?;
-        let (_, catalog_data) = CatalogChunk::parse(input, preamble).unwrap();
+        let (_, catalog_data) = CatalogChunk::parse(test_chunk_catalog).unwrap();
 
         assert_eq!(catalog_data.chunk_tag, 0x600b);
         assert_eq!(catalog_data.chunk_sub_tag, 17);
@@ -621,8 +622,7 @@ mod tests {
         test_path.push("tests/test_data/Catalog Tests/big_sur_catalog.raw");
         let buffer = fs::read(test_path)?;
 
-        let (intput, preamble) = LogPreamble::parse(&buffer).unwrap();
-        let (_, catalog) = CatalogChunk::parse(intput, preamble).unwrap();
+        let (_, catalog) = CatalogChunk::parse(&buffer).unwrap();
 
         let (_, results) = catalog
             .get_subsystem(subsystem_value, first_proc_id, second_proc_id)
