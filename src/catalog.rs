@@ -269,16 +269,21 @@ fn process_info_entry<'b>(
     )(input)?;
 
     // Grab parsed UUIDs from Catalag array based on process entry uuid index
-
     let main_uuid = uuids
         .get(catalog_main_uuid_index as usize)
-        .ok_or_else(|| nom::Err::Error(make_error(input, ErrorKind::Eof)))?
-        .to_string();
+        .map(ToString::to_string)
+        .unwrap_or_else(|| {
+            log::warn!("[macos-unifiedlogs] Could not find main UUID in catalog");
+            String::new()
+        });
 
     let dsc_uuid = uuids
         .get(catalog_dsc_uuid_index as usize)
-        .ok_or_else(|| nom::Err::Error(make_error(input, ErrorKind::Eof)))?
-        .to_string();
+        .map(ToString::to_string)
+        .unwrap_or_else(|| {
+            log::warn!("[macos-unifiedlogs] Could not find DSC UUID in catalog");
+            String::new()
+        });
 
     const SUBSYSTEM_SIZE: usize = 6;
     let padding = missing_padding_8(number_subsystems as _, SUBSYSTEM_SIZE);
