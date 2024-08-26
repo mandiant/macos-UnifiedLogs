@@ -371,14 +371,14 @@ mod tests {
 
     use std::path::PathBuf;
 
-    #[cfg(feature = "test_data")]
+    #[cfg(target_os = "macos")]
     #[test]
     fn test_collect_strings_system() {
         let uuidtext_results = collect_strings_system().unwrap();
         assert!(uuidtext_results.len() > 100);
     }
 
-    #[cfg(feature = "test_data")]
+    #[cfg(target_os = "macos")]
     #[test]
     fn test_collect_timesync_system() {
         let timesync_results = collect_timesync_system().unwrap();
@@ -408,7 +408,7 @@ mod tests {
         assert_eq!(timesync_data[0].timezone_offset_mins, 0);
     }
 
-    #[cfg(feature = "test_data")]
+    #[cfg(target_os = "macos")]
     #[test]
     fn test_collect_shared_strings_system() {
         let shared_strings_results = collect_shared_strings_system().unwrap();
