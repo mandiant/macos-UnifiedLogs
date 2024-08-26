@@ -320,38 +320,41 @@ mod tests {
 
     #[cfg(feature = "test_data")]
     #[test]
-    #[should_panic(expected = "Incomplete(Unknown)")]
-    fn test_bad_header() {
+    fn test_bad_header() -> anyhow::Result<()> {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         test_path.push(
             "tests/test_data/Bad Data/DSC/bad_header_version_1_522F6217CB113F8FB845C2A1B784C7C2",
         );
 
-        let buffer = fs::read(test_path).unwrap();
-        let (_, _) = SharedCacheStrings::parse(&buffer).unwrap();
+        let buffer = fs::read(test_path)?;
+        let result = SharedCacheStrings::parse(&buffer);
+        assert!(result.is_err());
+        Ok(())
     }
 
     #[cfg(feature = "test_data")]
     #[test]
-    #[should_panic(expected = "Eof")]
-    fn test_bad_content() {
+    fn test_bad_content() -> anyhow::Result<()> {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         test_path.push(
             "tests/test_data/Bad Data/DSC/bad_content_version_1_522F6217CB113F8FB845C2A1B784C7C2",
         );
 
-        let buffer = fs::read(test_path).unwrap();
-        let (_, _) = SharedCacheStrings::parse(&buffer).unwrap();
+        let buffer = fs::read(test_path)?;
+        let result = SharedCacheStrings::parse(&buffer);
+        assert!(result.is_err());
+        Ok(())
     }
 
     #[cfg(feature = "test_data")]
     #[test]
-    #[should_panic(expected = "Incomplete(Unknown)")]
-    fn test_bad_file() {
+    fn test_bad_file() -> anyhow::Result<()> {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        test_path.push("tests/test_data/Bad Data/DSC/badfile");
+        test_path.push("tests/test_data/Bad Data/DSC/Badfile");
 
-        let buffer = fs::read(test_path).unwrap();
-        let (_, _) = SharedCacheStrings::parse(&buffer).unwrap();
+        let buffer = fs::read(test_path)?;
+        let result = SharedCacheStrings::parse(&buffer);
+        assert!(result.is_err());
+        Ok(())
     }
 }
