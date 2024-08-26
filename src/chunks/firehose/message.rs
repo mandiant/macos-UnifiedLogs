@@ -633,7 +633,6 @@ mod tests {
         parser::{collect_shared_strings, collect_strings, parse_log},
     };
 
-    #[cfg(feature = "test_data")]
     #[test]
     fn test_extract_shared_strings_nonactivity() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -674,7 +673,6 @@ mod tests {
         assert_eq!(results.format_string, "%@ start")
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     fn test_extract_shared_strings_nonactivity_bad_offset() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -712,7 +710,6 @@ mod tests {
         assert_eq!(results.format_string, "Error: Invalid shared string offset")
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     fn test_extract_shared_strings_nonactivity_dynamic() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -753,7 +750,6 @@ mod tests {
         assert_eq!(results.format_string, "%s")
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     fn test_extract_format_strings_nonactivity() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -785,7 +781,6 @@ mod tests {
         assert_eq!(results.format_string, "LOMD Start")
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     fn test_extract_format_strings_nonactivity_bad_offset() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -815,7 +810,6 @@ mod tests {
         )
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     fn test_extract_format_strings_nonactivity_dynamic() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -848,7 +842,6 @@ mod tests {
         assert_eq!(results.format_string, "%s")
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     fn test_extract_format_strings_nonactivity_dynamic_bad_offset() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -879,7 +872,6 @@ mod tests {
         )
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     fn test_extract_absolute_strings_nonactivity() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -910,7 +902,6 @@ mod tests {
         assert_eq!(results.format_string, "%s")
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     fn test_extract_absolute_strings_nonactivity_bad_offset() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -941,7 +932,6 @@ mod tests {
         )
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     fn test_extract_absolute_strings_nonactivity_dynamic() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -976,7 +966,6 @@ mod tests {
         assert_eq!(results.format_string, "%s")
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     fn test_extract_absolute_strings_nonactivity_dynamic_bad_offset() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -1014,7 +1003,6 @@ mod tests {
         )
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     fn test_extract_alt_uuid_strings() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -1048,7 +1036,6 @@ mod tests {
         assert_eq!(results.process_uuid, "B736DF1625F538248E9527A8CEC4991E");
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     fn test_get_catalog_dsc() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -1069,7 +1056,6 @@ mod tests {
         assert_eq!(main_uuid, "87721013944F3EA7A42C604B141CCDAA");
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     fn test_get_uuid_image_path() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));

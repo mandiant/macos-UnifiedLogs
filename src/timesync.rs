@@ -256,7 +256,6 @@ mod tests {
     use std::io::Read;
     use std::path::PathBuf;
 
-    #[cfg(feature = "test_data")]
     #[test]
     fn test_parse_timesync_data() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -273,7 +272,6 @@ mod tests {
         assert_eq!(timesync_data[0].timesync.len(), 5);
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     #[should_panic(expected = "Incomplete(Unknown)")]
     fn test_timesync_bad_boot_header() {
@@ -288,7 +286,6 @@ mod tests {
         let (_, _) = TimesyncBoot::parse_timesync_data(&buffer).unwrap();
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     #[should_panic(expected = "Incomplete(Unknown)")]
     fn test_timesync_bad_record_header() {
@@ -303,7 +300,6 @@ mod tests {
         let (_, _) = TimesyncBoot::parse_timesync_data(&buffer).unwrap();
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     #[should_panic(expected = "Incomplete(Unknown)")]
     fn test_timesync_bad_content() {
@@ -317,7 +313,6 @@ mod tests {
         let (_, _) = TimesyncBoot::parse_timesync_data(&buffer).unwrap();
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     #[should_panic(expected = "Incomplete(Unknown)")]
     fn test_timesync_bad_file() {
@@ -365,7 +360,6 @@ mod tests {
         assert_eq!(timesync_boot.daylight_savings, 0);
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     fn test_get_timestamp() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -385,7 +379,6 @@ mod tests {
         assert_eq!(results, 1642304803060378889.0);
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     fn test_get_arm_timestamp() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -405,7 +398,6 @@ mod tests {
         assert_eq!(results, 1650767519086487000.0);
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     fn test_get_arm_timestamp_use_boot_time() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));

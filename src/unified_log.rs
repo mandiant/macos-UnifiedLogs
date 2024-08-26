@@ -975,7 +975,6 @@ mod tests {
 
     use super::{LogData, UnifiedLogData};
 
-    #[cfg(feature = "test_data")]
     #[test]
     fn test_parse_unified_log() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -991,7 +990,6 @@ mod tests {
         assert_eq!(results.oversize.len(), 12);
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     fn test_bad_log_header() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -1004,7 +1002,6 @@ mod tests {
         assert_eq!(results.oversize.len(), 28);
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     #[should_panic(expected = "Eof")]
     fn test_bad_log_content() {
@@ -1015,7 +1012,6 @@ mod tests {
         let (_, _) = LogData::parse_unified_log(&buffer).unwrap();
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     #[should_panic(expected = "Eof")]
     fn test_bad_log_file() {
@@ -1026,7 +1022,6 @@ mod tests {
         let (_, _) = LogData::parse_unified_log(&buffer).unwrap();
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     fn test_build_log() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -1213,7 +1208,6 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     fn test_get_chunkset_data() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -1376,7 +1370,6 @@ mod tests {
         assert_eq!(missing_firehose.base_continous_time, time);
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     fn test_add_missing() {
         let mut missing_unified_log_data_vec = UnifiedLogData {

@@ -385,7 +385,6 @@ mod tests {
         assert!(timesync_results.len() > 1);
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     fn test_collect_timesync_archive() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -418,7 +417,6 @@ mod tests {
         assert!(shared_strings_results[0].number_uuids > 1000);
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     fn test_shared_strings_archive() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -438,7 +436,6 @@ mod tests {
         assert_eq!(shared_strings_results[0].uuids.len(), 1976);
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     fn test_collect_strings_archive() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -455,7 +452,6 @@ mod tests {
         assert_eq!(strings_results[0].unknown_major_version, 2);
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     fn test_parse_log() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -477,7 +473,6 @@ mod tests {
         assert_eq!(log_data.catalog_data[0].statedump.len(), 0);
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     fn test_build_log() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));

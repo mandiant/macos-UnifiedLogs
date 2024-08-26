@@ -3287,7 +3287,6 @@ mod tests {
         assert_eq!(results.backtrace_strings.len(), 0);
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     fn test_parse_firehose_preamble_private_public_values() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));

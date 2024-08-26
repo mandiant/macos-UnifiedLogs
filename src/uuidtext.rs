@@ -117,7 +117,6 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     fn test_parse_uuidtext_big_sur() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -138,7 +137,6 @@ mod tests {
         assert_eq!(uuidtext_data.footer_data.len(), 2987);
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     fn test_parse_uuidtext_high_sierra() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -157,7 +155,6 @@ mod tests {
         assert_eq!(uuidtext_data.footer_data.len(), 2951);
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     #[should_panic(expected = "Incomplete(Unknown)")]
     fn test_bad_header() {
@@ -169,7 +166,6 @@ mod tests {
         let (_, _) = UUIDText::parse(&buffer).unwrap();
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     #[should_panic(expected = "Eof")]
     fn test_bad_content() {
@@ -181,7 +177,6 @@ mod tests {
         let (_, _) = UUIDText::parse(&buffer).unwrap();
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     #[should_panic(expected = "Incomplete(Unknown)")]
     fn test_bad_file() {

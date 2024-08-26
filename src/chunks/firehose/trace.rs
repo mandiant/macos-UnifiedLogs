@@ -205,7 +205,6 @@ mod tests {
         assert_eq!(results.item_info[0].message_strings, "200");
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     fn test_get_firehose_trace_strings() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));

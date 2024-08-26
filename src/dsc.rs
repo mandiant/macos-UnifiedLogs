@@ -250,7 +250,6 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     fn test_parse_dsc_version_one() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -284,7 +283,6 @@ mod tests {
         assert_eq!(results.number_uuids, 532);
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     fn test_parse_dsc_version_two() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -318,7 +316,6 @@ mod tests {
         assert_eq!(results.number_uuids, 2250);
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     fn test_bad_header() -> anyhow::Result<()> {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -332,7 +329,6 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     fn test_bad_content() -> anyhow::Result<()> {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -346,7 +342,6 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     fn test_bad_file() -> anyhow::Result<()> {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));

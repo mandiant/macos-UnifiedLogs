@@ -611,7 +611,6 @@ mod tests {
         assert!(matches!(catalog_subchunk(test_bad_compression), Err(_)));
     }
 
-    #[cfg(feature = "test_data")]
     #[test]
     fn test_get_big_sur_subsystem() -> anyhow::Result<()> {
         let subsystem_value = 4;
