@@ -1,0 +1,48 @@
+name: Rust PR Actions
+
+on:
+  pull_request:
+    branches:
+      - "main"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        info:
+          - os: "macOS-13"
+            target: "x86_64-apple-darwin"
+          - os: "macOS-latest"
+            target: "aarch64-apple-darwin"
+    runs-on: ${{ matrix.info.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+          targets: ${{ matrix.info.target }}
+
+      - name: Enable Rust cache
+        uses: Swatinem/rust-cache@v2.7.3
+        with:
+          save-if: false
+      - name: Fmt Check
+        run: cargo fmt -- --check
+      
+      - name: Run clippy action to produce annotations
+        run: cargo clippy
+
+      - name: Download test files
+        run: wget -O ./tests.zip https://github.com/mandiant/macos-UnifiedLogs/releases/download/v1.0.0/tests.zip && unzip tests.zip
+      - name: Build tests
+        run: cargo test --no-run --release
+      - name: Run tests
+        run: cargo test --release

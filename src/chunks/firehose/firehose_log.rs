@@ -67,7 +67,6 @@ pub struct FirehoseItemType {
     offset: u16,
     message_string_size: u16,
     pub message_strings: String,
-    pub backtrace_strings: Vec<String>, // Only exists if log entry flag "has_context_data" is set
 }
 
 #[derive(Debug, Clone)]
@@ -240,8 +239,8 @@ impl FirehosePreamble {
                 let string_offset = data.firehose_non_activity.private_strings_offset
                     - firehose_private_data_virtual_offset;
                 let (private_string_start, _) = take(string_offset)(private_input)?;
-                let (_, _) =
-                    FirehosePreamble::parse_private_data(private_string_start, &mut data.message)?;
+                let _ =
+                    FirehosePreamble::parse_private_data(private_string_start, &mut data.message);
             }
             input = private_input;
         }
@@ -272,7 +271,8 @@ impl FirehosePreamble {
         // Dynamic precision item types?
         let precision_items = [0x10, 0x12];
         //  Likely realted to private string. Seen only "<private>" values
-        let sensitive_items = [0x45];
+        // 0x85 and 0x5 added in macOS Sequioa
+        let sensitive_items = [0x5, 0x45, 0x85];
         let object_items = [0x40, 0x42];
 
         while &item_count < firehose_number_items {
@@ -332,7 +332,8 @@ impl FirehosePreamble {
             }
         }
 
-        let private_strings: Vec<u8> = vec![0x21, 0x25, 0x35, 0x31, 0x41];
+        // 0x81 and 0xf1 Added in macOS Sequioa
+        let private_strings: Vec<u8> = vec![0x21, 0x25, 0x35, 0x31, 0x41, 0x81, 0xf1];
         let private_number = 0x1;
         // Now at the end of firehose item types.
         // Remaining data (if any) contains strings for the string item types
@@ -403,7 +404,7 @@ impl FirehosePreamble {
         data: &'a [u8],
         firehose_item_data: &mut FirehoseItemData,
     ) -> nom::IResult<&'a [u8], ()> {
-        let private_strings: Vec<u8> = vec![0x21, 0x25, 0x41, 0x35, 0x31];
+        let private_strings: Vec<u8> = vec![0x21, 0x25, 0x41, 0x35, 0x31, 0x81, 0xf1];
         let private_number = 0x1;
 
         let mut private_string_start = data;
@@ -733,12 +734,11 @@ impl FirehosePreamble {
             offset: 0,
             message_string_size: 0,
             message_strings: String::new(),
-            backtrace_strings: Vec::new(),
         };
 
         // Firehose string item values
         let string_item: Vec<u8> = vec![
-            0x20, 0x21, 0x22, 0x25, 0x40, 0x41, 0x42, 0x30, 0x31, 0x32, 0xf2, 0x35,
+            0x20, 0x21, 0x22, 0x25, 0x40, 0x41, 0x42, 0x30, 0x31, 0x32, 0xf2, 0x35, 0x81, 0xf1,
         ];
         let private_number = 0x1;
         // String and private number items metadata is 4 bytes
@@ -762,7 +762,7 @@ impl FirehosePreamble {
             let (input, _) = take(item.item_size)(firehose_input)?;
             firehose_input = input;
         }
-        let sensitive_items = [0x45];
+        let sensitive_items = [0x5, 0x45, 0x85];
         if sensitive_items.contains(&item.item_type) {
             let (input, offset) = take(size_of::<u16>())(firehose_input)?;
             let (_, message_offset) = le_u16(offset)?;

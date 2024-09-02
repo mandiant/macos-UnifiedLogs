@@ -220,6 +220,13 @@ pub fn format_firehose_log_message(
             item_index += 1;
         }
 
+        if item_index >= item_message.len() {
+            format_and_message.formatter = formatter.as_str().to_string();
+            format_and_message.message = String::from("<Missing message data>");
+            format_and_message_vec.push(format_and_message);
+            continue;
+        }
+
         // Also seen number type value 0 also used for dynamic width/precision value
         let dynamic_precision_value = 0x0;
         if (item_message[item_index].item_type == dynamic_precision_value
@@ -270,6 +277,11 @@ fn parse_formatter<'a>(
     if precision_items.contains(item_type) {
         precision_value = message_value[index].item_size as usize;
         index += 1;
+
+        if index >= message_value.len() {
+            error!("[macos-unifiedlogs] Index now greater than messages array. This should not have happened. Index: {index}. Message Array len: {}", message_value.len());
+            return Ok(("", String::from("Failed to format string due index length")));
+        }
     }
 
     let mut message = message_value[index].message_strings.to_owned();
@@ -334,6 +346,13 @@ fn parse_formatter<'a>(
         if item_type == &dynamic_precision_value && message_value[index].item_size == 0 {
             precision_value = message_value[index].item_size as usize;
             index += 1;
+            if index >= message_value.len() {
+                error!("[macos-unifiedlogs] Index now greater than messages array. This should not have happened. Index: {index}. Message Array len: {}", message_value.len());
+                return Ok((
+                    "",
+                    String::from("Failed to format precision/dynamic string due index length"),
+                ));
+            }
             message_value[index]
                 .message_strings
                 .clone_into(&mut message);
