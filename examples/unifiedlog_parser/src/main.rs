@@ -17,11 +17,13 @@ use macos_unifiedlogs::unified_log::{LogData, UnifiedLogData};
 use macos_unifiedlogs::uuidtext::UUIDText;
 use simplelog::{Config, SimpleLogger};
 use std::error::Error;
-use std::fs;
+use std::{fs, io};
 use std::fs::OpenOptions;
+use std::io::Write;
 use std::path::PathBuf;
 
 use clap::Parser;
+use csv::Writer;
 
 #[derive(Parser, Debug)]
 #[clap(version, about, long_about = None)]
@@ -35,29 +37,30 @@ struct Args {
     input: String,
 
     /// Path to output file. Any directories must already exist
-    #[clap(short, long)]
+    #[clap(short, long, default_value = "")]
     output: String,
 }
 
 fn main() {
-    println!("Starting Unified Log parser...");
+    eprintln!("Starting Unified Log parser...");
     // Set logging level to warning
     SimpleLogger::init(LevelFilter::Warn, Config::default())
         .expect("Failed to initialize simple logger");
 
     let args = Args::parse();
+    let mut writer = construct_writer(&args.output).unwrap();
     // Create headers for CSV file
-    output_header().unwrap();
+    output_header(&mut writer).unwrap();
 
-    if args.input != "" && args.output != "" {
-        parse_log_archive(&args.input);
+    if args.input != "" {
+        parse_log_archive(&args.input, &mut writer);
     } else if args.live != "false" {
-        parse_live_system();
+        parse_live_system(&mut writer);
     }
 }
 
-// Parse a provided directory path. Currently expect the path to follow macOS log collect structure
-fn parse_log_archive(path: &str) {
+// Parse a provided directory path. Currently, expect the path to follow macOS log collect structure
+fn parse_log_archive(path: &str, writer: &mut Writer<Box<dyn Write>>) {
     let mut archive_path = PathBuf::from(path);
 
     // Parse all UUID files which contain strings and other metadata
@@ -81,13 +84,14 @@ fn parse_log_archive(path: &str) {
         &shared_strings_results,
         &timesync_data,
         path,
+        writer,
     );
 
-    println!("\nFinished parsing Unified Log data. Saved results to: output.csv");
+    eprintln!("\nFinished parsing Unified Log data.");
 }
 
 // Parse a live macOS system
-fn parse_live_system() {
+fn parse_live_system(writer: &mut Writer<Box<dyn Write>>) {
     let strings = collect_strings_system().unwrap();
     let shared_strings = collect_shared_strings_system().unwrap();
     let timesync_data = collect_timesync_system().unwrap();
@@ -97,18 +101,20 @@ fn parse_live_system() {
         &shared_strings,
         &timesync_data,
         "/private/var/db/diagnostics",
+        writer
     );
 
-    println!("\nFinished parsing Unified Log data. Saved results to: output.csv");
+    eprintln!("\nFinished parsing Unified Log data.");
 }
 
 // Use the provided strings, shared strings, timesync data to parse the Unified Log data at provided path.
-// Currently expect the path to follow macOS log collect structure
+// Currently, expect the path to follow macOS log collect structure
 fn parse_trace_file(
     string_results: &[UUIDText],
     shared_strings_results: &[SharedCacheStrings],
     timesync_data: &[TimesyncBoot],
     path: &str,
+    writer: &mut Writer<Box<dyn Write>>
 ) {
     // We need to persist the Oversize log entries (they contain large strings that don't fit in normal log entries)
     // Some log entries have Oversize strings located in different tracev3 files.
@@ -135,12 +141,12 @@ fn parse_trace_file(
         for log_path in paths {
             let data = log_path.unwrap();
             let full_path = data.path().display().to_string();
-            println!("Parsing: {}", full_path);
+            eprintln!("Parsing: {}", full_path);
 
             let log_data = if data.path().exists() {
                 parse_log(&full_path).unwrap()
             } else {
-                println!("File {} no longer on disk", full_path);
+                eprintln!("File {} no longer on disk", full_path);
                 continue;
             };
 
@@ -160,7 +166,7 @@ fn parse_trace_file(
             // Track missing logs
             missing_data.push(missing_logs);
             log_count += results.len();
-            output(&results).unwrap();
+            output(&results, writer).unwrap();
         }
     }
 
@@ -174,12 +180,12 @@ fn parse_trace_file(
         for log_path in paths {
             let data = log_path.unwrap();
             let full_path = data.path().display().to_string();
-            println!("Parsing: {}", full_path);
+            eprintln!("Parsing: {}", full_path);
 
             let mut log_data = if data.path().exists() {
                 parse_log(&full_path).unwrap()
             } else {
-                println!("File {} no longer on disk", full_path);
+                eprintln!("File {} no longer on disk", full_path);
                 continue;
             };
 
@@ -198,7 +204,7 @@ fn parse_trace_file(
             missing_data.push(missing_logs);
             log_count += results.len();
 
-            output(&results).unwrap();
+            output(&results, writer).unwrap();
         }
     }
 
@@ -212,12 +218,12 @@ fn parse_trace_file(
         for log_path in paths {
             let data = log_path.unwrap();
             let full_path = data.path().display().to_string();
-            println!("Parsing: {}", full_path);
+            eprintln!("Parsing: {}", full_path);
 
             let mut log_data = if data.path().exists() {
                 parse_log(&full_path).unwrap()
             } else {
-                println!("File {} no longer on disk", full_path);
+                eprintln!("File {} no longer on disk", full_path);
                 continue;
             };
 
@@ -237,7 +243,7 @@ fn parse_trace_file(
             missing_data.push(missing_logs);
             log_count += results.len();
 
-            output(&results).unwrap();
+            output(&results, writer).unwrap();
         }
     }
     archive_path.pop();
@@ -250,12 +256,12 @@ fn parse_trace_file(
         for log_path in paths {
             let data = log_path.unwrap();
             let full_path = data.path().display().to_string();
-            println!("Parsing: {}", full_path);
+            eprintln!("Parsing: {}", full_path);
 
             let mut log_data = if data.path().exists() {
                 parse_log(&full_path).unwrap()
             } else {
-                println!("File {} no longer on disk", full_path);
+                eprintln!("File {} no longer on disk", full_path);
                 continue;
             };
 
@@ -275,7 +281,7 @@ fn parse_trace_file(
             missing_data.push(missing_logs);
             log_count += results.len();
 
-            output(&results).unwrap();
+            output(&results, writer).unwrap();
         }
     }
     archive_path.pop();
@@ -284,7 +290,7 @@ fn parse_trace_file(
 
     // Check if livedata exists. We only have it if 'log collect' was used
     if archive_path.exists() {
-        println!("Parsing: logdata.LiveData.tracev3");
+        eprintln!("Parsing: logdata.LiveData.tracev3");
         let mut log_data = parse_log(&archive_path.display().to_string()).unwrap();
         log_data.oversize.append(&mut oversize_strings.oversize);
         let (results, missing_logs) = build_log(
@@ -298,7 +304,7 @@ fn parse_trace_file(
         missing_data.push(missing_logs);
         log_count += results.len();
 
-        output(&results).unwrap();
+        output(&results, writer).unwrap();
         // Track oversize entries
         oversize_strings.oversize = log_data.oversize;
         archive_path.pop();
@@ -325,21 +331,25 @@ fn parse_trace_file(
         );
         log_count += results.len();
 
-        output(&results).unwrap();
+        output(&results, writer).unwrap();
     }
-    println!("Parsed {} log entries", log_count);
+    eprintln!("Parsed {} log entries", log_count);
+}
+
+fn construct_writer(output_path: &str) -> Result<Writer<Box<dyn Write>>, Box<dyn Error>> {
+    let writer = if output_path != "" {
+        Box::new(OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(output_path)?) as Box<dyn Write>
+    } else {
+        Box::new(io::stdout()) as Box<dyn Write>
+    };
+    Ok(Writer::from_writer(writer))
 }
 
 // Create csv file and create headers
-fn output_header() -> Result<(), Box<dyn Error>> {
-    let args = Args::parse();
-
-    let csv_file = OpenOptions::new()
-        .append(true)
-        .create(true)
-        .open(args.output)?;
-    let mut writer = csv::Writer::from_writer(csv_file);
-
+fn output_header(writer: &mut Writer<Box<dyn Write>>) -> Result<(), Box<dyn Error>> {
     writer.write_record(&[
         "Timestamp",
         "Event Type",
@@ -359,19 +369,12 @@ fn output_header() -> Result<(), Box<dyn Error>> {
         "Boot UUID",
         "System Timezone Name",
     ])?;
+    writer.flush()?;
     Ok(())
 }
 
 // Append or create csv file
-fn output(results: &Vec<LogData>) -> Result<(), Box<dyn Error>> {
-    let args = Args::parse();
-
-    let csv_file = OpenOptions::new()
-        .append(true)
-        .create(true)
-        .open(args.output)?;
-    let mut writer = csv::Writer::from_writer(csv_file);
-
+fn output(results: &Vec<LogData>, writer: &mut Writer<Box<dyn Write>>) -> Result<(), Box<dyn Error>> {
     for data in results {
         let date_time = Utc.timestamp_nanos(data.time as i64);
         writer.write_record(&[
@@ -394,5 +397,6 @@ fn output(results: &Vec<LogData>) -> Result<(), Box<dyn Error>> {
             data.timezone_name.to_owned(),
         ])?;
     }
+    writer.flush()?;
     Ok(())
 }
