@@ -2,5 +2,6 @@
 members = [
     "unifiedlog_parser",
     "unifiedlog_parser_json",
-    "parse_tracev3",
+    "parse_tracev3", 
+    "unifiedlog_iterator",
 ]
