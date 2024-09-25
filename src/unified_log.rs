@@ -665,18 +665,18 @@ impl LogData {
         };
 
         let mut input = data;
-        let chunk_preamble_size = 16; // Include preamble size in total chunk size
+        const PREAMBLE_SIZE: u64 = 16; // Include preamble size in total chunk size
 
         const HEADER_CHUNK: u32 = 0x1000;
         const CATALOG_CHUNK: u32 = 0x600b;
         const CHUNKSET_CHUNK: u32 = 0x600d;
         // Loop through traceV3 file until all file contents are read
         while !input.is_empty() {
-            let (_, preamble) = LogPreamble::parse(input)?;
+            let (_ignored, preamble) = LogPreamble::parse(input)?;
             let chunk_size = preamble.chunk_data_size;
 
             // Grab all data associated with Unified Log entry (chunk)
-            let (data, chunk_data) = take(chunk_size + chunk_preamble_size)(data)?;
+            let (data, chunk_data) = take(chunk_size + PREAMBLE_SIZE)(data)?;
 
             if preamble.chunk_tag == HEADER_CHUNK {
                 LogData::get_header_data(chunk_data, &mut unified_log_data_true);
@@ -707,6 +707,7 @@ impl LogData {
                     oversize: Vec::new(),
                 };
 
+                // panic!("plop");
                 LogData::get_catalog_data(chunk_data, &mut catalog_data);
             } else if preamble.chunk_tag == CHUNKSET_CHUNK {
                 LogData::get_chunkset_data(
@@ -730,7 +731,7 @@ impl LogData {
                 break;
             }
             input = data;
-            if input.len() < chunk_preamble_size as usize {
+            if input.len() < PREAMBLE_SIZE as usize {
                 warn!(
                     "Not enough data for preamble header, needed 16 bytes. Got: {:?}",
                     input.len()
