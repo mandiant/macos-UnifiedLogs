@@ -842,7 +842,7 @@ impl LogData {
     }
 
     /// Get the header of the Unified Log data (tracev3 file)
-    fn get_header_data(data: &[u8], unified_log_data: &mut UnifiedLogData) {
+    pub(crate) fn get_header_data(data: &[u8], unified_log_data: &mut UnifiedLogData) {
         let header_results = HeaderChunk::parse_header(data);
         match header_results {
             Ok((_, header_data)) => unified_log_data.header.push(header_data),
@@ -851,7 +851,7 @@ impl LogData {
     }
 
     /// Get the Catalog of the Unified Log data (tracev3 file)
-    fn get_catalog_data(data: &[u8], unified_log_data: &mut UnifiedLogCatalogData) {
+    pub(crate) fn get_catalog_data(data: &[u8], unified_log_data: &mut UnifiedLogCatalogData) {
         let catalog_results = CatalogChunk::parse_catalog(data);
         match catalog_results {
             Ok((_, catalog_data)) => unified_log_data.catalog = catalog_data,
@@ -863,7 +863,7 @@ impl LogData {
     }
 
     /// Get the Chunkset of the Unified Log data (tracev3)
-    fn get_chunkset_data(
+    pub(crate) fn get_chunkset_data(
         data: &[u8],
         catalog_data: &mut UnifiedLogCatalogData,
         unified_log_data: &mut UnifiedLogData,
