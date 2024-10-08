@@ -268,14 +268,16 @@ fn parse_trace_file(
         archive_path.pop();
     }
 
-    let exclude_missing = false;
+    let include_missing = false;
+    println!("Oversize cache size: {}", oversize_strings.oversize.len());
+    println!("Logs with missing Oversize strings: {}", missing_data.len());
+    println!("Checking Oversize cache one more time...");
 
     // Since we have all Oversize entries now. Go through any log entries that we were not able to build before
     for mut leftover_data in missing_data {
         // Add all of our previous oversize data to logs for lookups
         leftover_data
-            .oversize
-            .append(&mut oversize_strings.oversize.to_owned());
+            .oversize = oversize_strings.oversize.clone();
 
         // Exclude_missing = false
         // If we fail to find any missing data its probably due to the logs rolling
@@ -285,7 +287,7 @@ fn parse_trace_file(
             string_results,
             shared_strings_results,
             timesync_data,
-            exclude_missing,
+            include_missing,
         );
         log_count += results.len();
 
@@ -324,9 +326,12 @@ fn iterate_chunks(
             exclude_missing,
         );
         count += results.len();
-        oversize_strings.oversize.append(&mut chunk.oversize);
+        oversize_strings.oversize = chunk.oversize;
         output(&results, writer).unwrap();
-        // Track oversize and missing log data
+        if missing_logs.catalog_data.is_empty() && missing_logs.header.is_empty() && missing_logs.oversize.is_empty() {
+            continue;
+        }
+        // Track possible missing log data due to oversize strings being in another file
         missing.push(missing_logs);
     }
 
