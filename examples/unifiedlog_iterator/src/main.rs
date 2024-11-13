@@ -8,19 +8,20 @@
 use chrono::{SecondsFormat, TimeZone, Utc};
 use log::LevelFilter;
 use macos_unifiedlogs::dsc::SharedCacheStrings;
+use macos_unifiedlogs::iterator::UnifiedLogIterator;
 use macos_unifiedlogs::parser::{
     build_log, collect_shared_strings, collect_shared_strings_system, collect_strings,
-    collect_strings_system, collect_timesync, collect_timesync_system, parse_log,
+    collect_strings_system, collect_timesync, collect_timesync_system,
 };
 use macos_unifiedlogs::timesync::TimesyncBoot;
 use macos_unifiedlogs::unified_log::{LogData, UnifiedLogData};
 use macos_unifiedlogs::uuidtext::UUIDText;
 use simplelog::{Config, SimpleLogger};
 use std::error::Error;
-use std::{fs, io};
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
+use std::{fs, io};
 
 use clap::Parser;
 use csv::Writer;
@@ -101,7 +102,7 @@ fn parse_live_system(writer: &mut Writer<Box<dyn Write>>) {
         &shared_strings,
         &timesync_data,
         "/private/var/db/diagnostics",
-        writer
+        writer,
     );
 
     eprintln!("\nFinished parsing Unified Log data.");
@@ -114,7 +115,7 @@ fn parse_trace_file(
     shared_strings_results: &[SharedCacheStrings],
     timesync_data: &[TimesyncBoot],
     path: &str,
-    writer: &mut Writer<Box<dyn Write>>
+    writer: &mut Writer<Box<dyn Write>>,
 ) {
     // We need to persist the Oversize log entries (they contain large strings that don't fit in normal log entries)
     // Some log entries have Oversize strings located in different tracev3 files.
@@ -125,9 +126,6 @@ fn parse_trace_file(
         oversize: Vec::new(),
     };
 
-    // Exclude missing data from returned output. Keep separate until we parse all oversize entries.
-    // Then at end, go through all missing data and check all parsed oversize entries again
-    let mut exclude_missing = true;
     let mut missing_data: Vec<UnifiedLogData> = Vec::new();
 
     let mut archive_path = PathBuf::from(path);
@@ -143,30 +141,21 @@ fn parse_trace_file(
             let full_path = data.path().display().to_string();
             eprintln!("Parsing: {}", full_path);
 
-            let log_data = if data.path().exists() {
-                parse_log(&full_path).unwrap()
+            if data.path().exists() {
+              let count =  iterate_chunks(
+                    &full_path,
+                    &mut missing_data,
+                    string_results,
+                    shared_strings_results,
+                    timesync_data,
+                    writer,
+                    &mut oversize_strings,
+                );
+                log_count += count;
             } else {
                 eprintln!("File {} no longer on disk", full_path);
                 continue;
             };
-
-            // Get all constructed logs and any log data that failed to get constrcuted (exclude_missing = true)
-            let (results, missing_logs) = build_log(
-                &log_data,
-                string_results,
-                shared_strings_results,
-                timesync_data,
-                exclude_missing,
-            );
-            // Track Oversize entries
-            oversize_strings
-                .oversize
-                .append(&mut log_data.oversize.to_owned());
-
-            // Track missing logs
-            missing_data.push(missing_logs);
-            log_count += results.len();
-            output(&results, writer).unwrap();
         }
     }
 
@@ -182,29 +171,21 @@ fn parse_trace_file(
             let full_path = data.path().display().to_string();
             eprintln!("Parsing: {}", full_path);
 
-            let mut log_data = if data.path().exists() {
-                parse_log(&full_path).unwrap()
+            if data.path().exists() {
+                let count =  iterate_chunks(
+                    &full_path,
+                    &mut missing_data,
+                    string_results,
+                    shared_strings_results,
+                    timesync_data,
+                    writer,
+                    &mut oversize_strings,
+                );
+                log_count += count;
             } else {
                 eprintln!("File {} no longer on disk", full_path);
                 continue;
             };
-
-            // Append our old Oversize entries in case these logs point to other Oversize entries the previous tracev3 files
-            log_data.oversize.append(&mut oversize_strings.oversize);
-            let (results, missing_logs) = build_log(
-                &log_data,
-                string_results,
-                shared_strings_results,
-                timesync_data,
-                exclude_missing,
-            );
-            // Track Oversize entries
-            oversize_strings.oversize = log_data.oversize;
-            // Track missing logs
-            missing_data.push(missing_logs);
-            log_count += results.len();
-
-            output(&results, writer).unwrap();
         }
     }
 
@@ -220,30 +201,21 @@ fn parse_trace_file(
             let full_path = data.path().display().to_string();
             eprintln!("Parsing: {}", full_path);
 
-            let mut log_data = if data.path().exists() {
-                parse_log(&full_path).unwrap()
+            if data.path().exists() {
+                let count =  iterate_chunks(
+                    &full_path,
+                    &mut missing_data,
+                    string_results,
+                    shared_strings_results,
+                    timesync_data,
+                    writer,
+                    &mut oversize_strings,
+                );
+                log_count += count;
             } else {
                 eprintln!("File {} no longer on disk", full_path);
                 continue;
             };
-
-            // Append our old Oversize entries in case these logs point to other Oversize entries the previous tracev3 files
-            log_data.oversize.append(&mut oversize_strings.oversize);
-            let (results, missing_logs) = build_log(
-                &log_data,
-                string_results,
-                shared_strings_results,
-                timesync_data,
-                exclude_missing,
-            );
-
-            // Signposts have not been seen with Oversize entries, but we track them in case a log entry refers to them
-            oversize_strings.oversize = log_data.oversize;
-            // Track missing logs
-            missing_data.push(missing_logs);
-            log_count += results.len();
-
-            output(&results, writer).unwrap();
         }
     }
     archive_path.pop();
@@ -258,30 +230,21 @@ fn parse_trace_file(
             let full_path = data.path().display().to_string();
             eprintln!("Parsing: {}", full_path);
 
-            let mut log_data = if data.path().exists() {
-                parse_log(&full_path).unwrap()
+            if data.path().exists() {
+                let count =  iterate_chunks(
+                    &full_path,
+                    &mut missing_data,
+                    string_results,
+                    shared_strings_results,
+                    timesync_data,
+                    writer,
+                    &mut oversize_strings,
+                );
+                log_count += count;
             } else {
                 eprintln!("File {} no longer on disk", full_path);
                 continue;
             };
-
-            // Append our old Oversize entries in case these logs point to other Oversize entries the previous tracev3 files
-            log_data.oversize.append(&mut oversize_strings.oversize);
-            let (results, missing_logs) = build_log(
-                &log_data,
-                string_results,
-                shared_strings_results,
-                timesync_data,
-                exclude_missing,
-            );
-
-            // Track Oversize entries
-            oversize_strings.oversize = log_data.oversize;
-            // Track missing logs
-            missing_data.push(missing_logs);
-            log_count += results.len();
-
-            output(&results, writer).unwrap();
         }
     }
     archive_path.pop();
@@ -291,28 +254,23 @@ fn parse_trace_file(
     // Check if livedata exists. We only have it if 'log collect' was used
     if archive_path.exists() {
         eprintln!("Parsing: logdata.LiveData.tracev3");
-        let mut log_data = parse_log(&archive_path.display().to_string()).unwrap();
-        log_data.oversize.append(&mut oversize_strings.oversize);
-        let (results, missing_logs) = build_log(
-            &log_data,
+
+        let count =  iterate_chunks(
+            &archive_path.display().to_string(),
+            &mut missing_data,
             string_results,
             shared_strings_results,
             timesync_data,
-            exclude_missing,
+            writer,
+            &mut oversize_strings,
         );
-        // Track missing data
-        missing_data.push(missing_logs);
-        log_count += results.len();
-
-        output(&results, writer).unwrap();
-        // Track oversize entries
-        oversize_strings.oversize = log_data.oversize;
+        log_count += count;
         archive_path.pop();
     }
 
-    exclude_missing = false;
+    let include_missing = false;
     println!("Oversize cache size: {}", oversize_strings.oversize.len());
-    println!("Logs with missing oversize strings: {}", missing_data.len());
+    println!("Logs with missing Oversize strings: {}", missing_data.len());
     println!("Checking Oversize cache one more time...");
 
     // Since we have all Oversize entries now. Go through any log entries that we were not able to build before
@@ -329,7 +287,7 @@ fn parse_trace_file(
             string_results,
             shared_strings_results,
             timesync_data,
-            exclude_missing,
+            include_missing,
         );
         log_count += results.len();
 
@@ -338,12 +296,56 @@ fn parse_trace_file(
     eprintln!("Parsed {} log entries", log_count);
 }
 
+fn iterate_chunks(
+    path: &str,
+    missing: &mut Vec<UnifiedLogData>,
+    strings_data: &[UUIDText],
+    shared_strings: &[SharedCacheStrings],
+    timesync_data: &[TimesyncBoot],
+    writer: &mut Writer<Box<dyn Write>>,
+    oversize_strings: &mut UnifiedLogData,
+) -> usize {
+    let log_bytes = fs::read(path).unwrap();
+    let log_iterator = UnifiedLogIterator {
+        data: log_bytes,
+        header: Vec::new(),
+    };
+
+    // Exclude missing data from returned output. Keep separate until we parse all oversize entries.
+    // Then after parsing all logs, go through all missing data and check all parsed oversize entries again
+    let exclude_missing = true;
+
+    let mut count = 0;
+    for mut chunk in log_iterator {
+        chunk.oversize.append(&mut oversize_strings.oversize);
+        let (results, missing_logs) = build_log(
+            &chunk,
+            strings_data,
+            shared_strings,
+            timesync_data,
+            exclude_missing,
+        );
+        count += results.len();
+        oversize_strings.oversize = chunk.oversize;
+        output(&results, writer).unwrap();
+        if missing_logs.catalog_data.is_empty() && missing_logs.header.is_empty() && missing_logs.oversize.is_empty() {
+            continue;
+        }
+        // Track possible missing log data due to oversize strings being in another file
+        missing.push(missing_logs);
+    }
+
+    count
+}
+
 fn construct_writer(output_path: &str) -> Result<Writer<Box<dyn Write>>, Box<dyn Error>> {
     let writer = if output_path != "" {
-        Box::new(OpenOptions::new()
-            .append(true)
-            .create(true)
-            .open(output_path)?) as Box<dyn Write>
+        Box::new(
+            OpenOptions::new()
+                .append(true)
+                .create(true)
+                .open(output_path)?,
+        ) as Box<dyn Write>
     } else {
         Box::new(io::stdout()) as Box<dyn Write>
     };
@@ -376,7 +378,10 @@ fn output_header(writer: &mut Writer<Box<dyn Write>>) -> Result<(), Box<dyn Erro
 }
 
 // Append or create csv file
-fn output(results: &Vec<LogData>, writer: &mut Writer<Box<dyn Write>>) -> Result<(), Box<dyn Error>> {
+fn output(
+    results: &Vec<LogData>,
+    writer: &mut Writer<Box<dyn Write>>,
+) -> Result<(), Box<dyn Error>> {
     for data in results {
         let date_time = Utc.timestamp_nanos(data.time as i64);
         writer.write_record(&[
