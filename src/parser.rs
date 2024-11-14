@@ -361,10 +361,12 @@ pub fn collect_timesync(path: &str) -> Result<Vec<TimesyncBoot>, ParserError> {
 #[cfg(test)]
 mod tests {
     use crate::parser::{
-        build_log, collect_shared_strings, collect_shared_strings_system, collect_strings,
-        collect_strings_system, collect_timesync, collect_timesync_system, parse_log,
+        build_log, collect_shared_strings, collect_strings, collect_timesync, parse_log,
     };
-
+    #[cfg(target_os = "macos")]
+    use crate::parser::{
+        collect_shared_strings_system, collect_strings_system, collect_timesync_system,
+    };
     use std::path::PathBuf;
 
     #[test]
