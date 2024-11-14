@@ -448,9 +448,9 @@ mod tests {
         let strings_results = collect_strings(&test_path.display().to_string()).unwrap();
         assert_eq!(strings_results.len(), 536);
         assert_eq!(strings_results[0].signature, 1719109785);
-        assert_eq!(strings_results[0].uuid, "D9B97EA2CD39C7A9AF1888E041B9E1");
+        assert_eq!(strings_results[0].uuid, "5283D7FC2531558F2C1ACE9AF26A0F");
         assert_eq!(strings_results[0].entry_descriptors.len(), 2);
-        assert_eq!(strings_results[0].footer_data.len(), 238974);
+        assert_eq!(strings_results[0].footer_data.len(), 48096);
         assert_eq!(strings_results[0].number_entries, 2);
         assert_eq!(strings_results[0].unknown_minor_version, 1);
         assert_eq!(strings_results[0].unknown_major_version, 2);
