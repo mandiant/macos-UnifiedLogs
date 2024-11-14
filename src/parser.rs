@@ -100,31 +100,24 @@ pub fn build_log(
 pub fn collect_strings(path: &str) -> Result<Vec<UUIDText>, ParserError> {
     let paths_results = fs::read_dir(path);
 
-    let paths = match paths_results {
-        Ok(path) => path,
-        Err(err) => {
-            error!(
-                "[macos-unifiedlogs] Failed to read directory path: {:?}",
-                err
-            );
-            return Err(ParserError::Dir);
-        }
-    };
+    let paths = paths_results.map_err(|err| {
+        error!("[macos-unifiedlogs] Failed to read directory path: {err:?}");
+        ParserError::Dir
+    })?;
 
-    let mut uuidtext_vec: Vec<UUIDText> = Vec::new();
+    let mut entries = paths
+        .flat_map(|path| {
+            path.inspect_err(|err| {
+                error!("[macos-unifiedlogs] Failed to get directory entry: {err:?}",)
+            })
+            .ok()
+        })
+        .collect::<Vec<_>>();
+    entries.sort_by(|a, b| a.file_name().as_os_str().cmp(b.file_name().as_os_str()));
+
+    let mut uuidtext_vec: Vec<UUIDText> = Vec::with_capacity(entries.len());
     // Start process to read a directory containing subdirectories that contain the uuidtext files
-    for path in paths {
-        let dir_entry = match path {
-            Ok(entry) => entry,
-            Err(err) => {
-                error!(
-                    "[macos-unifiedlogs] Failed to get directory entry: {:?}",
-                    err
-                );
-                continue;
-            }
-        };
-
+    for dir_entry in entries {
         let type_results = dir_entry.file_type();
         let entry_type = match type_results {
             Ok(dir_type) => dir_type,
@@ -448,12 +441,18 @@ mod tests {
         let strings_results = collect_strings(&test_path.display().to_string()).unwrap();
         assert_eq!(strings_results.len(), 536);
         assert_eq!(strings_results[0].signature, 1719109785);
-        assert_eq!(strings_results[0].uuid, "5283D7FC2531558F2C1ACE9AF26A0F");
+        assert_eq!(strings_results[0].uuid, "B6B65F4DC53ED38FEB0DDF61809853");
         assert_eq!(strings_results[0].entry_descriptors.len(), 2);
-        assert_eq!(strings_results[0].footer_data.len(), 48096);
+        assert_eq!(strings_results[0].footer_data.len(), 1707);
         assert_eq!(strings_results[0].number_entries, 2);
         assert_eq!(strings_results[0].unknown_minor_version, 1);
         assert_eq!(strings_results[0].unknown_major_version, 2);
+
+        assert_eq!(strings_results[1].uuid, "D9B97EA2CD39C7A9AF1888E041B9E1");
+        assert_eq!(strings_results[1].footer_data.len(), 238974);
+
+        assert_eq!(strings_results[2].uuid, "2578ECF07936A6A882574764C7C785");
+        assert_eq!(strings_results[2].footer_data.len(), 68714);
     }
 
     #[test]
