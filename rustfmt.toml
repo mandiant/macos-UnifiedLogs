@@ -1,0 +1,5 @@
+newline_style = "Unix"
+tab_spaces = 4
+max_width = 100
+chain_width = 60
+use_small_heuristics = "Default"
