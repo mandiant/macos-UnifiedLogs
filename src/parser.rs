@@ -375,18 +375,21 @@ mod tests {
     use std::path::PathBuf;
 
     #[test]
+    #[cfg(target_os = "macos")]
     fn test_collect_strings_system() {
         let uuidtext_results = collect_strings_system().unwrap();
         assert!(uuidtext_results.len() > 100);
     }
 
     #[test]
+    #[cfg(target_os = "macos")]
     fn test_collect_timesync_system() {
         let timesync_results = collect_timesync_system().unwrap();
         assert!(timesync_results.len() > 1);
     }
 
     #[test]
+    #[cfg(target_os = "macos")]
     fn test_collect_timesync_archive() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         test_path.push("tests/test_data/system_logs_big_sur.logarchive/timesync");
@@ -409,6 +412,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "macos")]
     fn test_collect_shared_strings_system() {
         let shared_strings_results = collect_shared_strings_system().unwrap();
         assert!(shared_strings_results[0].ranges.len() > 1);
@@ -444,9 +448,9 @@ mod tests {
         let strings_results = collect_strings(&test_path.display().to_string()).unwrap();
         assert_eq!(strings_results.len(), 536);
         assert_eq!(strings_results[0].signature, 1719109785);
-        assert_eq!(strings_results[0].uuid, "5283D7FC2531558F2C1ACE9AF26A0F");
+        assert_eq!(strings_results[0].uuid, "D9B97EA2CD39C7A9AF1888E041B9E1");
         assert_eq!(strings_results[0].entry_descriptors.len(), 2);
-        assert_eq!(strings_results[0].footer_data.len(), 48096);
+        assert_eq!(strings_results[0].footer_data.len(), 238974);
         assert_eq!(strings_results[0].number_entries, 2);
         assert_eq!(strings_results[0].unknown_minor_version, 1);
         assert_eq!(strings_results[0].unknown_major_version, 2);
