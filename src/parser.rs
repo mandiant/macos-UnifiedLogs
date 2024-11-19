@@ -317,7 +317,7 @@ pub fn collect_timesync(path: &str) -> Result<HashMap<String, TimesyncBoot>, Par
         }
     };
 
-    let mut timesync_data = HashMap::new();
+    let mut timesync_data: HashMap<String, TimesyncBoot> = HashMap::new();
     // Start process to read and parse all timesync files
     for path in paths {
         let data = match path {
@@ -351,8 +351,8 @@ pub fn collect_timesync(path: &str) -> Result<HashMap<String, TimesyncBoot>, Par
         );
 
         let timesync_results = TimesyncBoot::parse_timesync_data(&buffer);
-        match timesync_results {
-            Ok((_, timesync)) => timesync_data.extend(timesync),
+        let timesync_map = match timesync_results {
+            Ok((_, results)) => results,
             Err(err) => {
                 error!(
                     "[macos-unifiedlogs] Failed to parse timesync file {}: {:?}",
@@ -361,6 +361,18 @@ pub fn collect_timesync(path: &str) -> Result<HashMap<String, TimesyncBoot>, Par
                 );
                 continue;
             }
+        };
+
+        /*
+         * If a macOS system has been online for a long time. macOS will create a new timesync file with the same boot UUID
+         * So we check if we already have an existing UUID and if we do, we just add the data to the existing data we have
+         */
+        for (key, mut value) in timesync_map {
+            if let Some(exiting_boot) = timesync_data.get_mut(&key) {
+                exiting_boot.timesync.append(&mut value.timesync);
+                continue;
+            }
+            timesync_data.insert(key, value);
         }
     }
     Ok(timesync_data)

@@ -41,7 +41,7 @@ pub struct Timesync {
 impl TimesyncBoot {
     /// Parse the Unified Log timesync files
     pub fn parse_timesync_data(data: &[u8]) -> nom::IResult<&[u8], HashMap<String, TimesyncBoot>> {
-        let mut timesync_data = HashMap::new();
+        let mut timesync_data: HashMap<String, TimesyncBoot> = HashMap::new();
         let mut input = data;
 
         let mut timesync_boot = TimesyncBoot {
@@ -68,7 +68,11 @@ impl TimesyncBoot {
                 input = timesync_input;
             } else {
                 if timesync_boot.signature != 0 {
-                    timesync_data.insert(timesync_boot.boot_uuid.clone(), timesync_boot);
+                    if let Some(existing_boot) = timesync_data.get_mut(&timesync_boot.boot_uuid) {
+                        existing_boot.timesync.append(&mut timesync_boot.timesync);
+                    } else {
+                        timesync_data.insert(timesync_boot.boot_uuid.clone(), timesync_boot);
+                    }
                 }
                 let (timesync_input, timesync_boot_data) =
                     TimesyncBoot::parse_timesync_boot(input)?;
@@ -76,7 +80,11 @@ impl TimesyncBoot {
                 input = timesync_input;
             }
         }
-        timesync_data.insert(timesync_boot.boot_uuid.clone(), timesync_boot);
+        if let Some(existing_boot) = timesync_data.get_mut(&timesync_boot.boot_uuid) {
+            existing_boot.timesync.append(&mut timesync_boot.timesync);
+        } else {
+            timesync_data.insert(timesync_boot.boot_uuid.clone(), timesync_boot);
+        }
 
         Ok((input, timesync_data))
     }
@@ -204,7 +212,6 @@ impl TimesyncBoot {
 
         // Apple Intel uses 1/1 as the timebase
         let mut timebase_adjustment = 1.0;
-
         if let Some(timesync) = timesync_data.get(boot_uuid) {
             if timesync.timebase_numerator == 125 && timesync.timebase_denominator == 3 {
                 // For Apple Silicon (ARM) we need to adjust the mach time by multiplying by 125.0/3.0 to get the accurate nanosecond count
