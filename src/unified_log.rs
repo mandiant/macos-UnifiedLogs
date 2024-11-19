@@ -9,6 +9,8 @@
 //!
 //! Provides a simple library to parse the macOS Unified Log format.
 
+use std::collections::HashMap;
+
 use crate::catalog::CatalogChunk;
 use crate::chunks::firehose::activity::FirehoseActivity;
 use crate::chunks::firehose::firehose_log::{Firehose, FirehoseItemInfo, FirehosePreamble};
@@ -51,7 +53,7 @@ struct LogIterator<'a> {
     unified_log_data: &'a UnifiedLogData,
     strings_data: &'a [UUIDText],
     shared_strings: &'a [SharedCacheStrings],
-    timesync_data: &'a [TimesyncBoot],
+    timesync_data: &'a HashMap<String, TimesyncBoot>,
     exclude_missing: bool,
     message_re: Regex,
     catalog_data_iterator_index: usize,
@@ -61,7 +63,7 @@ impl<'a> LogIterator<'a> {
         unified_log_data: &'a UnifiedLogData,
         strings_data: &'a [UUIDText],
         shared_strings: &'a [SharedCacheStrings],
-        timesync_data: &'a [TimesyncBoot],
+        timesync_data: &'a HashMap<String, TimesyncBoot>,
         exclude_missing: bool,
     ) -> Result<Self, regex::Error> {
         /*
@@ -747,7 +749,7 @@ impl LogData {
         unified_log_data: &'a UnifiedLogData,
         strings_data: &'a [UUIDText],
         shared_strings: &'a [SharedCacheStrings],
-        timesync_data: &'a [TimesyncBoot],
+        timesync_data: &'a HashMap<String, TimesyncBoot>,
         exclude_missing: bool,
     ) -> Result<impl Iterator<Item = (Vec<LogData>, UnifiedLogData)> + 'a, regex::Error> {
         LogIterator::new(
@@ -765,7 +767,7 @@ impl LogData {
         unified_log_data: &UnifiedLogData,
         strings_data: &[UUIDText],
         shared_strings: &[SharedCacheStrings],
-        timesync_data: &[TimesyncBoot],
+        timesync_data: &HashMap<String, TimesyncBoot>,
         exclude_missing: bool,
     ) -> (Vec<LogData>, UnifiedLogData) {
         let mut log_data_vec: Vec<LogData> = Vec::new();
@@ -960,7 +962,7 @@ mod tests {
         parser::{collect_shared_strings, collect_strings, collect_timesync, iter_log, parse_log},
         unified_log::UnifiedLogCatalogData,
     };
-    use std::{fs, path::PathBuf};
+    use std::{collections::HashMap, fs, path::PathBuf};
 
     #[test]
     fn test_parse_unified_log() {
@@ -987,7 +989,8 @@ mod tests {
         let buffer = fs::read(test_path).unwrap();
 
         let (_, results) = LogData::parse_unified_log(&buffer).unwrap();
-        let iter = iter_log(&results, &[], &[], &[], false).unwrap();
+        let map = HashMap::new();
+        let iter = iter_log(&results, &[], &[], &map, false).unwrap();
         for (entry, remaining) in iter {
             assert!(entry.len() > 1000);
             assert!(remaining.catalog_data.is_empty());

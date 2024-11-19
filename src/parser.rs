@@ -12,6 +12,7 @@ use crate::error::ParserError;
 use crate::timesync::TimesyncBoot;
 use crate::unified_log::{LogData, UnifiedLogData};
 use crate::uuidtext::UUIDText;
+use std::collections::HashMap;
 use std::fs;
 
 /// Parse the UUID files on a live system
@@ -27,7 +28,7 @@ pub fn collect_shared_strings_system() -> Result<Vec<SharedCacheStrings>, Parser
 }
 
 /// Parse the timesync files on a live system
-pub fn collect_timesync_system() -> Result<Vec<TimesyncBoot>, ParserError> {
+pub fn collect_timesync_system() -> Result<HashMap<String, TimesyncBoot>, ParserError> {
     let timesync = String::from("/private/var/db/diagnostics/timesync");
     collect_timesync(&timesync)
 }
@@ -65,7 +66,7 @@ pub fn iter_log<'a>(
     unified_log_data: &'a UnifiedLogData,
     strings_data: &'a [UUIDText],
     shared_strings: &'a [SharedCacheStrings],
-    timesync_data: &'a [TimesyncBoot],
+    timesync_data: &'a HashMap<String, TimesyncBoot>,
     exclude_missing: bool,
 ) -> Result<impl Iterator<Item = (Vec<LogData>, UnifiedLogData)> + 'a, regex::Error> {
     LogData::iter_log(
@@ -84,7 +85,7 @@ pub fn build_log(
     unified_data: &UnifiedLogData,
     strings_data: &[UUIDText],
     shared_strings: &[SharedCacheStrings],
-    timesync_data: &[TimesyncBoot],
+    timesync_data: &HashMap<String, TimesyncBoot>,
     exclude_missing: bool,
 ) -> (Vec<LogData>, UnifiedLogData) {
     LogData::build_log(
@@ -302,7 +303,7 @@ pub fn collect_shared_strings(path: &str) -> Result<Vec<SharedCacheStrings>, Par
 }
 
 /// Parse all timesync files in provided directory
-pub fn collect_timesync(path: &str) -> Result<Vec<TimesyncBoot>, ParserError> {
+pub fn collect_timesync(path: &str) -> Result<HashMap<String, TimesyncBoot>, ParserError> {
     let paths_results = fs::read_dir(path);
 
     let paths = match paths_results {
@@ -316,7 +317,7 @@ pub fn collect_timesync(path: &str) -> Result<Vec<TimesyncBoot>, ParserError> {
         }
     };
 
-    let mut timesync_data_vec: Vec<TimesyncBoot> = Vec::new();
+    let mut timesync_data = HashMap::new();
     // Start process to read and parse all timesync files
     for path in paths {
         let data = match path {
@@ -351,7 +352,7 @@ pub fn collect_timesync(path: &str) -> Result<Vec<TimesyncBoot>, ParserError> {
 
         let timesync_results = TimesyncBoot::parse_timesync_data(&buffer);
         match timesync_results {
-            Ok((_, mut timesync)) => timesync_data_vec.append(&mut timesync),
+            Ok((_, timesync)) => timesync_data.extend(timesync),
             Err(err) => {
                 error!(
                     "[macos-unifiedlogs] Failed to parse timesync file {}: {:?}",
@@ -362,7 +363,7 @@ pub fn collect_timesync(path: &str) -> Result<Vec<TimesyncBoot>, ParserError> {
             }
         }
     }
-    Ok(timesync_data_vec)
+    Ok(timesync_data)
 }
 
 #[cfg(test)]
@@ -393,19 +394,77 @@ mod tests {
 
         let timesync_data = collect_timesync(&test_path.display().to_string()).unwrap();
         assert_eq!(timesync_data.len(), 5);
-        assert_eq!(timesync_data[0].signature, 48048);
-        assert_eq!(timesync_data[0].unknown, 0);
         assert_eq!(
-            timesync_data[0].boot_uuid,
+            timesync_data
+                .get("9A6A3124274A44B29ABF2BC9E4599B3B")
+                .unwrap()
+                .signature,
+            48048
+        );
+        assert_eq!(
+            timesync_data
+                .get("9A6A3124274A44B29ABF2BC9E4599B3B")
+                .unwrap()
+                .unknown,
+            0
+        );
+        assert_eq!(
+            timesync_data
+                .get("9A6A3124274A44B29ABF2BC9E4599B3B")
+                .unwrap()
+                .boot_uuid,
             "9A6A3124274A44B29ABF2BC9E4599B3B"
         );
-        assert_eq!(timesync_data[0].timesync.len(), 5);
-        assert_eq!(timesync_data[0].daylight_savings, 0);
-        assert_eq!(timesync_data[0].boot_time, 1642302206000000000);
-        assert_eq!(timesync_data[0].header_size, 48);
-        assert_eq!(timesync_data[0].timebase_denominator, 1);
-        assert_eq!(timesync_data[0].timebase_numerator, 1);
-        assert_eq!(timesync_data[0].timezone_offset_mins, 0);
+        assert_eq!(
+            timesync_data
+                .get("9A6A3124274A44B29ABF2BC9E4599B3B")
+                .unwrap()
+                .timesync
+                .len(),
+            5
+        );
+        assert_eq!(
+            timesync_data
+                .get("9A6A3124274A44B29ABF2BC9E4599B3B")
+                .unwrap()
+                .daylight_savings,
+            0
+        );
+        assert_eq!(
+            timesync_data
+                .get("9A6A3124274A44B29ABF2BC9E4599B3B")
+                .unwrap()
+                .boot_time,
+            1642302206000000000
+        );
+        assert_eq!(
+            timesync_data
+                .get("9A6A3124274A44B29ABF2BC9E4599B3B")
+                .unwrap()
+                .header_size,
+            48
+        );
+        assert_eq!(
+            timesync_data
+                .get("9A6A3124274A44B29ABF2BC9E4599B3B")
+                .unwrap()
+                .timebase_denominator,
+            1
+        );
+        assert_eq!(
+            timesync_data
+                .get("9A6A3124274A44B29ABF2BC9E4599B3B")
+                .unwrap()
+                .timebase_numerator,
+            1
+        );
+        assert_eq!(
+            timesync_data
+                .get("9A6A3124274A44B29ABF2BC9E4599B3B")
+                .unwrap()
+                .timezone_offset_mins,
+            0
+        );
     }
 
     #[test]

@@ -17,6 +17,7 @@ use macos_unifiedlogs::timesync::TimesyncBoot;
 use macos_unifiedlogs::unified_log::{LogData, UnifiedLogData};
 use macos_unifiedlogs::uuidtext::UUIDText;
 use simplelog::{Config, SimpleLogger};
+use std::collections::HashMap;
 use std::error::Error;
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -113,7 +114,7 @@ fn parse_live_system(writer: &mut Writer<Box<dyn Write>>) {
 fn parse_trace_file(
     string_results: &[UUIDText],
     shared_strings_results: &[SharedCacheStrings],
-    timesync_data: &[TimesyncBoot],
+    timesync_data: &HashMap<String, TimesyncBoot>,
     path: &str,
     writer: &mut Writer<Box<dyn Write>>,
 ) {
@@ -142,7 +143,7 @@ fn parse_trace_file(
             eprintln!("Parsing: {}", full_path);
 
             if data.path().exists() {
-              let count =  iterate_chunks(
+                let count = iterate_chunks(
                     &full_path,
                     &mut missing_data,
                     string_results,
@@ -172,7 +173,7 @@ fn parse_trace_file(
             eprintln!("Parsing: {}", full_path);
 
             if data.path().exists() {
-                let count =  iterate_chunks(
+                let count = iterate_chunks(
                     &full_path,
                     &mut missing_data,
                     string_results,
@@ -202,7 +203,7 @@ fn parse_trace_file(
             eprintln!("Parsing: {}", full_path);
 
             if data.path().exists() {
-                let count =  iterate_chunks(
+                let count = iterate_chunks(
                     &full_path,
                     &mut missing_data,
                     string_results,
@@ -231,7 +232,7 @@ fn parse_trace_file(
             eprintln!("Parsing: {}", full_path);
 
             if data.path().exists() {
-                let count =  iterate_chunks(
+                let count = iterate_chunks(
                     &full_path,
                     &mut missing_data,
                     string_results,
@@ -255,7 +256,7 @@ fn parse_trace_file(
     if archive_path.exists() {
         eprintln!("Parsing: logdata.LiveData.tracev3");
 
-        let count =  iterate_chunks(
+        let count = iterate_chunks(
             &archive_path.display().to_string(),
             &mut missing_data,
             string_results,
@@ -276,8 +277,7 @@ fn parse_trace_file(
     // Since we have all Oversize entries now. Go through any log entries that we were not able to build before
     for mut leftover_data in missing_data {
         // Add all of our previous oversize data to logs for lookups
-        leftover_data
-            .oversize = oversize_strings.oversize.clone();
+        leftover_data.oversize = oversize_strings.oversize.clone();
 
         // Exclude_missing = false
         // If we fail to find any missing data its probably due to the logs rolling
@@ -301,7 +301,7 @@ fn iterate_chunks(
     missing: &mut Vec<UnifiedLogData>,
     strings_data: &[UUIDText],
     shared_strings: &[SharedCacheStrings],
-    timesync_data: &[TimesyncBoot],
+    timesync_data: &HashMap<String, TimesyncBoot>,
     writer: &mut Writer<Box<dyn Write>>,
     oversize_strings: &mut UnifiedLogData,
 ) -> usize {
@@ -328,7 +328,10 @@ fn iterate_chunks(
         count += results.len();
         oversize_strings.oversize = chunk.oversize;
         output(&results, writer).unwrap();
-        if missing_logs.catalog_data.is_empty() && missing_logs.header.is_empty() && missing_logs.oversize.is_empty() {
+        if missing_logs.catalog_data.is_empty()
+            && missing_logs.header.is_empty()
+            && missing_logs.oversize.is_empty()
+        {
             continue;
         }
         // Track possible missing log data due to oversize strings being in another file
