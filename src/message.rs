@@ -164,7 +164,7 @@ pub fn format_firehose_log_message(
                 let results = parse_type_formatter(
                     formatter_string,
                     item_message,
-                    &item_message[item_index].item_type,
+                    item_message[item_index].item_type,
                     item_index,
                 );
                 match results {
@@ -204,7 +204,7 @@ pub fn format_firehose_log_message(
                 let results = parse_formatter(
                     formatter_string,
                     item_message,
-                    &item_message[item_index].item_type,
+                    item_message[item_index].item_type,
                     item_index,
                 );
                 match results {
@@ -214,9 +214,9 @@ pub fn format_firehose_log_message(
             }
         }
 
-        let precision_items = [0x10, 0x12]; // dynamic precision item types?
-                                            // If the item message was a precision type increment to actual value
-        if precision_items.contains(&item_message[item_index].item_type) {
+        const PRECISION_ITEMS: [u8; 2] = [0x10, 0x12]; // dynamic precision item types?
+                                                       // If the item message was a precision type increment to actual value
+        if PRECISION_ITEMS.contains(&item_message[item_index].item_type) {
             item_index += 1;
         }
 
@@ -267,14 +267,14 @@ pub fn format_firehose_log_message(
 fn parse_formatter<'a>(
     formatter: &'a str,
     message_value: &'a [FirehoseItemInfo],
-    item_type: &'a u8,
+    item_type: u8,
     item_index: usize,
 ) -> nom::IResult<&'a str, String> {
     let mut index = item_index;
 
-    let precision_items = [0x10, 0x12];
+    const PRECISION_ITEMS: [u8; 2] = [0x10, 0x12];
     let mut precision_value = 0;
-    if precision_items.contains(item_type) {
+    if PRECISION_ITEMS.contains(&item_type) {
         precision_value = message_value[index].item_size as usize;
         index += 1;
 
@@ -342,8 +342,8 @@ fn parse_formatter<'a>(
 
     if formatter_message.starts_with('*') {
         // Also seen number type value 0 used for dynamic width/precision value
-        let dynamic_precision_value = 0x0;
-        if item_type == &dynamic_precision_value && message_value[index].item_size == 0 {
+        const DYNAMIC_PRECISION_VALUE: u8 = 0x0;
+        if item_type == DYNAMIC_PRECISION_VALUE && message_value[index].item_size == 0 {
             precision_value = message_value[index].item_size as usize;
             index += 1;
             if index >= message_value.len() {
@@ -470,7 +470,7 @@ fn parse_formatter<'a>(
 fn parse_type_formatter<'a>(
     formatter: &'a str,
     message_value: &'a [FirehoseItemInfo],
-    item_type: &'a u8,
+    item_type: u8,
     item_index: usize,
 ) -> nom::IResult<&'a str, String> {
     let (format, format_type) = take_until("}")(formatter)?;
@@ -1103,12 +1103,11 @@ mod tests {
     #[test]
     fn test_format_firehose_log_message() {
         let test_data = String::from("opendirectoryd (build %{public}s) launched...");
-        let mut item_message: Vec<FirehoseItemInfo> = Vec::new();
-        item_message.push(FirehoseItemInfo {
+        let item_message = vec![FirehoseItemInfo {
             message_strings: String::from("796.100"),
             item_type: 34,
             item_size: 0,
-        });
+        }];
         let message_re = Regex::new(r"(%(?:(?:\{[^}]+}?)(?:[-+0#]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*))?(?:h|hh|l|ll|w|I|z|t|q|I32|I64)?[cmCdiouxXeEfgGaAnpsSZP@%}]|(?:[-+0 #]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*))?(?:h|hh|l||q|t|ll|w|I|z|I32|I64)?[cmCdiouxXeEfgGaAnpsSZP@%]))").unwrap();
 
         let log_string = format_firehose_log_message(test_data, &item_message, &message_re);
@@ -1131,7 +1130,7 @@ mod tests {
         let (_, formatted_results) = parse_formatter(
             test_format,
             &test_message,
-            &test_message[0].item_type,
+            test_message[0].item_type,
             item_index,
         )
         .unwrap();
@@ -1141,7 +1140,7 @@ mod tests {
         let (_, formatted_results) = parse_formatter(
             test_format,
             &test_message,
-            &test_message[0].item_type,
+            test_message[0].item_type,
             item_index,
         )
         .unwrap();
@@ -1151,7 +1150,7 @@ mod tests {
         let (_, formatted_results) = parse_formatter(
             test_format,
             &test_message,
-            &test_message[0].item_type,
+            test_message[0].item_type,
             item_index,
         )
         .unwrap();
@@ -1162,7 +1161,7 @@ mod tests {
         let (_, formatted_results) = parse_formatter(
             test_format,
             &test_message,
-            &test_message[0].item_type,
+            test_message[0].item_type,
             item_index,
         )
         .unwrap();
@@ -1172,7 +1171,7 @@ mod tests {
         let (_, formatted_results) = parse_formatter(
             test_format,
             &test_message,
-            &test_message[0].item_type,
+            test_message[0].item_type,
             item_index,
         )
         .unwrap();
@@ -1183,7 +1182,7 @@ mod tests {
         let (_, formatted_results) = parse_formatter(
             test_format,
             &test_message,
-            &test_message[0].item_type,
+            test_message[0].item_type,
             item_index,
         )
         .unwrap();
@@ -1194,7 +1193,7 @@ mod tests {
         let (_, formatted_results) = parse_formatter(
             test_float,
             &test_message,
-            &test_message[0].item_type,
+            test_message[0].item_type,
             item_index,
         )
         .unwrap();
@@ -1204,7 +1203,7 @@ mod tests {
         let (_, formatted_results) = parse_formatter(
             test_float,
             &test_message,
-            &test_message[0].item_type,
+            test_message[0].item_type,
             item_index,
         )
         .unwrap();
@@ -1214,7 +1213,7 @@ mod tests {
         let (_, formatted_results) = parse_formatter(
             test_float,
             &test_message,
-            &test_message[0].item_type,
+            test_message[0].item_type,
             item_index,
         )
         .unwrap();
@@ -1225,7 +1224,7 @@ mod tests {
         let (_, formatted_results) = parse_formatter(
             test_float,
             &test_message,
-            &test_message[0].item_type,
+            test_message[0].item_type,
             item_index,
         )
         .unwrap();
@@ -1236,7 +1235,7 @@ mod tests {
         let (_, formatted_results) = parse_formatter(
             test_int,
             &test_message,
-            &test_message[0].item_type,
+            test_message[0].item_type,
             item_index,
         )
         .unwrap();
@@ -1247,7 +1246,7 @@ mod tests {
         let (_, formatted_results) = parse_formatter(
             test_float,
             &test_message,
-            &test_message[0].item_type,
+            test_message[0].item_type,
             item_index,
         )
         .unwrap();
@@ -1258,7 +1257,7 @@ mod tests {
         let (_, formatted_results) = parse_formatter(
             test_float,
             &test_message,
-            &test_message[0].item_type,
+            test_message[0].item_type,
             item_index,
         )
         .unwrap();
@@ -1269,7 +1268,7 @@ mod tests {
         let (_, formatted_results) = parse_formatter(
             test_string,
             &test_message,
-            &test_message[0].item_type,
+            test_message[0].item_type,
             item_index,
         )
         .unwrap();
@@ -1280,7 +1279,7 @@ mod tests {
         let (_, formatted_results) = parse_formatter(
             test_string,
             &test_message,
-            &test_message[0].item_type,
+            test_message[0].item_type,
             item_index,
         )
         .unwrap();
@@ -1298,7 +1297,7 @@ mod tests {
         let (_, formatted_results) = parse_formatter(
             test_string,
             &test_message,
-            &test_message[0].item_type,
+            test_message[0].item_type,
             item_index,
         )
         .unwrap();
@@ -1321,7 +1320,7 @@ mod tests {
         let (_, formatted_results) = parse_type_formatter(
             test_format,
             &test_message,
-            &test_message[0].item_type,
+            test_message[0].item_type,
             item_index,
         )
         .unwrap();
@@ -1341,7 +1340,7 @@ mod tests {
         let (_, formatted_results) = parse_type_formatter(
             test_format,
             &test_message,
-            &test_message[0].item_type,
+            test_message[0].item_type,
             item_index,
         )
         .unwrap();
@@ -1405,7 +1404,7 @@ mod tests {
             test_format,
             test_width,
             test_precision,
-            &test_type,
+            test_type,
             plus_minus,
             hashtag,
         );
@@ -1424,7 +1423,7 @@ mod tests {
             test_format,
             test_width,
             test_precision,
-            &test_type,
+            test_type,
             plus_minus,
             hashtag,
         );
@@ -1439,7 +1438,7 @@ mod tests {
         let plus_minus = false;
         let hashtag = false;
         let formatted_results =
-            format_left(test_format, test_precision, &test_type, plus_minus, hashtag);
+            format_left(test_format, test_precision, test_type, plus_minus, hashtag);
         assert_eq!(formatted_results, "2");
     }
 
@@ -1451,7 +1450,7 @@ mod tests {
         let plus_minus = false;
         let hashtag = false;
         let formatted_results =
-            format_right(test_format, test_precision, &test_type, plus_minus, hashtag);
+            format_right(test_format, test_precision, test_type, plus_minus, hashtag);
         assert_eq!(formatted_results, "2");
     }
 
