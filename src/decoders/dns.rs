@@ -13,6 +13,8 @@ use nom::{
     bits,
     bytes::complete::take,
     number::complete::{be_u128, be_u16, be_u32, be_u8, le_u32},
+    sequence::tuple,
+    IResult,
 };
 use std::{
     mem::size_of,
@@ -48,12 +50,12 @@ pub(crate) fn parse_dns_header(data: &str) -> String {
 
 /// Get the DNS header data
 fn get_dns_header(data: &[u8]) -> nom::IResult<&[u8], String> {
-    let (dns_data, id_data) = take(size_of::<u16>())(data)?;
+    let (dns_data, id) = be_u16(data)?;
+
+    // todo: why limiting here the parse to 2 bytes ? while get_dns_flags is made to parse 13 ?
     let (dns_data, flag_data) = take(size_of::<u16>())(dns_data)?;
-
-    let (_, id) = be_u16(id_data)?;
-
     let message_result = get_dns_flags(flag_data);
+
     let message = match message_result {
         Ok(result) => result.1,
         Err(err) => {
@@ -65,9 +67,10 @@ fn get_dns_header(data: &[u8]) -> nom::IResult<&[u8], String> {
         }
     };
 
+    // todo: why parsing here the counts ? while the first 2 bytes are already parsed as dns flags ?
     let message_result = parse_counts(dns_data);
     let count_message = match message_result {
-        Ok((_, result)) => result,
+        Ok((_, result)) => result.to_string(),
         Err(err) => {
             error!(
                 "[macos-unifiedlogs] Failed to parse DNS header counts. Error: {:?}",
@@ -88,7 +91,75 @@ fn get_dns_header(data: &[u8]) -> nom::IResult<&[u8], String> {
 }
 
 /// Parse the DNS bit flags
+fn get_dns_flags_could_be(data: &[u8]) -> IResult<&[u8], String> {
+    dbg!(data);
+    let (
+        input,
+        (
+            query_flag,
+            opcode,
+            authoritative_flag,
+            truncation_flag,
+            recursion_desired,
+            recursion_available,
+            mut response_code,
+        ),
+    ) = tuple((be_u8, be_u32, be_u8, be_u8, be_u8, be_u8, be_u32))(data)?;
+
+    const RESERVED_MASK: u32 = 0b00011111111111111111111111111111111;
+    response_code &= RESERVED_MASK;
+
+    let opcode_message = match opcode {
+        0 => "QUERY",
+        1 => "IQUERY",
+        2 => "STATUS",
+        3 => "RESERVED",
+        4 => "NOTIFY",
+        5 => "UPDATE",
+        _ => "UNKNOWN OPCODE",
+    };
+
+    let response_message = match response_code {
+        0 => "No Error",
+        1 => "Format Error",
+        2 => "Server Failure",
+        3 => "NX Domain",
+        4 => "Not Implemented",
+        5 => "Refused",
+        6 => "YX Domain",
+        7 => "YX RR Set",
+        8 => "NX RR Set",
+        9 => "Not Auth",
+        10 => "Not Zone",
+        _ => "Unknown Response Code",
+    };
+
+    let message = format!(
+        "Opcode: {}, 
+Query Type: {},
+Authoritative Answer Flag: {}, 
+Truncation Flag: {}, 
+Recursion Desired: {}, 
+Recursion Available: {}, 
+Response Code: {}",
+        opcode_message,
+        query_flag,
+        authoritative_flag,
+        truncation_flag,
+        recursion_desired,
+        recursion_available,
+        response_message
+    );
+
+    Ok(dbg!((input, message)))
+}
+
+/// Parse the DNS bit flags
 fn get_dns_flags(data: &[u8]) -> nom::IResult<(&[u8], usize), String> {
+    // todo: it's really weird that we can parse something like 13 bytes here
+    // wihout error even if the input is only 2 bytes long
+    // see data passed in unit tests to `parse_idflags` for instance
+
     // Have to work with bits instead of bytes for the DNS flags
     let ((flag_data, offset), query_flag): ((&[u8], usize), u8) =
         bits::complete::take(size_of::<u8>())((data, 0))?;
@@ -531,10 +602,8 @@ pub(crate) fn dns_idflags(data: &str) -> String {
 
 /// Parse just the DNS flags associated with the DNS header
 fn parse_idflags(data: &[u8]) -> nom::IResult<&[u8], String> {
-    let (dns_data, id_data) = take(size_of::<u16>())(data)?;
+    let (dns_data, id) = be_u16(data)?;
     let flag_results = get_dns_flags(dns_data);
-
-    let (_, id) = be_u16(id_data)?;
 
     let message = match flag_results {
         Ok((_, result)) => result,
@@ -544,6 +613,8 @@ fn parse_idflags(data: &[u8]) -> nom::IResult<&[u8], String> {
         }
     };
 
+    // todo: should be the `get_dns_flags` parser that output what can be used as `flags`
+    // the responsibility for the `dns_data` format knowledge should not be shared into multiple functions
     let (_, flags) = be_u16(dns_data)?;
     Ok((
         dns_data,
@@ -553,6 +624,9 @@ fn parse_idflags(data: &[u8]) -> nom::IResult<&[u8], String> {
 
 /// Get just the DNS count data associated with the DNS header
 pub(crate) fn dns_counts(data: &str) -> String {
+    // todo: not sure error handling should be handled as strings
+    // todo: this function
+
     let flags_results = data.parse::<u64>();
     let flags: u64 = match flags_results {
         Ok(results) => results,
@@ -580,7 +654,7 @@ pub(crate) fn dns_counts(data: &str) -> String {
 
     let message_result = parse_counts(&bytes);
     match message_result {
-        Ok((_, result)) => result,
+        Ok((_, result)) => result.to_string(),
         Err(err) => {
             error!("[macos-unifiedlogs] Failed to get counts: {:?}", err);
             data.to_string()
@@ -588,26 +662,38 @@ pub(crate) fn dns_counts(data: &str) -> String {
     }
 }
 
+#[derive(Debug, PartialEq)]
+struct DnsCounts {
+    question: u16,
+    answer: u16,
+    authority: u16,
+    additional: u16,
+}
+
+impl std::fmt::Display for DnsCounts {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Question Count: {}, Answer Record Count: {}, Authority Record Count: {}, Additional Record Count: {}",
+            self.question, self.answer, self.authority, self.additional
+        )
+    }
+}
+
 /// parse just the DNS count data associated with the DNS header
-fn parse_counts(data: &[u8]) -> nom::IResult<&[u8], String> {
-    let (dns_data, question_data) = take(size_of::<u16>())(data)?;
-    let (dns_data, answer_data) = take(size_of::<u16>())(dns_data)?;
-    let (dns_data, authority_data) = take(size_of::<u16>())(dns_data)?;
-    let (dns_data, additional_data) = take(size_of::<u16>())(dns_data)?;
+fn parse_counts(data: &[u8]) -> nom::IResult<&[u8], DnsCounts> {
+    let (input, (question, answer, authority, additional)) =
+        tuple((be_u16, be_u16, be_u16, be_u16))(data)?;
 
-    let (_, question) = be_u16(question_data)?;
-    let (_, answer) = be_u16(answer_data)?;
-    let (_, authority) = be_u16(authority_data)?;
-    let (_, additional) = be_u16(additional_data)?;
-
-    let header_message = format!(
-        "Question Count: {}, Answer Record Count: {}, Authority Record Count: {}, Additional Record Count: {}",
-        question,
-        answer,
-        authority,
-        additional);
-
-    Ok((dns_data, header_message))
+    Ok((
+        input,
+        DnsCounts {
+            question,
+            answer,
+            authority,
+            additional,
+        },
+    ))
 }
 
 /// Translate DNS yes/no log values
@@ -643,16 +729,8 @@ pub(crate) fn dns_getaddrinfo_opts(data: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        decoders::dns::{
-            dns_acceptable, dns_addrmv, dns_counts, dns_getaddrinfo_opts, dns_idflags, dns_ip_addr,
-            dns_protocol, dns_reason, dns_records, dns_yes_no, get_dns_flags, get_dns_header,
-            get_dns_mac_addr, get_domain_name, get_service_binding, parse_counts, parse_dns_header,
-            parse_dns_ip_addr, parse_idflags, parse_mac_addr, parse_svcb, parse_svcb_alpn,
-            parse_svcb_ip,
-        },
-        util::decode_standard,
-    };
+    use super::*;
+    use crate::util::decode_standard;
 
     #[test]
     fn test_parse_dns_header() {
@@ -678,7 +756,7 @@ mod tests {
     #[test]
     fn test_get_domain_name() {
         let test_data = "AzE0NAMxMDEDMTY4AzE5Mgdpbi1hZGRyBGFycGEA";
-        let result = get_domain_name(&test_data);
+        let result = get_domain_name(test_data);
         assert_eq!(result, ".144.101.168.192.in-addr.arpa");
     }
 
@@ -686,7 +764,7 @@ mod tests {
     fn test_get_service_binding() {
         let test_data =
             "AAEAAAEAAwJoMgAEAAhoEJRAaBCVQAAGACAmBkcAAAAAAAAAAABoEJRAJgZHAAAAAAAAAAAAaBCVQA==";
-        let result = get_service_binding(&test_data);
+        let result = get_service_binding(test_data);
         assert_eq!(result, "rdata: 1 . alpn=h2, ipv4 hint:104.16.148.64,104.16.149.64, ipv6 hint:2606:4700::6810:9440,2606:4700::6810:9540,");
     }
 
@@ -723,7 +801,7 @@ mod tests {
     fn test_get_dns_mac_addr() {
         let test_data = "AAAAAAAA";
 
-        let result = get_dns_mac_addr(&test_data);
+        let result = get_dns_mac_addr(test_data);
         assert_eq!(result, "00:00:00:00:00:00");
     }
 
@@ -739,7 +817,7 @@ mod tests {
     fn test_dns_ip_addr() {
         let test_data = "BAAAAMCoZZAAAAAAAAAAAAAAAAA=";
 
-        let result = dns_ip_addr(&test_data);
+        let result = dns_ip_addr(test_data);
         assert_eq!(result, "192.168.101.144");
     }
 
@@ -757,7 +835,7 @@ mod tests {
     fn test_dns_addrmv() {
         let test_data = "1";
 
-        let result = dns_addrmv(&test_data);
+        let result = dns_addrmv(test_data);
         assert_eq!(result, "add");
     }
 
@@ -765,7 +843,7 @@ mod tests {
     fn test_dns_records() {
         let test_data = "65";
 
-        let result = dns_records(&test_data);
+        let result = dns_records(test_data);
         assert_eq!(result, "HTTPS");
     }
 
@@ -773,7 +851,7 @@ mod tests {
     fn test_dns_reason() {
         let test_data = "1";
 
-        let result = dns_reason(&test_data);
+        let result = dns_reason(test_data);
         assert_eq!(result, "no-data");
     }
 
@@ -781,7 +859,7 @@ mod tests {
     fn test_dns_protocol() {
         let test_data = "1";
 
-        let result = dns_protocol(&test_data);
+        let result = dns_protocol(test_data);
         assert_eq!(result, "UDP");
     }
 
@@ -789,7 +867,7 @@ mod tests {
     fn test_dns_idflags() {
         let test_data = "2126119168";
 
-        let result = dns_idflags(&test_data);
+        let result = dns_idflags(test_data);
         assert_eq!(result, "id: 0x7EBA, flags: 0x100 Opcode: QUERY, \n    Query Type: 0,\n    Authoritative Answer Flag: 0, \n    Truncation Flag: 0, \n    Recursion Desired: 1, \n    Recursion Available: 0, \n    Response Code: No Error");
     }
 
@@ -805,7 +883,7 @@ mod tests {
     fn test_dns_counts() {
         let test_data = "281474976710656";
 
-        let result = dns_counts(&test_data);
+        let result = dns_counts(test_data);
         assert_eq!(result, "Question Count: 1, Answer Record Count: 0, Authority Record Count: 0, Additional Record Count: 0");
     }
 
@@ -814,14 +892,22 @@ mod tests {
         let test_data = vec![0, 1, 0, 0, 0, 0, 0, 0];
 
         let (_, result) = parse_counts(&test_data).unwrap();
-        assert_eq!(result, "Question Count: 1, Answer Record Count: 0, Authority Record Count: 0, Additional Record Count: 0");
+        assert_eq!(
+            result,
+            DnsCounts {
+                question: 1,
+                answer: 0,
+                authority: 0,
+                additional: 0
+            }
+        );
     }
 
     #[test]
     fn test_dns_yes_no() {
         let test_data = "0";
 
-        let result = dns_yes_no(&test_data);
+        let result = dns_yes_no(test_data);
         assert_eq!(result, "no");
     }
 
@@ -829,7 +915,7 @@ mod tests {
     fn test_dns_acceptable() {
         let test_data = "0";
 
-        let result = dns_acceptable(&test_data);
+        let result = dns_acceptable(test_data);
         assert_eq!(result, "unacceptable");
     }
 
@@ -837,7 +923,7 @@ mod tests {
     fn test_dns_getaddrinfo_opts() {
         let test_data = "8";
 
-        let result = dns_getaddrinfo_opts(&test_data);
+        let result = dns_getaddrinfo_opts(test_data);
         assert_eq!(result, "0x8 {use-failover}");
     }
 }
