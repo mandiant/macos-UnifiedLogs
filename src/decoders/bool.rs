@@ -32,7 +32,7 @@ pub(crate) fn lowercase_int_bool(bool_data: u8) -> String {
 
 #[cfg(test)]
 mod tests {
-    use crate::decoders::bool::{lowercase_bool, lowercase_int_bool, uppercase_bool};
+    use super::*;
 
     #[test]
     fn test_uppercase_bool() {
