@@ -68,10 +68,9 @@ fn main() {
         args.format.clone()
     };
 
-
     let mut writer = OutputWriter::new(&args.output, &output_format, args.append).unwrap();
 
-    if args.input != "" {
+    if !args.input.is_empty() {
         parse_log_archive(&args.input, &mut writer);
     } else if args.live != "false" {
         parse_live_system(&mut writer);
@@ -160,7 +159,7 @@ fn parse_trace_file(
             eprintln!("Parsing: {}", full_path);
 
             if data.path().exists() {
-              let count =  iterate_chunks(
+                let count = iterate_chunks(
                     &full_path,
                     &mut missing_data,
                     string_results,
@@ -190,7 +189,7 @@ fn parse_trace_file(
             eprintln!("Parsing: {}", full_path);
 
             if data.path().exists() {
-                let count =  iterate_chunks(
+                let count = iterate_chunks(
                     &full_path,
                     &mut missing_data,
                     string_results,
@@ -220,7 +219,7 @@ fn parse_trace_file(
             eprintln!("Parsing: {}", full_path);
 
             if data.path().exists() {
-                let count =  iterate_chunks(
+                let count = iterate_chunks(
                     &full_path,
                     &mut missing_data,
                     string_results,
@@ -249,7 +248,7 @@ fn parse_trace_file(
             eprintln!("Parsing: {}", full_path);
 
             if data.path().exists() {
-                let count =  iterate_chunks(
+                let count = iterate_chunks(
                     &full_path,
                     &mut missing_data,
                     string_results,
@@ -273,7 +272,7 @@ fn parse_trace_file(
     if archive_path.exists() {
         eprintln!("Parsing: logdata.LiveData.tracev3");
 
-        let count =  iterate_chunks(
+        let count = iterate_chunks(
             &archive_path.display().to_string(),
             &mut missing_data,
             string_results,
@@ -294,8 +293,7 @@ fn parse_trace_file(
     // Since we have all Oversize entries now. Go through any log entries that we were not able to build before
     for mut leftover_data in missing_data {
         // Add all of our previous oversize data to logs for lookups
-        leftover_data
-            .oversize = oversize_strings.oversize.clone();
+        leftover_data.oversize = oversize_strings.oversize.clone();
 
         // Exclude_missing = false
         // If we fail to find any missing data its probably due to the logs rolling
@@ -346,7 +344,10 @@ fn iterate_chunks(
         count += results.len();
         oversize_strings.oversize = chunk.oversize;
         output(&results, writer).unwrap();
-        if missing_logs.catalog_data.is_empty() && missing_logs.header.is_empty() && missing_logs.oversize.is_empty() {
+        if missing_logs.catalog_data.is_empty()
+            && missing_logs.header.is_empty()
+            && missing_logs.oversize.is_empty()
+        {
             continue;
         }
         // Track possible missing log data due to oversize strings being in another file
@@ -361,13 +362,17 @@ pub struct OutputWriter {
 }
 
 enum OutputWriterEnum {
-    Csv(Writer<Box<dyn Write>>),
+    Csv(Box<Writer<Box<dyn Write>>>),
     Json(Box<dyn Write>),
 }
 
 impl OutputWriter {
-    pub fn new(output_path: &str, output_format: &str, append: bool) -> Result<Self, Box<dyn Error>> {
-        let writer: Box<dyn Write> = if output_path != "" {
+    pub fn new(
+        output_path: &str,
+        output_format: &str,
+        append: bool,
+    ) -> Result<Self, Box<dyn Error>> {
+        let writer: Box<dyn Write> = if !output_path.is_empty() {
             Box::new(
                 OpenOptions::new()
                     .write(true)
@@ -384,7 +389,7 @@ impl OutputWriter {
             "csv" => {
                 let mut csv_writer = Writer::from_writer(writer);
                 // Write CSV headers
-                csv_writer.write_record(&[
+                csv_writer.write_record([
                     "Timestamp",
                     "Event Type",
                     "Log Type",
@@ -404,13 +409,13 @@ impl OutputWriter {
                     "System Timezone Name",
                 ])?;
                 csv_writer.flush()?;
-                OutputWriterEnum::Csv(csv_writer)
+                OutputWriterEnum::Csv(Box::new(csv_writer))
             }
             "jsonl" => OutputWriterEnum::Json(writer),
             _ => {
                 eprintln!("Unsupported output format: {}", output_format);
                 std::process::exit(1);
-            },
+            }
         };
 
         Ok(OutputWriter {
@@ -458,14 +463,10 @@ impl OutputWriter {
     }
 }
 
-
 // Append or create csv file
-fn output(
-    results: &Vec<LogData>,
-    writer: &mut OutputWriter,
-) -> Result<(), Box<dyn Error>> {
+fn output(results: &Vec<LogData>, writer: &mut OutputWriter) -> Result<(), Box<dyn Error>> {
     for data in results {
-        writer.write_record(&data)?;
+        writer.write_record(data)?;
     }
     writer.flush()?;
     Ok(())
