@@ -40,6 +40,15 @@ struct Args {
     /// Path to output file. Any directories must already exist
     #[clap(short, long, default_value = "")]
     output: String,
+
+    /// Output format. Options: csv, jsonl. Default is autodetect.
+    #[clap(short, long, default_value = "auto")]
+    format: String,
+
+    /// Append to output file
+    /// If false, will overwrite output file
+    #[clap(short, long, default_value = "false")]
+    append: bool,
 }
 
 fn main() {
@@ -49,11 +58,19 @@ fn main() {
         .expect("Failed to initialize simple logger");
 
     let args = Args::parse();
-    let mut writer = construct_writer(&args.output).unwrap();
-    // Create headers for CSV file
-    output_header(&mut writer).unwrap();
+    let output_format = if args.format.is_empty() || args.format == "auto" {
+        std::path::Path::new(&args.output)
+            .extension()
+            .and_then(std::ffi::OsStr::to_str)
+            .unwrap_or("csv")
+            .to_string()
+    } else {
+        args.format.clone()
+    };
 
-    if args.input != "" {
+    let mut writer = OutputWriter::new(&args.output, &output_format, args.append).unwrap();
+
+    if !args.input.is_empty() {
         parse_log_archive(&args.input, &mut writer);
     } else if args.live != "false" {
         parse_live_system(&mut writer);
@@ -61,7 +78,7 @@ fn main() {
 }
 
 // Parse a provided directory path. Currently, expect the path to follow macOS log collect structure
-fn parse_log_archive(path: &str, writer: &mut Writer<Box<dyn Write>>) {
+fn parse_log_archive(path: &str, writer: &mut OutputWriter) {
     let mut archive_path = PathBuf::from(path);
 
     // Parse all UUID files which contain strings and other metadata
@@ -92,7 +109,7 @@ fn parse_log_archive(path: &str, writer: &mut Writer<Box<dyn Write>>) {
 }
 
 // Parse a live macOS system
-fn parse_live_system(writer: &mut Writer<Box<dyn Write>>) {
+fn parse_live_system(writer: &mut OutputWriter) {
     let strings = collect_strings_system().unwrap();
     let shared_strings = collect_shared_strings_system().unwrap();
     let timesync_data = collect_timesync_system().unwrap();
@@ -115,7 +132,7 @@ fn parse_trace_file(
     shared_strings_results: &[SharedCacheStrings],
     timesync_data: &[TimesyncBoot],
     path: &str,
-    writer: &mut Writer<Box<dyn Write>>,
+    writer: &mut OutputWriter,
 ) {
     // We need to persist the Oversize log entries (they contain large strings that don't fit in normal log entries)
     // Some log entries have Oversize strings located in different tracev3 files.
@@ -142,7 +159,7 @@ fn parse_trace_file(
             eprintln!("Parsing: {}", full_path);
 
             if data.path().exists() {
-              let count =  iterate_chunks(
+                let count = iterate_chunks(
                     &full_path,
                     &mut missing_data,
                     string_results,
@@ -172,7 +189,7 @@ fn parse_trace_file(
             eprintln!("Parsing: {}", full_path);
 
             if data.path().exists() {
-                let count =  iterate_chunks(
+                let count = iterate_chunks(
                     &full_path,
                     &mut missing_data,
                     string_results,
@@ -202,7 +219,7 @@ fn parse_trace_file(
             eprintln!("Parsing: {}", full_path);
 
             if data.path().exists() {
-                let count =  iterate_chunks(
+                let count = iterate_chunks(
                     &full_path,
                     &mut missing_data,
                     string_results,
@@ -231,7 +248,7 @@ fn parse_trace_file(
             eprintln!("Parsing: {}", full_path);
 
             if data.path().exists() {
-                let count =  iterate_chunks(
+                let count = iterate_chunks(
                     &full_path,
                     &mut missing_data,
                     string_results,
@@ -255,7 +272,7 @@ fn parse_trace_file(
     if archive_path.exists() {
         eprintln!("Parsing: logdata.LiveData.tracev3");
 
-        let count =  iterate_chunks(
+        let count = iterate_chunks(
             &archive_path.display().to_string(),
             &mut missing_data,
             string_results,
@@ -276,8 +293,7 @@ fn parse_trace_file(
     // Since we have all Oversize entries now. Go through any log entries that we were not able to build before
     for mut leftover_data in missing_data {
         // Add all of our previous oversize data to logs for lookups
-        leftover_data
-            .oversize = oversize_strings.oversize.clone();
+        leftover_data.oversize = oversize_strings.oversize.clone();
 
         // Exclude_missing = false
         // If we fail to find any missing data its probably due to the logs rolling
@@ -302,7 +318,7 @@ fn iterate_chunks(
     strings_data: &[UUIDText],
     shared_strings: &[SharedCacheStrings],
     timesync_data: &[TimesyncBoot],
-    writer: &mut Writer<Box<dyn Write>>,
+    writer: &mut OutputWriter,
     oversize_strings: &mut UnifiedLogData,
 ) -> usize {
     let log_bytes = fs::read(path).unwrap();
@@ -328,7 +344,10 @@ fn iterate_chunks(
         count += results.len();
         oversize_strings.oversize = chunk.oversize;
         output(&results, writer).unwrap();
-        if missing_logs.catalog_data.is_empty() && missing_logs.header.is_empty() && missing_logs.oversize.is_empty() {
+        if missing_logs.catalog_data.is_empty()
+            && missing_logs.header.is_empty()
+            && missing_logs.oversize.is_empty()
+        {
             continue;
         }
         // Track possible missing log data due to oversize strings being in another file
@@ -338,71 +357,116 @@ fn iterate_chunks(
     count
 }
 
-fn construct_writer(output_path: &str) -> Result<Writer<Box<dyn Write>>, Box<dyn Error>> {
-    let writer = if output_path != "" {
-        Box::new(
-            OpenOptions::new()
-                .append(true)
-                .create(true)
-                .open(output_path)?,
-        ) as Box<dyn Write>
-    } else {
-        Box::new(io::stdout()) as Box<dyn Write>
-    };
-    Ok(Writer::from_writer(writer))
+pub struct OutputWriter {
+    writer: OutputWriterEnum,
 }
 
-// Create csv file and create headers
-fn output_header(writer: &mut Writer<Box<dyn Write>>) -> Result<(), Box<dyn Error>> {
-    writer.write_record(&[
-        "Timestamp",
-        "Event Type",
-        "Log Type",
-        "Subsystem",
-        "Thread ID",
-        "PID",
-        "EUID",
-        "Library",
-        "Library UUID",
-        "Activity ID",
-        "Category",
-        "Process",
-        "Process UUID",
-        "Message",
-        "Raw Message",
-        "Boot UUID",
-        "System Timezone Name",
-    ])?;
-    writer.flush()?;
-    Ok(())
+enum OutputWriterEnum {
+    Csv(Box<Writer<Box<dyn Write>>>),
+    Json(Box<dyn Write>),
+}
+
+impl OutputWriter {
+    pub fn new(
+        output_path: &str,
+        output_format: &str,
+        append: bool,
+    ) -> Result<Self, Box<dyn Error>> {
+        let writer: Box<dyn Write> = if !output_path.is_empty() {
+            Box::new(
+                OpenOptions::new()
+                    .write(true)
+                    .create(true)
+                    .truncate(!append)
+                    .append(append)
+                    .open(output_path)?,
+            )
+        } else {
+            Box::new(io::stdout())
+        };
+
+        let writer_enum = match output_format {
+            "csv" => {
+                let mut csv_writer = Writer::from_writer(writer);
+                // Write CSV headers
+                csv_writer.write_record([
+                    "Timestamp",
+                    "Event Type",
+                    "Log Type",
+                    "Subsystem",
+                    "Thread ID",
+                    "PID",
+                    "EUID",
+                    "Library",
+                    "Library UUID",
+                    "Activity ID",
+                    "Category",
+                    "Process",
+                    "Process UUID",
+                    "Message",
+                    "Raw Message",
+                    "Boot UUID",
+                    "System Timezone Name",
+                ])?;
+                csv_writer.flush()?;
+                OutputWriterEnum::Csv(Box::new(csv_writer))
+            }
+            "jsonl" => OutputWriterEnum::Json(writer),
+            _ => {
+                eprintln!("Unsupported output format: {}", output_format);
+                std::process::exit(1);
+            }
+        };
+
+        Ok(OutputWriter {
+            writer: writer_enum,
+        })
+    }
+
+    pub fn write_record(&mut self, record: &LogData) -> Result<(), Box<dyn Error>> {
+        match &mut self.writer {
+            OutputWriterEnum::Csv(csv_writer) => {
+                let date_time = Utc.timestamp_nanos(record.time as i64);
+                csv_writer.write_record(&[
+                    date_time.to_rfc3339_opts(SecondsFormat::Millis, true),
+                    record.event_type.to_owned(),
+                    record.log_type.to_owned(),
+                    record.subsystem.to_owned(),
+                    record.thread_id.to_string(),
+                    record.pid.to_string(),
+                    record.euid.to_string(),
+                    record.library.to_owned(),
+                    record.library_uuid.to_owned(),
+                    record.activity_id.to_string(),
+                    record.category.to_owned(),
+                    record.process.to_owned(),
+                    record.process_uuid.to_owned(),
+                    record.message.to_owned(),
+                    record.raw_message.to_owned(),
+                    record.boot_uuid.to_owned(),
+                    record.timezone_name.to_owned(),
+                ])?;
+            }
+            OutputWriterEnum::Json(json_writer) => {
+                writeln!(json_writer, "{}", serde_json::to_string(record).unwrap())?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn flush(&mut self) -> Result<(), Box<dyn Error>> {
+        match &mut self.writer {
+            OutputWriterEnum::Csv(csv_writer) => csv_writer.flush()?,
+            OutputWriterEnum::Json(json_writer) => json_writer.flush()?,
+        }
+        Ok(())
+    }
 }
 
 // Append or create csv file
-fn output(
-    results: &Vec<LogData>,
-    writer: &mut Writer<Box<dyn Write>>,
-) -> Result<(), Box<dyn Error>> {
+fn output(results: &Vec<LogData>, writer: &mut OutputWriter) -> Result<(), Box<dyn Error>> {
     for data in results {
-        let date_time = Utc.timestamp_nanos(data.time as i64);
-        writer.write_record(&[
-            date_time.to_rfc3339_opts(SecondsFormat::Millis, true),
-            data.event_type.to_owned(),
-            data.log_type.to_owned(),
-            data.subsystem.to_owned(),
-            data.thread_id.to_string(),
-            data.pid.to_string(),
-            data.euid.to_string(),
-            data.library.to_owned(),
-            data.library_uuid.to_owned(),
-            data.activity_id.to_string(),
-            data.category.to_owned(),
-            data.process.to_owned(),
-            data.process_uuid.to_owned(),
-            data.message.to_owned(),
-            data.raw_message.to_owned(),
-            data.boot_uuid.to_owned(),
-            data.timezone_name.to_owned(),
-        ])?;
+        writer.write_record(data)?;
     }
     writer.flush()?;
     Ok(())
