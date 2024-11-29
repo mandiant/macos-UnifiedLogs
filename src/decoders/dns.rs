@@ -12,6 +12,8 @@ use log::{error, warn};
 use nom::{
     bits,
     bytes::complete::take,
+    combinator::{map, verify},
+    multi::many0,
     number::complete::{be_u128, be_u16, be_u32, be_u8, le_u32},
 };
 use std::{
@@ -336,17 +338,10 @@ pub(crate) fn get_dns_mac_addr(data: &str) -> String {
 
 /// Parse the MAC Address
 fn parse_mac_addr(dns_data: &[u8]) -> nom::IResult<&[u8], String> {
-    let mut mac_data: Vec<String> = Vec::new();
-    let mut data = dns_data;
-
-    while !data.is_empty() {
-        let (remaining_data, addr) = take(size_of::<u8>())(data)?;
-        data = remaining_data;
-
-        let (_, mac_addr) = be_u8(addr)?;
-        mac_data.push(format!("{:02X?}", mac_addr));
-    }
-    Ok((data, mac_data.join(":")))
+    Ok(map(
+        many0(map(be_u8, |val| format!("{:02X?}", val))),
+        |vals| vals.join(":"),
+    )(dns_data)?)
 }
 
 /// Get IP Address info from log data
