@@ -14,7 +14,7 @@ use byteorder::{BigEndian, WriteBytesExt};
 use log::{error, warn};
 use nom::{
     bytes::complete::take,
-    combinator::{fail, iterator},
+    combinator::{fail, iterator, map_parser},
     multi::fold_many0,
     number::complete::{be_u128, be_u16, be_u32, be_u8, le_u32},
     sequence::tuple,
@@ -205,14 +205,11 @@ fn parse_svcb(input: &[u8]) -> nom::IResult<&[u8], String> {
 
     // ALPN = Application Layer Protocol Negotation
     let (input, alpn_size) = be_u8(input)?;
-
-    let (dns_data, alpn_data) = take(alpn_size)(input)?;
-    let (_, alpn_message) = parse_svcb_alpn(alpn_data)?;
-
-    let (dns_data, ip_message) = parse_svcb_ip(dns_data)?;
+    let (input, alpn_message) = map_parser(take(alpn_size), parse_svcb_alpn)(input)?;
+    let (input, ip_message) = parse_svcb_ip(input)?;
 
     let message = format!("rdata: {} . {} {}", id, alpn_message, ip_message);
-    Ok((dns_data, message))
+    Ok((input, message))
 }
 
 /// Parse the Application Layer Protocol Negotation
