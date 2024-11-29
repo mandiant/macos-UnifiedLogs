@@ -10,7 +10,6 @@ use crate::util::{decode_standard, extract_string, extract_string_size};
 use byteorder::{BigEndian, WriteBytesExt};
 use log::{error, warn};
 use nom::{
-    bits,
     bytes::complete::take,
     number::complete::{be_u128, be_u16, be_u32, be_u8, le_u32},
     sequence::tuple,
@@ -49,11 +48,10 @@ pub(crate) fn parse_dns_header(data: &str) -> String {
 }
 
 /// Get the DNS header data
-fn get_dns_header(data: &[u8]) -> nom::IResult<&[u8], String> {
-    let (dns_data, id) = be_u16(data)?;
+fn get_dns_header(input: &[u8]) -> nom::IResult<&[u8], String> {
+    let (input, id) = be_u16(input)?;
+    let (input, flag_data) = take(size_of::<u16>())(input)?;
 
-    // todo: why limiting here the parse to 2 bytes ? while get_dns_flags is made to parse 13 ?
-    let (dns_data, flag_data) = take(size_of::<u16>())(dns_data)?;
     let message_result = get_dns_flags(flag_data);
 
     let message = match message_result {
@@ -68,7 +66,7 @@ fn get_dns_header(data: &[u8]) -> nom::IResult<&[u8], String> {
     };
 
     // todo: why parsing here the counts ? while the first 2 bytes are already parsed as dns flags ?
-    let message_result = parse_counts(dns_data);
+    let message_result = parse_counts(input);
     let count_message = match message_result {
         Ok((_, result)) => result.to_string(),
         Err(err) => {
@@ -87,99 +85,116 @@ fn get_dns_header(data: &[u8]) -> nom::IResult<&[u8], String> {
         id, flags, message, count_message
     );
 
-    Ok((dns_data, header_message))
+    Ok((input, header_message))
 }
 
+// /// Parse the DNS bit flags
+// fn get_dns_flags_could_be(input: &[u8]) -> nom::IResult<(&[u8], usize), String> {
+//     // Have to work with bits instead of bytes for the DNS flags
+//     let ((input, offset), query_flag): ((&[u8], usize), u8) =
+//         bits::complete::take(size_of::<u8>())((input, 0))?;
+//     let ((input, offset), opcode): ((&[u8], usize), u8) =
+//         bits::complete::take(size_of::<u32>())((input, offset))?;
+//     let ((input, offset), authoritative_flag): ((&[u8], usize), u8) =
+//         bits::complete::take(size_of::<u8>())((input, offset))?;
+//     let ((input, offset), truncation_flag): ((&[u8], usize), u8) =
+//         bits::complete::take(size_of::<u8>())((input, offset))?;
+
+//     let ((input, offset), recursion_desired): ((&[u8], usize), u8) =
+//         bits::complete::take(size_of::<u8>())((input, offset))?;
+//     let ((input, offset), recursion_available): ((&[u8], usize), u8) =
+//         bits::complete::take(size_of::<u8>())((input, offset))?;
+
+//     const RESERVED_SIZE: usize = 3;
+//     let ((input, offset), _reserved): ((&[u8], usize), u8) =
+//         bits::complete::take(RESERVED_SIZE)((input, offset))?;
+//     let ((flag_data, _), response_code): ((&[u8], usize), u8) =
+//         bits::complete::take(size_of::<u32>())((input, offset))?;
+
+//     // let (
+//     //     input,
+//     //     (
+//     //         query_flag,
+//     //         opcode,
+//     //         authoritative_flag,
+//     //         truncation_flag,
+//     //         recursion_desired,
+//     //         recursion_available,
+//     //         mut response_code,
+//     //     ),
+//     // ) = tuple((be_u8, be_u32, be_u8, be_u8, be_u8, be_u8, be_u32))(input)?;
+
+//     // const RESERVED_MASK: u32 = 0b00011111111111111111111111111111111;
+//     // response_code &= RESERVED_MASK;
+
+//     let opcode_message = match opcode {
+//         0 => "QUERY",
+//         1 => "IQUERY",
+//         2 => "STATUS",
+//         3 => "RESERVED",
+//         4 => "NOTIFY",
+//         5 => "UPDATE",
+//         _ => "UNKNOWN OPCODE",
+//     };
+
+//     let response_message = match response_code {
+//         0 => "No Error",
+//         1 => "Format Error",
+//         2 => "Server Failure",
+//         3 => "NX Domain",
+//         4 => "Not Implemented",
+//         5 => "Refused",
+//         6 => "YX Domain",
+//         7 => "YX RR Set",
+//         8 => "NX RR Set",
+//         9 => "Not Auth",
+//         10 => "Not Zone",
+//         _ => "Unknown Response Code",
+//     };
+
+//     let message = format!(
+//         "Opcode: {},
+// Query Type: {},
+// Authoritative Answer Flag: {},
+// Truncation Flag: {},
+// Recursion Desired: {},
+// Recursion Available: {},
+// Response Code: {}",
+//         opcode_message,
+//         query_flag,
+//         authoritative_flag,
+//         truncation_flag,
+//         recursion_desired,
+//         recursion_available,
+//         response_message
+//     );
+
+//     Ok(dbg!(((input, 0), message)))
+// }
+
 /// Parse the DNS bit flags
-fn get_dns_flags_could_be(data: &[u8]) -> IResult<&[u8], String> {
-    dbg!(data);
-    let (
-        input,
-        (
-            query_flag,
-            opcode,
-            authoritative_flag,
-            truncation_flag,
-            recursion_desired,
-            recursion_available,
-            mut response_code,
-        ),
-    ) = tuple((be_u8, be_u32, be_u8, be_u8, be_u8, be_u8, be_u32))(data)?;
+fn get_dns_flags(input: &[u8]) -> IResult<(&[u8], usize), String> {
+    // https://en.wikipedia.org/wiki/Domain_Name_System#DNS_message_format
+    const QR: usize = 1;
+    const OPCODE: usize = 4;
+    const AA: usize = 1;
+    const TC: usize = 1;
+    const RD: usize = 1;
+    const RA: usize = 1;
+    const Z: usize = 3;
+    const RCODE: usize = 4;
 
-    const RESERVED_MASK: u32 = 0b00011111111111111111111111111111111;
-    response_code &= RESERVED_MASK;
-
-    let opcode_message = match opcode {
-        0 => "QUERY",
-        1 => "IQUERY",
-        2 => "STATUS",
-        3 => "RESERVED",
-        4 => "NOTIFY",
-        5 => "UPDATE",
-        _ => "UNKNOWN OPCODE",
-    };
-
-    let response_message = match response_code {
-        0 => "No Error",
-        1 => "Format Error",
-        2 => "Server Failure",
-        3 => "NX Domain",
-        4 => "Not Implemented",
-        5 => "Refused",
-        6 => "YX Domain",
-        7 => "YX RR Set",
-        8 => "NX RR Set",
-        9 => "Not Auth",
-        10 => "Not Zone",
-        _ => "Unknown Response Code",
-    };
-
-    let message = format!(
-        "Opcode: {}, 
-Query Type: {},
-Authoritative Answer Flag: {}, 
-Truncation Flag: {}, 
-Recursion Desired: {}, 
-Recursion Available: {}, 
-Response Code: {}",
-        opcode_message,
-        query_flag,
-        authoritative_flag,
-        truncation_flag,
-        recursion_desired,
-        recursion_available,
-        response_message
-    );
-
-    Ok(dbg!((input, message)))
-}
-
-/// Parse the DNS bit flags
-fn get_dns_flags(data: &[u8]) -> nom::IResult<(&[u8], usize), String> {
-    // todo: it's really weird that we can parse something like 13 bytes here
-    // wihout error even if the input is only 2 bytes long
-    // see data passed in unit tests to `parse_idflags` for instance
-
+    type RET<'a> = ((&'a [u8], usize), u8);
+    use nom::bits::complete::take as bits;
     // Have to work with bits instead of bytes for the DNS flags
-    let ((flag_data, offset), query_flag): ((&[u8], usize), u8) =
-        bits::complete::take(size_of::<u8>())((data, 0))?;
-    let ((flag_data, offset), opcode): ((&[u8], usize), u8) =
-        bits::complete::take(size_of::<u32>())((flag_data, offset))?;
-    let ((flag_data, offset), authoritative_flag): ((&[u8], usize), u8) =
-        bits::complete::take(size_of::<u8>())((flag_data, offset))?;
-    let ((flag_data, offset), truncation_flag): ((&[u8], usize), u8) =
-        bits::complete::take(size_of::<u8>())((flag_data, offset))?;
-
-    let ((flag_data, offset), recursion_desired): ((&[u8], usize), u8) =
-        bits::complete::take(size_of::<u8>())((flag_data, offset))?;
-    let ((flag_data, offset), recursion_available): ((&[u8], usize), u8) =
-        bits::complete::take(size_of::<u8>())((flag_data, offset))?;
-
-    let reserved_size: usize = 3;
-    let ((flag_data, offset), _reserved): ((&[u8], usize), u8) =
-        bits::complete::take(reserved_size)((flag_data, offset))?;
-    let ((flag_data, _), response_code): ((&[u8], usize), u8) =
-        bits::complete::take(size_of::<u32>())((flag_data, offset))?;
+    let ((input, offset), query): RET<'_> = bits(QR)((input, 0))?;
+    let ((input, offset), opcode): RET<'_> = bits(OPCODE)((input, offset))?;
+    let ((input, offset), authoritative_flag): RET<'_> = bits(AA)((input, offset))?;
+    let ((input, offset), truncation_flag): RET<'_> = bits(TC)((input, offset))?;
+    let ((input, offset), recursion_desired): RET<'_> = bits(RD)((input, offset))?;
+    let ((input, offset), recursion_available): RET<'_> = bits(RA)((input, offset))?;
+    let ((input, offset), _reserved): RET<'_> = bits(Z)((input, offset))?;
+    let ((input, _), response_code): RET<'_> = bits(RCODE)((input, offset))?;
 
     let opcode_message = match opcode {
         0 => "QUERY",
@@ -215,7 +230,7 @@ fn get_dns_flags(data: &[u8]) -> nom::IResult<(&[u8], usize), String> {
     Recursion Available: {}, 
     Response Code: {}",
         opcode_message,
-        query_flag,
+        query,
         authoritative_flag,
         truncation_flag,
         recursion_desired,
@@ -223,7 +238,7 @@ fn get_dns_flags(data: &[u8]) -> nom::IResult<(&[u8], usize), String> {
         response_message
     );
 
-    Ok(((flag_data, 0), message))
+    Ok(((input, 0), message))
 }
 
 /// Base64 decode the domain name. This is normally masked, but may be shown if private data is enabled
