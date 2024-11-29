@@ -23,6 +23,7 @@ use crate::{
         opendirectory::{errors, member_details, member_id_type, sid_details},
         time::parse_time,
         uuid::parse_uuid,
+        DecoderError,
     },
 };
 
@@ -53,79 +54,93 @@ pub(crate) fn check_objects(
     }
 
     // Check if log value contains one the supported decoders
-    let message_value = if format_string.contains("BOOL") {
-        uppercase_bool(&message_values[index].message_strings)
+    let message_value: Result<String, DecoderError<'_>> = if format_string.contains("BOOL") {
+        Ok(uppercase_bool(&message_values[index].message_strings))
     } else if format_string.contains("bool") {
-        lowercase_bool(&message_values[index].message_strings)
+        Ok(lowercase_bool(&message_values[index].message_strings))
     } else if format_string.contains("uuid_t") {
-        parse_uuid(&message_values[index].message_strings)
+        Ok(parse_uuid(&message_values[index].message_strings))
     } else if format_string.contains("darwin.errno") {
-        errno_codes(&message_values[index].message_strings)
+        Ok(errno_codes(&message_values[index].message_strings))
     } else if format_string.contains("darwin.mode") {
-        permission(&message_values[index].message_strings)
+        Ok(permission(&message_values[index].message_strings))
     } else if format_string.contains("odtypes:ODError") {
-        errors(&message_values[index].message_strings)
+        Ok(errors(&message_values[index].message_strings))
     } else if format_string.contains("odtypes:mbridtype") {
-        member_id_type(&message_values[index].message_strings)
+        Ok(member_id_type(&message_values[index].message_strings))
     } else if format_string.contains("odtypes:mbr_details") {
-        member_details(&message_values[index].message_strings)
+        Ok(member_details(&message_values[index].message_strings))
     } else if format_string.contains("odtypes:nt_sid_t") {
-        sid_details(&message_values[index].message_strings)
+        Ok(sid_details(&message_values[index].message_strings))
     } else if format_string.contains("location:CLClientAuthorizationStatus") {
-        client_authorization_status(&message_values[index].message_strings)
+        Ok(client_authorization_status(
+            &message_values[index].message_strings,
+        ))
     } else if format_string.contains("location:CLDaemonStatus_Type::Reachability") {
-        daemon_status_type(&message_values[index].message_strings)
+        Ok(daemon_status_type(&message_values[index].message_strings))
     } else if format_string.contains("location:CLSubHarvesterIdentifier") {
-        subharvester_identifier(&message_values[index].message_strings)
+        Ok(subharvester_identifier(
+            &message_values[index].message_strings,
+        ))
     } else if format_string.contains("location:SqliteResult") {
-        sqlite(&message_values[index].message_strings)
+        Ok(sqlite(&message_values[index].message_strings))
     } else if format_string.contains("location:_CLClientManagerStateTrackerState") {
-        client_manager_state_tracker_state(&message_values[index].message_strings)
+        Ok(client_manager_state_tracker_state(
+            &message_values[index].message_strings,
+        ))
     } else if format_string.contains("location:_CLLocationManagerStateTrackerState") {
-        location_manager_state_tracker_state(&message_values[index].message_strings)
+        Ok(location_manager_state_tracker_state(
+            &message_values[index].message_strings,
+        ))
     } else if format_string.contains("network:in6_addr") {
-        ipv_six(&message_values[index].message_strings)
+        Ok(ipv_six(&message_values[index].message_strings))
     } else if format_string.contains("network:in_addr") {
-        ipv_four(&message_values[index].message_strings)
+        Ok(ipv_four(&message_values[index].message_strings))
     } else if format_string.contains("network:sockaddr") {
-        sockaddr(&message_values[index].message_strings)
+        Ok(sockaddr(&message_values[index].message_strings))
     } else if format_string.contains("time_t") {
-        parse_time(&message_values[index].message_strings)
+        Ok(parse_time(&message_values[index].message_strings))
     } else if format_string.contains("mdns:dnshdr") {
         parse_dns_header(&message_values[index].message_strings)
     } else if format_string.contains("mdns:rd.svcb") {
         get_service_binding(&message_values[index].message_strings)
     } else if format_string.contains("location:IOMessage") {
-        io_message(&message_values[index].message_strings)
+        Ok(io_message(&message_values[index].message_strings))
     } else if format_string.contains("mdnsresponder:domain_name") {
         get_domain_name(&message_values[index].message_strings)
     } else if format_string.contains("mdnsresponder:mac_addr") {
-        get_dns_mac_addr(&message_values[index].message_strings)
+        Ok(get_dns_mac_addr(&message_values[index].message_strings))
     } else if format_string.contains("mdnsresponder:ip_addr") {
-        dns_ip_addr(&message_values[index].message_strings)
+        Ok(dns_ip_addr(&message_values[index].message_strings))
     } else if format_string.contains("mdns:addrmv") {
-        dns_addrmv(&message_values[index].message_strings)
+        Ok(dns_addrmv(&message_values[index].message_strings))
     } else if format_string.contains("mdns:rrtype") {
-        dns_records(&message_values[index].message_strings)
+        Ok(dns_records(&message_values[index].message_strings))
     } else if format_string.contains("mdns:nreason") {
-        dns_reason(&message_values[index].message_strings)
+        Ok(dns_reason(&message_values[index].message_strings))
     } else if format_string.contains("mdns:protocol") {
-        dns_protocol(&message_values[index].message_strings)
+        Ok(dns_protocol(&message_values[index].message_strings))
     } else if format_string.contains("mdns:dns.idflags") {
-        dns_idflags(&message_values[index].message_strings)
+        Ok(dns_idflags(&message_values[index].message_strings))
     } else if format_string.contains("mdns:dns.counts") {
-        dns_counts(&message_values[index].message_strings)
+        Ok(dns_counts(&message_values[index].message_strings))
     } else if format_string.contains("mdns:yesno") {
-        dns_yes_no(&message_values[index].message_strings)
+        Ok(dns_yes_no(&message_values[index].message_strings))
     } else if format_string.contains("mdns:acceptable") {
-        dns_acceptable(&message_values[index].message_strings)
+        Ok(dns_acceptable(&message_values[index].message_strings))
     } else if format_string.contains("mdns:gaiopts") {
-        dns_getaddrinfo_opts(&message_values[index].message_strings)
+        Ok(dns_getaddrinfo_opts(&message_values[index].message_strings))
     } else {
-        String::new()
+        Ok(String::new())
     };
 
-    message_value
+    match message_value {
+        Ok(value) => value,
+        Err(e) => {
+            log::error!("[macos-unifiedlogs] Failed to parse DNS header counts. Error: {e:?}");
+            e.to_string()
+        }
+    }
 }
 
 #[cfg(test)]

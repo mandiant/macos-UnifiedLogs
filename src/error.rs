@@ -86,13 +86,13 @@ impl std::error::Error for ParserError {}
 impl fmt::Display for ParserError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ParserError::Path => write!(f, "Failed to open file path"),
-            ParserError::Dir => write!(f, "Failed to open directory path"),
-            ParserError::Tracev3Parse => write!(f, "Failed to parse tracev3 file"),
-            ParserError::Read => write!(f, "Failed to read file"),
-            ParserError::Timesync => write!(f, "Failed to parse timesync file"),
-            ParserError::Dsc => write!(f, "Failed to parse dsc file"),
-            ParserError::UUIDText => write!(f, "Failedto parse UUIDtext file"),
+            Self::Path => write!(f, "Failed to open file path"),
+            Self::Dir => write!(f, "Failed to open directory path"),
+            Self::Tracev3Parse => write!(f, "Failed to parse tracev3 file"),
+            Self::Read => write!(f, "Failed to read file"),
+            Self::Timesync => write!(f, "Failed to parse timesync file"),
+            Self::Dsc => write!(f, "Failed to parse dsc file"),
+            Self::UUIDText => write!(f, "Failedto parse UUIDtext file"),
         }
     }
 }

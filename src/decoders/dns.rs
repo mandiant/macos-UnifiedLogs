@@ -5,15 +5,15 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-use super::network::{get_ip_four, get_ip_six};
+use super::{
+    network::{get_ip_four, get_ip_six},
+    DecoderError,
+};
 use crate::util::{decode_standard, extract_string, extract_string_size};
 use byteorder::{BigEndian, WriteBytesExt};
 use log::{error, warn};
 use nom::{
-    bytes::complete::take,
-    number::complete::{be_u128, be_u16, be_u32, be_u8, le_u32},
-    sequence::tuple,
-    IResult,
+    bytes::complete::take, combinator::iterator, number::complete::{be_u128, be_u16, be_u32, be_u8, le_u32}, sequence::tuple, IResult
 };
 use std::{
     mem::size_of,
@@ -21,64 +21,48 @@ use std::{
 };
 
 /// Parse the DNS header
-pub(crate) fn parse_dns_header(data: &str) -> String {
-    let decoded_data_result = decode_standard(data);
-    let decoded_data = match decoded_data_result {
-        Ok(result) => result,
-        Err(err) => {
-            error!(
-                "[macos-unifiedlogs] Failed to base64 decode dns header data {}, error: {:?}",
-                data, err
-            );
-            return String::from("Failed to base64 decode DNS header details");
-        }
-    };
+pub(crate) fn parse_dns_header(data: &str) -> Result<String, DecoderError<'_>> {
+    let decoded_data = decode_standard(data).map_err(|_| DecoderError::Parse {
+        input: data.as_bytes(),
+        parser_name: "dns header",
+        message: "Failed to base64 decode DNS header details",
+    })?;
 
-    let message_result = get_dns_header(&decoded_data);
-    match message_result {
-        Ok((_, result)) => result,
-        Err(err) => {
-            error!(
-                "[macos-unifiedlogs] Failed to get dns header structure: {:?}",
-                err
-            );
-            format!("Failed to get dns header: {}", data)
-        }
+    let (_, message) = get_dns_header(&decoded_data).map_err(|_| DecoderError::Parse {
+        input: data.as_bytes(),
+        parser_name: "dns header",
+        message: "Failed to parse DNS header details",
+    })?;
+
+    Ok(message)
+}
+
+fn remove_err_offset(
+    error_with_offset: nom::Err<nom::error::Error<(&[u8], usize)>>,
+) -> nom::Err<nom::error::Error<&[u8]>> {
+    use nom::Err;
+    match error_with_offset {
+        Err::Error(e) => Err::Error(nom::error::Error {
+            input: e.input.0,
+            code: e.code,
+        }),
+        Err::Failure(e) => Err::Failure(nom::error::Error {
+            input: e.input.0,
+            code: e.code,
+        }),
+        Err::Incomplete(e) => Err::Incomplete(e),
     }
 }
 
 /// Get the DNS header data
 fn get_dns_header(input: &[u8]) -> IResult<&[u8], String> {
     let (input, id) = be_u16(input)?;
+
     let (input, flag_data) = take(size_of::<u16>())(input)?;
-
-    let message_result = get_dns_flags(flag_data);
-
-    let message = match message_result {
-        Ok(result) => result.1,
-        Err(err) => {
-            error!(
-                "[macos-unifiedlogs] Failed to parse DNS header flags. Error: {:?}",
-                err
-            );
-            String::from("Failed to parse DNS header")
-        }
-    };
-
-    // todo: why parsing here the counts ? while the first 2 bytes are already parsed as dns flags ?
-    let message_result = parse_counts(input);
-    let count_message = match message_result {
-        Ok((_, result)) => result.to_string(),
-        Err(err) => {
-            error!(
-                "[macos-unifiedlogs] Failed to parse DNS header counts. Error: {:?}",
-                err
-            );
-            String::from("Failed to parse DNS header counts")
-        }
-    };
-
+    let ((_, _), message) = get_dns_flags(flag_data).map_err(remove_err_offset)?;
     let (_, flags) = be_u16(flag_data)?;
+
+    let (input, count_message) = parse_counts(input)?;
 
     let header_message = format!(
         "Query ID: {:#X?}, Flags: {:#X?} {}, {}",
@@ -87,7 +71,6 @@ fn get_dns_header(input: &[u8]) -> IResult<&[u8], String> {
 
     Ok((input, header_message))
 }
-
 
 /// Parse the DNS bit flags
 fn get_dns_flags(input: &[u8]) -> IResult<(&[u8], usize), String> {
@@ -159,93 +142,65 @@ fn get_dns_flags(input: &[u8]) -> IResult<(&[u8], usize), String> {
 }
 
 /// Base64 decode the domain name. This is normally masked, but may be shown if private data is enabled
-pub(crate) fn get_domain_name(data: &str) -> String {
-    let decoded_data_result = decode_standard(data);
-    let decoded_data = match decoded_data_result {
-        Ok(result) => result,
-        Err(err) => {
-            error!(
-                "[macos-unifiedlogs] Failed to base64 decode dns name data {}, error: {:?}",
-                data, err
-            );
-            return String::from("Failed to base64 decode DNS name details");
-        }
-    };
+pub(crate) fn get_domain_name(input: &str) -> Result<String, DecoderError<'_>> {
+    let decoded_data = decode_standard(input).map_err(|_| DecoderError::Parse {
+        input: input.as_bytes(),
+        parser_name: "dns domain name",
+        message: "Failed to base64 decode DNS name details",
+    })?;
 
-    let domain_results = extract_string(&decoded_data);
-    match domain_results {
-        Ok((_, results)) => {
-            let mut clean_domain = String::new();
-            let non_domain_chars: Vec<char> = vec!['\n', '\t', '\r'];
-            for unicode in results.chars() {
-                // skip non-domain characters and replace with '.'
-                if non_domain_chars.contains(&unicode) || format!("{:?}", unicode).contains("\\u{")
-                {
-                    clean_domain.push('.');
-                    continue;
-                }
-                clean_domain.push_str(&String::from(unicode));
-            }
-            clean_domain
+    let (_, results) = extract_string(&decoded_data).map_err(|_| DecoderError::Parse {
+        input: input.as_bytes(),
+        parser_name: "dns domain name",
+        message: "Failed to extract domain name from logs",
+    })?;
+
+    let mut clean_domain = String::new();
+    let non_domain_chars = ['\n', '\t', '\r'];
+    for unicode in results.chars() {
+        // skip non-domain characters and replace with '.'
+        if non_domain_chars.contains(&unicode) || format!("{:?}", unicode).contains("\\u{") {
+            clean_domain.push('.');
+            continue;
         }
-        Err(err) => {
-            error!(
-                "[macos-unifiedlogs] Failed to extract domain name from logs: {:?}",
-                err
-            );
-            String::from("Failed to extract domain name from logs")
-        }
+        clean_domain.push_str(&String::from(unicode));
     }
+    Ok(clean_domain)
 }
 
 /// Parse DNS Service Binding record type
-pub(crate) fn get_service_binding(data: &str) -> String {
-    let decoded_data_result = decode_standard(data);
-    let decoded_data = match decoded_data_result {
-        Ok(result) => result,
-        Err(err) => {
-            error!(
-                "[macos-unifiedlogs] Failed to base64 decode dns svcb data {}, error: {:?}",
-                data, err
-            );
-            return String::from("Failed to base64 decode DNS svcb details");
-        }
-    };
+pub(crate) fn get_service_binding(input: &str) -> Result<String, DecoderError<'_>> {
+    let decoded_data = decode_standard(input).map_err(|_| DecoderError::Parse {
+        input: input.as_bytes(),
+        parser_name: "dns service binding",
+        message: "Failed to base64 decode DNS svcb details",
+    })?;
 
-    let message_results = parse_svcb(&decoded_data);
-    match message_results {
-        Ok((_, results)) => results,
-        Err(err) => {
-            error!(
-                "[macos-unifiedlogs] Failed to parse DNS Service Binding data: {:?}",
-                err
-            );
-            String::from("Failed to parse DNS Service Binding data")
-        }
-    }
+    let (_, result) = parse_svcb(&decoded_data).map_err(|_| DecoderError::Parse {
+        input: input.as_bytes(),
+        parser_name: "dns service binding",
+        message: "Failed to parse DNS Service Binding data",
+    })?;
+
+    Ok(result)
 }
 
 /// Parse DNS SVC Binding record
-fn parse_svcb(data: &[u8]) -> nom::IResult<&[u8], String> {
+fn parse_svcb(input: &[u8]) -> nom::IResult<&[u8], String> {
     // Format/documentation found at https://datatracker.ietf.org/doc/draft-ietf-dnsop-svcb-https/00/?include_text=1
-    let (dns_data, id_data) = take(size_of::<u16>())(data)?;
-    let (dns_data, unknown_type_data) = take(size_of::<u32>())(dns_data)?;
+    let (input, id) = be_u16(input)?;
+    let (input, unknown_type) = be_u32(input)?;
 
-    let (_, unknown_type) = be_u32(unknown_type_data)?;
-    let dns_over_https = 8388608; // 0x800000
-    if unknown_type == dns_over_https {
-        let (dns_data, url_entry_size) = take(size_of::<u8>())(dns_data)?;
-        let (_, url_size) = be_u8(url_entry_size)?;
-        return extract_string_size(dns_data, url_size.into());
+    const DNS_OVER_HTTPS: u32 = 0x800000;
+    if unknown_type == DNS_OVER_HTTPS {
+        let (input, url_size) = be_u8(input)?;
+        return extract_string_size(input, url_size.into());
     }
 
     // ALPN = Application Layer Protocol Negotation
-    let (dns_data, alpn_total_size) = take(size_of::<u8>())(dns_data)?;
+    let (input, alpn_size) = be_u8(input)?;
 
-    let (_, id) = be_u16(id_data)?;
-    let (_, alpn_size) = be_u8(alpn_total_size)?;
-
-    let (dns_data, alpn_data) = take(alpn_size)(dns_data)?;
+    let (dns_data, alpn_data) = take(alpn_size)(input)?;
     let (_, alpn_message) = parse_svcb_alpn(alpn_data)?;
 
     let (dns_data, ip_message) = parse_svcb_ip(dns_data)?;
@@ -255,59 +210,62 @@ fn parse_svcb(data: &[u8]) -> nom::IResult<&[u8], String> {
 }
 
 /// Parse the Application Layer Protocol Negotation
-fn parse_svcb_alpn(dns_data: &[u8]) -> nom::IResult<&[u8], String> {
-    let mut data = dns_data;
+fn parse_svcb_alpn(mut input: &[u8]) -> nom::IResult<&[u8], String> {
     let mut message = String::from("alpn=");
-    while !data.is_empty() {
-        let (alpn_data, entry_size) = take(size_of::<u8>())(data)?;
-        let (_, entry) = be_u8(entry_size)?;
-        let (alpn_data, alpn_entry) = take(entry)(alpn_data)?;
-        data = alpn_data;
+    while !input.is_empty() {
+        let (i, alpn_entry_size) = be_u8(input)?;
+        let (i, alpn_entry) = take(alpn_entry_size)(i)?;
         let (_, alpn_name) = extract_string(alpn_entry)?;
-        message = format!("{}{},", message, alpn_name);
+        input = i;
+        message.push_str(&alpn_name);
+        message.push(',')
     }
-    Ok((data, message))
+    Ok((input, message))
 }
 
 /// Parse the IPs
-fn parse_svcb_ip(data: &[u8]) -> nom::IResult<&[u8], String> {
-    let mut dns_data = data;
+fn parse_svcb_ip(mut input: &[u8]) -> nom::IResult<&[u8], String> {
+    fn ipv4_parser(input: &[u8]) -> nom::IResult<&[u8], Ipv4Addr> {
+        let (i, ip) = be_u32(input)?;
+        Ok((i, Ipv4Addr::from(ip)))
+    }
+
+    fn ipv6_parser(input: &[u8]) -> nom::IResult<&[u8], Ipv6Addr> {
+        let (i, ip) = be_u128(input)?;
+        Ok((i, Ipv6Addr::from(ip)))
+    }
+
+    const IPV4: u16 = 4;
+    const IPV6: u16 = 6;
+
     let mut ipv4_hint = String::from("ipv4 hint:");
     let mut ipv6_hint = String::from("ipv6 hint:");
 
     // IPs can either be IPv4 or/and IPv6
-    while !dns_data.is_empty() {
-        let (remaining_dns_data, ip_type) = take(size_of::<u16>())(dns_data)?;
-        let (_, ip_version) = be_u16(ip_type)?;
+    while !input.is_empty() {
+        let (i, ip_version) = be_u16(input)?;
+        let (i, ip_size) = be_u16(i)?;
 
-        let (remaining_dns_data, total_ip_size) = take(size_of::<u16>())(remaining_dns_data)?;
-        let (_, ip_size) = be_u16(total_ip_size)?;
-
-        let (remaining_dns_data, mut ip_data) = take(ip_size)(remaining_dns_data)?;
-        dns_data = remaining_dns_data;
-        let ipv4 = 4;
-        let ipv6 = 6;
-        // There can be multiple IPs
-        while !ip_data.is_empty() {
-            if ip_version == ipv4 {
-                let (remaining_ip_data, ipv4_data) = take(size_of::<u32>())(ip_data)?;
-                ip_data = remaining_ip_data;
-
-                let (_, ip) = be_u32(ipv4_data)?;
-                let ip_addr = Ipv4Addr::from(ip);
-                ipv4_hint = format!("{}{},", ipv4_hint, ip_addr);
-            } else if ip_version == ipv6 {
-                let (remaining_ip_data, ipv6_data) = take(size_of::<u128>())(ip_data)?;
-                ip_data = remaining_ip_data;
-
-                let (_, ip) = be_u128(ipv6_data)?;
-                let ip_addr = Ipv6Addr::from(ip);
-                ipv6_hint = format!("{}{},", ipv6_hint, ip_addr);
+        let (i, ip_data) = take(ip_size)(i)?;
+        input = i;
+     
+        if ip_version == IPV4 {
+            let mut iter = iterator(ip_data, ipv4_parser);
+            for ip  in iter.into_iter() {
+                ipv4_hint = format!("{}{},", ipv4_hint, ip);
             }
+            iter.finish()?;
+        } else if ip_version == IPV6 {
+            let mut iter = iterator(ip_data, ipv6_parser);
+            for ip in iter.into_iter() {
+                ipv6_hint = format!("{}{},", ipv6_hint, ip);
+            }
+            iter.finish()?;
         }
     }
+
     let message = format!("{} {}", ipv4_hint, ipv6_hint);
-    Ok((dns_data, message))
+    Ok((input, message))
 }
 
 /// Get the MAC Address from the log data
@@ -667,7 +625,7 @@ mod tests {
     #[test]
     fn test_parse_dns_header() {
         let test_data = "uXMBAAABAAAAAAAA";
-        let result = parse_dns_header(test_data);
+        let result = parse_dns_header(test_data).unwrap();
         assert_eq!(result, "Query ID: 0xB973, Flags: 0x100 Opcode: QUERY, \n    Query Type: 0,\n    Authoritative Answer Flag: 0, \n    Truncation Flag: 0, \n    Recursion Desired: 1, \n    Recursion Available: 0, \n    Response Code: No Error, Question Count: 1, Answer Record Count: 0, Authority Record Count: 0, Additional Record Count: 0");
     }
 
@@ -688,7 +646,7 @@ mod tests {
     #[test]
     fn test_get_domain_name() {
         let test_data = "AzE0NAMxMDEDMTY4AzE5Mgdpbi1hZGRyBGFycGEA";
-        let result = get_domain_name(test_data);
+        let result = get_domain_name(test_data).unwrap();
         assert_eq!(result, ".144.101.168.192.in-addr.arpa");
     }
 
@@ -696,7 +654,7 @@ mod tests {
     fn test_get_service_binding() {
         let test_data =
             "AAEAAAEAAwJoMgAEAAhoEJRAaBCVQAAGACAmBkcAAAAAAAAAAABoEJRAJgZHAAAAAAAAAAAAaBCVQA==";
-        let result = get_service_binding(test_data);
+        let result = get_service_binding(test_data).unwrap();
         assert_eq!(result, "rdata: 1 . alpn=h2, ipv4 hint:104.16.148.64,104.16.149.64, ipv6 hint:2606:4700::6810:9440,2606:4700::6810:9540,");
     }
 
