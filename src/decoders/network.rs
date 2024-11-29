@@ -150,21 +150,17 @@ fn get_sockaddr_data(data: &[u8]) -> nom::IResult<&[u8], String> {
 }
 
 /// Get the IPv4 data
-pub(crate) fn get_ip_four(data: &[u8]) -> nom::IResult<&[u8], String> {
-    let (ip_data, ip_addr_data) = take(size_of::<u32>())(data)?;
-    let (_, ip) = be_u32(ip_addr_data)?;
+pub(crate) fn get_ip_four(input: &[u8]) -> nom::IResult<&[u8], String> {
+    let (input, ip) = be_u32(input)?;
     let ip = Ipv4Addr::from(ip);
-
-    Ok((ip_data, ip.to_string()))
+    Ok((input, ip.to_string()))
 }
 
 /// Get the IPv6 data
-pub(crate) fn get_ip_six(data: &[u8]) -> nom::IResult<&[u8], String> {
-    let (ip_data, ip_addr_data) = take(size_of::<u128>())(data)?;
-    let (_, ip) = be_u128(ip_addr_data)?;
+pub(crate) fn get_ip_six(input: &[u8]) -> nom::IResult<&[u8], String> {
+    let (input, ip) = be_u128(input)?;
     let ip = Ipv6Addr::from(ip);
-
-    Ok((ip_data, ip.to_string()))
+    Ok((input, ip.to_string()))
 }
 
 #[cfg(test)]

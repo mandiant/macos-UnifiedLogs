@@ -13,9 +13,15 @@ use crate::util::{decode_standard, extract_string, extract_string_size};
 use byteorder::{BigEndian, WriteBytesExt};
 use log::{error, warn};
 use nom::{
-    bytes::complete::take, combinator::iterator, number::complete::{be_u128, be_u16, be_u32, be_u8, le_u32}, sequence::tuple, IResult
+    bytes::complete::take,
+    combinator::{fail, iterator},
+    multi::fold_many0,
+    number::complete::{be_u128, be_u16, be_u32, be_u8, le_u32},
+    sequence::tuple,
+    IResult,
 };
 use std::{
+    fmt::Write,
     mem::size_of,
     net::{Ipv4Addr, Ipv6Addr},
 };
@@ -248,10 +254,10 @@ fn parse_svcb_ip(mut input: &[u8]) -> nom::IResult<&[u8], String> {
 
         let (i, ip_data) = take(ip_size)(i)?;
         input = i;
-     
+
         if ip_version == IPV4 {
             let mut iter = iterator(ip_data, ipv4_parser);
-            for ip  in iter.into_iter() {
+            for ip in iter.into_iter() {
                 ipv4_hint = format!("{}{},", ipv4_hint, ip);
             }
             iter.finish()?;
@@ -269,86 +275,67 @@ fn parse_svcb_ip(mut input: &[u8]) -> nom::IResult<&[u8], String> {
 }
 
 /// Get the MAC Address from the log data
-pub(crate) fn get_dns_mac_addr(data: &str) -> String {
-    let decoded_data_result = decode_standard(data);
-    let decoded_data = match decoded_data_result {
-        Ok(result) => result,
-        Err(err) => {
-            error!(
-                "[macos-unifiedlogs] Failed to base64 decode dns mac address data {}, error: {:?}",
-                data, err
-            );
-            return String::from("Failed to base64 decode DNS mac address details");
-        }
-    };
+pub(crate) fn get_dns_mac_addr(input: &str) -> Result<String, DecoderError<'_>> {
+    let decoded_data = decode_standard(input).map_err(|_| DecoderError::Parse {
+        input: input.as_bytes(),
+        parser_name: "dns mac address",
+        message: "Failed to base64 decode DNS mac address details",
+    })?;
 
-    let message_results = parse_mac_addr(&decoded_data);
-    match message_results {
-        Ok((_, results)) => results,
-        Err(err) => {
-            error!(
-                "[macos-unifiedlogs] Failed to parse DNS mac address data: {:?}",
-                err
-            );
-            String::from("Failed to parse DNS mac address data")
-        }
-    }
+    let (_, message_results) = parse_mac_addr(&decoded_data).map_err(|_| DecoderError::Parse {
+        input: input.as_bytes(),
+        parser_name: "dns mac address",
+        message: "Failed to parse DNS mac address data",
+    })?;
+
+    Ok(message_results)
 }
 
 /// Parse the MAC Address
-fn parse_mac_addr(dns_data: &[u8]) -> nom::IResult<&[u8], String> {
-    let mut mac_data: Vec<String> = Vec::new();
-    let mut data = dns_data;
-
-    while !data.is_empty() {
-        let (remaining_data, addr) = take(size_of::<u8>())(data)?;
-        data = remaining_data;
-
-        let (_, mac_addr) = be_u8(addr)?;
-        mac_data.push(format!("{:02X?}", mac_addr));
-    }
-    Ok((data, mac_data.join(":")))
+fn parse_mac_addr(input: &[u8]) -> nom::IResult<&[u8], String> {
+    let (input, mac_string) = fold_many0(
+        be_u8,
+        || String::with_capacity(input.len() * 3), // This buffer will not have to reallocate/grow
+        |mut acc, item| {
+            if !acc.is_empty() {
+                acc.push(':');
+            }
+            write!(&mut acc, "{:02X?}", item).ok(); // ignore errors on write in String
+            acc
+        },
+    )(input)?;
+    Ok((input, mac_string))
 }
 
 /// Get IP Address info from log data
-pub(crate) fn dns_ip_addr(data: &str) -> String {
-    let decoded_data_result = decode_standard(data);
-    let decoded_data = match decoded_data_result {
-        Ok(result) => result,
-        Err(err) => {
-            error!(
-                "[macos-unifiedlogs] Failed to base64 decode dns ip address data {}, error: {:?}",
-                data, err
-            );
-            return String::from("Failed to base64 decode DNS ip address details");
-        }
-    };
-    let message_results = parse_dns_ip_addr(&decoded_data);
-    match message_results {
-        Ok((_, results)) => results,
-        Err(err) => {
-            error!(
-                "[macos-unifiedlogs] Failed to parse DNS ip address data: {:?}",
-                err
-            );
-            String::from("Failed to parse DNS mac address data")
-        }
-    }
+pub(crate) fn dns_ip_addr(input: &str) -> Result<String, DecoderError<'_>> {
+    let decoded_data = decode_standard(input).map_err(|_| DecoderError::Parse {
+        input: input.as_bytes(),
+        parser_name: "dns ip address",
+        message: "Failed to base64 decode DNS ip address details",
+    })?;
+
+    let (_, results) = parse_dns_ip_addr(&decoded_data).map_err(|_| DecoderError::Parse {
+        input: input.as_bytes(),
+        parser_name: "dns ip address",
+        message: "Failed to parse DNS ip address data",
+    })?;
+
+    Ok(results)
 }
 
 /// Parse IP Address data
 fn parse_dns_ip_addr(data: &[u8]) -> nom::IResult<&[u8], String> {
-    let (data, ip_type) = take(size_of::<u32>())(data)?;
-    let (_, ip) = le_u32(ip_type)?;
-    let ipv4 = 4;
-    let ipv6 = 6;
-    if ip == ipv4 {
+    let (data, ip_version) = le_u32(data)?;
+    const IPV4: u32 = 4;
+    const IPV6: u32 = 6;
+    if ip_version == IPV4 {
         return get_ip_four(data);
-    } else if ip == ipv6 {
+    } else if ip_version == IPV6 {
         return get_ip_six(data);
+    } else {
+        fail(data)
     }
-    warn!("[macos-unifiedlogs] Unknown DNS IP Addr type: {}", ip);
-    Ok((data, format!("Unknown DNS IP Addr type: {}", ip)))
 }
 
 /// Translate DNS add/rmv log values
@@ -691,7 +678,7 @@ mod tests {
     fn test_get_dns_mac_addr() {
         let test_data = "AAAAAAAA";
 
-        let result = get_dns_mac_addr(test_data);
+        let result = get_dns_mac_addr(test_data).unwrap();
         assert_eq!(result, "00:00:00:00:00:00");
     }
 
@@ -707,7 +694,7 @@ mod tests {
     fn test_dns_ip_addr() {
         let test_data = "BAAAAMCoZZAAAAAAAAAAAAAAAAA=";
 
-        let result = dns_ip_addr(test_data);
+        let result = dns_ip_addr(test_data).unwrap();
         assert_eq!(result, "192.168.101.144");
     }
 

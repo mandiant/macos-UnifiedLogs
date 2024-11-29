@@ -109,9 +109,9 @@ pub(crate) fn check_objects(
     } else if format_string.contains("mdnsresponder:domain_name") {
         get_domain_name(&message_values[index].message_strings)
     } else if format_string.contains("mdnsresponder:mac_addr") {
-        Ok(get_dns_mac_addr(&message_values[index].message_strings))
+        get_dns_mac_addr(&message_values[index].message_strings)
     } else if format_string.contains("mdnsresponder:ip_addr") {
-        Ok(dns_ip_addr(&message_values[index].message_strings))
+        dns_ip_addr(&message_values[index].message_strings)
     } else if format_string.contains("mdns:addrmv") {
         Ok(dns_addrmv(&message_values[index].message_strings))
     } else if format_string.contains("mdns:rrtype") {
