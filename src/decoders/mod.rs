@@ -28,10 +28,7 @@ impl<'a> std::error::Error for DecoderError<'a> {}
 impl<'a> std::fmt::Display for DecoderError<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Parse {
-                message,
-                ..
-            } => write!(f, "{message}"),
+            Self::Parse { message, .. } => write!(f, "{message}"),
         }
     }
 }
