@@ -255,13 +255,13 @@ fn parse_svcb_ip(mut input: &[u8]) -> nom::IResult<&[u8], String> {
         if ip_version == IPV4 {
             let mut iter = iterator(ip_data, ipv4_parser);
             for ip in iter.into_iter() {
-                ipv4_hint = format!("{}{},", ipv4_hint, ip);
+                write!(ipv4_hint, "{},", ip).ok(); // ignore errors on write in String
             }
             iter.finish()?;
         } else if ip_version == IPV6 {
             let mut iter = iterator(ip_data, ipv6_parser);
             for ip in iter.into_iter() {
-                ipv6_hint = format!("{}{},", ipv6_hint, ip);
+                write!(ipv6_hint, "{},", ip).ok(); // ignore errors on write in String
             }
             iter.finish()?;
         }
