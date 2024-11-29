@@ -99,33 +99,23 @@ pub fn build_log(
 
 /// Parse all UUID files in provided directory. The directory should follow the same layout as the live system (ex: path/to/files/<two character UUID>/<remaining UUID name>)
 pub fn collect_strings(path: &str) -> Result<Vec<UUIDText>, ParserError> {
-    let paths_results = fs::read_dir(path);
+    let paths = fs::read_dir(path).map_err(|err| {
+        error!("[macos-unifiedlogs] Failed to read directory path: {err:?}");
+        ParserError::Dir
+    })?;
 
-    let paths = match paths_results {
-        Ok(path) => path,
-        Err(err) => {
-            error!(
-                "[macos-unifiedlogs] Failed to read directory path: {:?}",
-                err
-            );
-            return Err(ParserError::Dir);
-        }
-    };
+    let entries = paths
+        .flat_map(|path| {
+            path.map_err(
+                |err| error!("[macos-unifiedlogs] Failed to get directory entry: {err:?}",),
+            )
+            .ok()
+        })
+        .collect::<Vec<_>>();
 
-    let mut uuidtext_vec: Vec<UUIDText> = Vec::new();
+    let mut uuidtext_vec: Vec<UUIDText> = Vec::with_capacity(entries.len());
     // Start process to read a directory containing subdirectories that contain the uuidtext files
-    for path in paths {
-        let dir_entry = match path {
-            Ok(entry) => entry,
-            Err(err) => {
-                error!(
-                    "[macos-unifiedlogs] Failed to get directory entry: {:?}",
-                    err
-                );
-                continue;
-            }
-        };
-
+    for dir_entry in entries {
         let type_results = dir_entry.file_type();
         let entry_type = match type_results {
             Ok(dir_type) => dir_type,
@@ -381,25 +371,30 @@ pub fn collect_timesync(path: &str) -> Result<HashMap<String, TimesyncBoot>, Par
 #[cfg(test)]
 mod tests {
     use crate::parser::{
-        build_log, collect_shared_strings, collect_shared_strings_system, collect_strings,
-        collect_strings_system, collect_timesync, collect_timesync_system, parse_log,
+        build_log, collect_shared_strings, collect_strings, collect_timesync, parse_log,
     };
-
+    #[cfg(target_os = "macos")]
+    use crate::parser::{
+        collect_shared_strings_system, collect_strings_system, collect_timesync_system,
+    };
     use std::path::PathBuf;
 
     #[test]
+    #[cfg(target_os = "macos")]
     fn test_collect_strings_system() {
         let uuidtext_results = collect_strings_system().unwrap();
         assert!(uuidtext_results.len() > 100);
     }
 
     #[test]
+    #[cfg(target_os = "macos")]
     fn test_collect_timesync_system() {
         let timesync_results = collect_timesync_system().unwrap();
         assert!(timesync_results.len() > 1);
     }
 
     #[test]
+    #[cfg(target_os = "macos")]
     fn test_collect_timesync_archive() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         test_path.push("tests/test_data/system_logs_big_sur.logarchive/timesync");
@@ -480,6 +475,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "macos")]
     fn test_collect_shared_strings_system() {
         let shared_strings_results = collect_shared_strings_system().unwrap();
         assert!(shared_strings_results[0].ranges.len() > 1);
@@ -512,15 +508,24 @@ mod tests {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         test_path.push("tests/test_data/system_logs_big_sur.logarchive");
 
-        let strings_results = collect_strings(&test_path.display().to_string()).unwrap();
+        let mut strings_results = collect_strings(&test_path.display().to_string()).unwrap();
         assert_eq!(strings_results.len(), 536);
+
+        strings_results.sort_by(|a, b| a.uuid.cmp(&b.uuid));
+
         assert_eq!(strings_results[0].signature, 1719109785);
-        assert_eq!(strings_results[0].uuid, "5283D7FC2531558F2C1ACE9AF26A0F");
-        assert_eq!(strings_results[0].entry_descriptors.len(), 2);
-        assert_eq!(strings_results[0].footer_data.len(), 48096);
-        assert_eq!(strings_results[0].number_entries, 2);
+        assert_eq!(strings_results[0].uuid, "004EAF1C2B310DA0383BE3D60B80E8");
+        assert_eq!(strings_results[0].entry_descriptors.len(), 1);
+        assert_eq!(strings_results[0].footer_data.len(), 2847);
+        assert_eq!(strings_results[0].number_entries, 1);
         assert_eq!(strings_results[0].unknown_minor_version, 1);
         assert_eq!(strings_results[0].unknown_major_version, 2);
+
+        assert_eq!(strings_results[1].uuid, "00B3D870FB3AE8BDC1BA3A60D0B9A0");
+        assert_eq!(strings_results[1].footer_data.len(), 2164);
+
+        assert_eq!(strings_results[2].uuid, "014C44534A3A748476ABD88D376918");
+        assert_eq!(strings_results[2].footer_data.len(), 19011);
     }
 
     #[test]

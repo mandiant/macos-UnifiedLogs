@@ -31,6 +31,7 @@
     clippy::checked_conversions,
     clippy::unnecessary_cast
 )]
+
 mod catalog;
 mod chunks;
 mod chunkset;
