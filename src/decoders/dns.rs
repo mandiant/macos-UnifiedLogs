@@ -15,6 +15,7 @@ use nom::{
     combinator::{map, verify},
     multi::many0,
     number::complete::{be_u128, be_u16, be_u32, be_u8, le_u32},
+    sequence::tuple,
 };
 use std::{
     mem::size_of,
@@ -270,42 +271,44 @@ fn parse_svcb_alpn(dns_data: &[u8]) -> nom::IResult<&[u8], String> {
 
 /// Parse the IPs
 fn parse_svcb_ip(data: &[u8]) -> nom::IResult<&[u8], String> {
+    const IPV4: u16 = 4;
+    const IPV6: u16 = 6;
+
     let mut dns_data = data;
-    let mut ipv4_hint = String::from("ipv4 hint:");
-    let mut ipv6_hint = String::from("ipv6 hint:");
+
+    let mut ipv4_addrs = vec![];
+    let mut ipv6_addrs = vec![];
 
     // IPs can either be IPv4 or/and IPv6
     while !dns_data.is_empty() {
-        let (remaining_dns_data, ip_type) = take(size_of::<u16>())(dns_data)?;
-        let (_, ip_version) = be_u16(ip_type)?;
+        let (remaining_dns_data, (ip_version, ip_size)) =
+            tuple((verify(be_u16, |val| *val == IPV4 || *val == IPV6), be_u16))(dns_data)?;
 
-        let (remaining_dns_data, total_ip_size) = take(size_of::<u16>())(remaining_dns_data)?;
-        let (_, ip_size) = be_u16(total_ip_size)?;
+        let (remaining_dns_data, ip_data) = take(ip_size)(remaining_dns_data)?;
 
-        let (remaining_dns_data, mut ip_data) = take(ip_size)(remaining_dns_data)?;
         dns_data = remaining_dns_data;
-        let ipv4 = 4;
-        let ipv6 = 6;
+
         // There can be multiple IPs
-        while !ip_data.is_empty() {
-            if ip_version == ipv4 {
-                let (remaining_ip_data, ipv4_data) = take(size_of::<u32>())(ip_data)?;
-                ip_data = remaining_ip_data;
-
-                let (_, ip) = be_u32(ipv4_data)?;
-                let ip_addr = Ipv4Addr::from(ip);
-                ipv4_hint = format!("{}{},", ipv4_hint, ip_addr);
-            } else if ip_version == ipv6 {
-                let (remaining_ip_data, ipv6_data) = take(size_of::<u128>())(ip_data)?;
-                ip_data = remaining_ip_data;
-
-                let (_, ip) = be_u128(ipv6_data)?;
-                let ip_addr = Ipv6Addr::from(ip);
-                ipv6_hint = format!("{}{},", ipv6_hint, ip_addr);
+        match ip_version {
+            IPV4 => {
+                let (_, mut addrs) =
+                    many0(map(be_u32, |raw| Ipv4Addr::from(raw).to_string()))(ip_data)?;
+                ipv4_addrs.append(&mut addrs);
             }
-        }
+            IPV6 => {
+                let (_, mut addrs) =
+                    many0(map(be_u128, |raw| Ipv6Addr::from(raw).to_string()))(ip_data)?;
+                ipv6_addrs.append(&mut addrs);
+            }
+            _ => {}
+        };
     }
-    let message = format!("{} {}", ipv4_hint, ipv6_hint);
+
+    let message = format!(
+        "ipv4 hint:{}, ipv6 hint:{}",
+        ipv4_addrs.join(","),
+        ipv6_addrs.join(",")
+    );
     Ok((dns_data, message))
 }
 
@@ -682,7 +685,7 @@ mod tests {
         let test_data =
             "AAEAAAEAAwJoMgAEAAhoEJRAaBCVQAAGACAmBkcAAAAAAAAAAABoEJRAJgZHAAAAAAAAAAAAaBCVQA==";
         let result = get_service_binding(&test_data);
-        assert_eq!(result, "rdata: 1 . alpn=h2, ipv4 hint:104.16.148.64,104.16.149.64, ipv6 hint:2606:4700::6810:9440,2606:4700::6810:9540,");
+        assert_eq!(result, "rdata: 1 . alpn=h2, ipv4 hint:104.16.148.64,104.16.149.64, ipv6 hint:2606:4700::6810:9440,2606:4700::6810:9540");
     }
 
     #[test]
@@ -692,7 +695,7 @@ mod tests {
         let decoded_data_result = decode_standard(test_data).unwrap();
 
         let (_, result) = parse_svcb(&decoded_data_result).unwrap();
-        assert_eq!(result, "rdata: 1 . alpn=h2, ipv4 hint:104.16.148.64,104.16.149.64, ipv6 hint:2606:4700::6810:9440,2606:4700::6810:9540,");
+        assert_eq!(result, "rdata: 1 . alpn=h2, ipv4 hint:104.16.148.64,104.16.149.64, ipv6 hint:2606:4700::6810:9440,2606:4700::6810:9540");
     }
 
     #[test]
@@ -711,7 +714,7 @@ mod tests {
         ];
 
         let (_, result) = parse_svcb_ip(&test_data).unwrap();
-        assert_eq!(result, "ipv4 hint:104.16.148.64,104.16.149.64, ipv6 hint:2606:4700::6810:9440,2606:4700::6810:9540,");
+        assert_eq!(result, "ipv4 hint:104.16.148.64,104.16.149.64, ipv6 hint:2606:4700::6810:9440,2606:4700::6810:9540");
     }
 
     #[test]
