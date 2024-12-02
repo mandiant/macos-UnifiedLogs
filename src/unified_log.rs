@@ -40,27 +40,29 @@ pub enum LogType {
     Fault,
     Create,
     Useraction,
-    ProcessSignpostEvent,
-    ProcessSignpostStart,
-    ProcessSignpostEnd,
-    SystemSignpostEvent,
-    SystemSignpostStart,
-    SystemSignpostEnd,
-    ThreadSignpostEvent,
-    ThreadSignpostStart,
-    ThreadSignpostEnd,
-    Simpledump,
-    Statedump,
-    Loss,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum Signpost {
+    Unknown,
+    ProcessEvent,
+    ProcessStart,
+    ProcessEnd,
+    SystemEvent,
+    SystemStart,
+    SystemEnd,
+    ThreadEvent,
+    ThreadStart,
+    ThreadEnd,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum EventType {
     Unknown,
-    Log,
+    Log(LogType),
     Activity,
     Trace,
-    Signpost,
+    Signpost(Signpost),
     Simpledump,
     Statedump,
     Loss,
@@ -196,13 +198,13 @@ impl Iterator for LogIterator<'_> {
                     time: timestamp,
                     timestamp: unixepoch_to_iso(&(timestamp as i64)),
                     category: String::new(),
-                    log_type: LogData::get_log_type(
+                    process: String::new(),
+                    message: String::new(),
+                    event_type: LogData::get_event_type(
+                        firehose.unknown_log_activity_type,
                         firehose.unknown_log_type,
                         firehose.unknown_log_activity_type,
                     ),
-                    process: String::new(),
-                    message: String::new(),
-                    event_type: LogData::get_event_type(firehose.unknown_log_activity_type),
                     euid: CatalogChunk::get_euid(
                         &preamble.first_number_proc_id,
                         &preamble.second_number_proc_id,
@@ -322,7 +324,6 @@ impl Iterator for LogIterator<'_> {
                     0x7 => {
                         // No message data in loss entries
                         log_data.event_type = EventType::Loss;
-                        log_data.log_type = LogType::Loss;
                     }
                     0x2 => {
                         log_data.activity_id =
@@ -548,7 +549,6 @@ impl Iterator for LogIterator<'_> {
                 time: timestamp,
                 timestamp: unixepoch_to_iso(&(timestamp as i64)),
                 category: String::new(),
-                log_type: LogType::Simpledump,
                 process: String::new(),
                 message: simpledump.message_string.to_owned(),
                 event_type: EventType::Simpledump,
@@ -620,7 +620,6 @@ impl Iterator for LogIterator<'_> {
                     statedump.decoder_type,
                     data_string
                 ),
-                log_type: LogType::Statedump,
                 euid: 0,
                 boot_uuid: self.unified_log_data.header[0].boot_uuid.to_owned(),
                 timezone_name: self.unified_log_data.header[0]
@@ -654,7 +653,6 @@ pub struct LogData {
     pub time: f64,
     pub category: String,
     pub event_type: EventType,
-    pub log_type: LogType,
     pub process: String,
     pub process_uuid: String,
     pub message: String,
@@ -798,38 +796,38 @@ impl LogData {
     /// Return log type based on parsed log data
     fn get_log_type(log_type: u8, activity_type: u8) -> LogType {
         match log_type {
-            0x1 => {
-                let activity = 2;
-                if activity_type == activity {
-                    LogType::Create
-                } else {
-                    LogType::Info
-                }
-            }
+            0x1 if activity_type == 0x2 => LogType::Create,
+            0x1 => LogType::Info,
             0x2 => LogType::Debug,
             0x3 => LogType::Useraction,
             0x10 => LogType::Error,
             0x11 => LogType::Fault,
-            0x80 => LogType::ProcessSignpostEvent,
-            0x81 => LogType::ProcessSignpostStart,
-            0x82 => LogType::ProcessSignpostEnd,
-            0xc0 => LogType::SystemSignpostEvent, // Not seen but may exist?
-            0xc1 => LogType::SystemSignpostStart,
-            0xc2 => LogType::SystemSignpostEnd,
-            0x40 => LogType::ThreadSignpostEvent, // Not seen but may exist?
-            0x41 => LogType::ThreadSignpostStart,
-            0x42 => LogType::ThreadSignpostEnd,
             _ => LogType::Default,
         }
     }
 
+    fn get_signpost(log_type: u8) -> Signpost {
+        match log_type {
+            0x80 => Signpost::ProcessEvent,
+            0x81 => Signpost::ProcessStart,
+            0x82 => Signpost::ProcessEnd,
+            0xc0 => Signpost::SystemEvent, // Not seen but may exist?
+            0xc1 => Signpost::SystemStart,
+            0xc2 => Signpost::SystemEnd,
+            0x40 => Signpost::ThreadEvent, // Not seen but may exist?
+            0x41 => Signpost::ThreadStart,
+            0x42 => Signpost::ThreadEnd,
+            _ => Signpost::Unknown,
+        }
+    }
+
     /// Return the log event type based on parsed log data
-    fn get_event_type(event_type: u8) -> EventType {
+    fn get_event_type(event_type: u8, log_type: u8, activity_type: u8) -> EventType {
         match event_type {
-            0x4 => EventType::Log,
+            0x4 => EventType::Log(Self::get_log_type(log_type, activity_type)),
             0x2 => EventType::Activity,
             0x3 => EventType::Trace,
-            0x6 => EventType::Signpost,
+            0x6 => EventType::Signpost(Self::get_signpost(log_type)),
             0x7 => EventType::Loss,
             _ => EventType::Unknown,
         }
@@ -1053,8 +1051,7 @@ mod tests {
         assert_eq!(results[0].pid, 45);
         assert_eq!(results[0].thread_id, 588);
         assert_eq!(results[0].category, "device");
-        assert_eq!(results[0].log_type, LogType::Default);
-        assert_eq!(results[0].event_type, EventType::Log);
+        assert_eq!(results[0].event_type, EventType::Log(LogType::Default));
         assert_eq!(results[0].euid, 0);
         assert_eq!(results[0].boot_uuid, "80D194AF56A34C54867449D2130D41BB");
         assert_eq!(results[0].timezone_name, "Pacific");
@@ -1077,7 +1074,7 @@ mod tests {
     #[test]
     fn test_get_event_type() {
         let event_type = 0x2;
-        let event_string = LogData::get_event_type(event_type);
+        let event_string = LogData::get_event_type(event_type, u8::MAX, u8::MAX);
         assert_eq!(event_string, EventType::Activity);
     }
 
