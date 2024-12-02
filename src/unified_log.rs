@@ -31,6 +31,41 @@ use nom::bytes::complete::take;
 use regex::Regex;
 use serde::Serialize;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum LogType {
+    Debug,
+    Info,
+    Default,
+    Error,
+    Fault,
+    Create,
+    Useraction,
+    ProcessSignpostEvent,
+    ProcessSignpostStart,
+    ProcessSignpostEnd,
+    SystemSignpostEvent,
+    SystemSignpostStart,
+    SystemSignpostEnd,
+    ThreadSignpostEvent,
+    ThreadSignpostStart,
+    ThreadSignpostEnd,
+    Simpledump,
+    Statedump,
+    Loss,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum EventType {
+    Unknown,
+    Log,
+    Activity,
+    Trace,
+    Signpost,
+    Simpledump,
+    Statedump,
+    Loss,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct UnifiedLogData {
     pub header: Vec<HeaderChunk>,
@@ -162,12 +197,12 @@ impl Iterator for LogIterator<'_> {
                     timestamp: unixepoch_to_iso(&(timestamp as i64)),
                     category: String::new(),
                     log_type: LogData::get_log_type(
-                        &firehose.unknown_log_type,
-                        &firehose.unknown_log_activity_type,
+                        firehose.unknown_log_type,
+                        firehose.unknown_log_activity_type,
                     ),
                     process: String::new(),
                     message: String::new(),
-                    event_type: LogData::get_event_type(&firehose.unknown_log_activity_type),
+                    event_type: LogData::get_event_type(firehose.unknown_log_activity_type),
                     euid: catalog_data.catalog.get_euid(
                         preamble.first_number_proc_id,
                         preamble.second_number_proc_id,
@@ -284,7 +319,8 @@ impl Iterator for LogIterator<'_> {
                     }
                     0x7 => {
                         // No message data in loss entries
-                        log_data.log_type = String::new();
+                        log_data.event_type = EventType::Loss;
+                        log_data.log_type = LogType::Loss;
                     }
                     0x2 => {
                         log_data.activity_id =
@@ -509,10 +545,10 @@ impl Iterator for LogIterator<'_> {
                 time: timestamp,
                 timestamp: unixepoch_to_iso(&(timestamp as i64)),
                 category: String::new(),
-                log_type: String::new(),
+                log_type: LogType::Simpledump,
                 process: String::new(),
                 message: simpledump.message_string.to_owned(),
-                event_type: String::from("Simpledump"),
+                event_type: EventType::Simpledump,
                 euid: 0,
                 boot_uuid: self.unified_log_data.header[0].boot_uuid.to_owned(),
                 timezone_name: self.unified_log_data.header[0]
@@ -572,7 +608,7 @@ impl Iterator for LogIterator<'_> {
                 time: timestamp,
                 timestamp: unixepoch_to_iso(&(timestamp as i64)),
                 category: String::new(),
-                event_type: String::from("Statedump"),
+                event_type: EventType::Statedump,
                 process: String::new(),
                 message: format!(
                     "title: {:?}\nObject Type: {:?}\n Object Type: {:?}\n{:?}",
@@ -581,7 +617,7 @@ impl Iterator for LogIterator<'_> {
                     statedump.decoder_type,
                     data_string
                 ),
-                log_type: String::new(),
+                log_type: LogType::Statedump,
                 euid: 0,
                 boot_uuid: self.unified_log_data.header[0].boot_uuid.to_owned(),
                 timezone_name: self.unified_log_data.header[0]
@@ -614,8 +650,8 @@ pub struct LogData {
     pub activity_id: u64,
     pub time: f64,
     pub category: String,
-    pub event_type: String,
-    pub log_type: String,
+    pub event_type: EventType,
+    pub log_type: LogType,
     pub process: String,
     pub process_uuid: String,
     pub message: String,
@@ -757,42 +793,42 @@ impl LogData {
     }
 
     /// Return log type based on parsed log data
-    fn get_log_type(log_type: &u8, activity_type: &u8) -> String {
+    fn get_log_type(log_type: u8, activity_type: u8) -> LogType {
         match log_type {
             0x1 => {
                 let activity = 2;
-                if activity_type == &activity {
-                    String::from("Create")
+                if activity_type == activity {
+                    LogType::Create
                 } else {
-                    String::from("Info")
+                    LogType::Info
                 }
             }
-            0x2 => String::from("Debug"),
-            0x3 => String::from("Useraction"),
-            0x10 => String::from("Error"),
-            0x11 => String::from("Fault"),
-            0x80 => String::from("Process Signpost Event"),
-            0x81 => String::from("Process Signpost Start"),
-            0x82 => String::from("Process Signpost End"),
-            0xc0 => String::from("System Signpost Event"), // Not seen but may exist?
-            0xc1 => String::from("System Signpost Start"),
-            0xc2 => String::from("System Signpost End"),
-            0x40 => String::from("Thread Signpost Event"), // Not seen but may exist?
-            0x41 => String::from("Thread Signpost Start"),
-            0x42 => String::from("Thread Signpost End"),
-            _ => String::from("Default"),
+            0x2 => LogType::Debug,
+            0x3 => LogType::Useraction,
+            0x10 => LogType::Error,
+            0x11 => LogType::Fault,
+            0x80 => LogType::ProcessSignpostEvent,
+            0x81 => LogType::ProcessSignpostStart,
+            0x82 => LogType::ProcessSignpostEnd,
+            0xc0 => LogType::SystemSignpostEvent, // Not seen but may exist?
+            0xc1 => LogType::SystemSignpostStart,
+            0xc2 => LogType::SystemSignpostEnd,
+            0x40 => LogType::ThreadSignpostEvent, // Not seen but may exist?
+            0x41 => LogType::ThreadSignpostStart,
+            0x42 => LogType::ThreadSignpostEnd,
+            _ => LogType::Default,
         }
     }
 
     /// Return the log event type based on parsed log data
-    fn get_event_type(event_type: &u8) -> String {
+    fn get_event_type(event_type: u8) -> EventType {
         match event_type {
-            0x4 => String::from("Log"),
-            0x2 => String::from("Activity"),
-            0x3 => String::from("Trace"),
-            0x6 => String::from("Signpost"),
-            0x7 => String::from("Loss"),
-            _ => String::from("Unknown"),
+            0x4 => EventType::Log,
+            0x2 => EventType::Activity,
+            0x3 => EventType::Trace,
+            0x6 => EventType::Signpost,
+            0x7 => EventType::Loss,
+            _ => EventType::Unknown,
         }
     }
 
@@ -906,7 +942,7 @@ mod tests {
         chunks::firehose::firehose_log::Firehose,
         filesystem::LogarchiveProvider,
         parser::{collect_shared_strings, collect_strings, collect_timesync, iter_log, parse_log},
-        unified_log::UnifiedLogCatalogData,
+        unified_log::{EventType, LogType, UnifiedLogCatalogData},
     };
     use std::{fs, path::PathBuf};
 
@@ -1013,8 +1049,8 @@ mod tests {
         assert_eq!(results[0].pid, 45);
         assert_eq!(results[0].thread_id, 588);
         assert_eq!(results[0].category, "device");
-        assert_eq!(results[0].log_type, "Default");
-        assert_eq!(results[0].event_type, "Log");
+        assert_eq!(results[0].log_type, LogType::Default);
+        assert_eq!(results[0].event_type, EventType::Log);
         assert_eq!(results[0].euid, 0);
         assert_eq!(results[0].boot_uuid, "80D194AF56A34C54867449D2130D41BB");
         assert_eq!(results[0].timezone_name, "Pacific");
@@ -1027,18 +1063,18 @@ mod tests {
         let mut log_type = 0x2;
         let activity_type = 0x2;
 
-        let mut log_string = LogData::get_log_type(&log_type, &activity_type);
-        assert_eq!(log_string, "Debug");
+        let mut log_string = LogData::get_log_type(log_type, activity_type);
+        assert_eq!(log_string, LogType::Debug);
         log_type = 0x1;
-        log_string = LogData::get_log_type(&log_type, &activity_type);
-        assert_eq!(log_string, "Create");
+        log_string = LogData::get_log_type(log_type, activity_type);
+        assert_eq!(log_string, LogType::Create);
     }
 
     #[test]
     fn test_get_event_type() {
         let event_type = 0x2;
-        let event_string = LogData::get_event_type(&event_type);
-        assert_eq!(event_string, "Activity");
+        let event_string = LogData::get_event_type(event_type);
+        assert_eq!(event_string, EventType::Activity);
     }
 
     #[test]
