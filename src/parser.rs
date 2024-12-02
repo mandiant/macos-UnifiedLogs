@@ -67,7 +67,7 @@ pub fn iter_log<'a>(
     shared_strings: &'a [SharedCacheStrings],
     timesync_data: &'a [TimesyncBoot],
     exclude_missing: bool,
-) -> Result<impl Iterator<Item = (Vec<LogData>, UnifiedLogData)> + 'a, regex::Error> {
+) -> impl Iterator<Item = (Vec<LogData>, UnifiedLogData)> + 'a {
     LogData::iter_log(
         unified_log_data,
         strings_data,

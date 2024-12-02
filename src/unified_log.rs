@@ -62,15 +62,15 @@ impl<'a> LogIterator<'a> {
         shared_strings: &'a [SharedCacheStrings],
         timesync_data: &'a [TimesyncBoot],
         exclude_missing: bool,
-    ) -> Result<Self, regex::Error> {
-        Ok(LogIterator {
+    ) -> Self {
+        LogIterator {
             unified_log_data,
             strings_data,
             shared_strings,
             timesync_data,
             exclude_missing,
             catalog_data_iterator_index: 0,
-        })
+        }
     }
 }
 
@@ -704,7 +704,7 @@ impl LogData {
         shared_strings: &'a [SharedCacheStrings],
         timesync_data: &'a [TimesyncBoot],
         exclude_missing: bool,
-    ) -> Result<impl Iterator<Item = (Vec<LogData>, UnifiedLogData)> + 'a, regex::Error> {
+    ) -> impl Iterator<Item = (Vec<LogData>, UnifiedLogData)> + 'a {
         LogIterator::new(
             unified_log_data,
             strings_data,
@@ -731,15 +731,13 @@ impl LogData {
             oversize: Vec::new(),
         };
 
-        let Ok(log_iterator) = LogIterator::new(
+        let log_iterator = LogIterator::new(
             unified_log_data,
             strings_data,
             shared_strings,
             timesync_data,
             exclude_missing,
-        ) else {
-            return (log_data_vec, missing_unified_log_data_vec);
-        };
+        );
         for (mut log_data, mut missing_unified_log) in log_iterator {
             log_data_vec.append(&mut log_data);
             missing_unified_log_data_vec
@@ -942,7 +940,7 @@ mod tests {
         let buffer = fs::read(test_path).unwrap();
 
         let (_, results) = LogData::parse_unified_log(&buffer).unwrap();
-        let iter = iter_log(&results, &[], &[], &[], false).unwrap();
+        let iter = iter_log(&results, &[], &[], &[], false);
         for (entry, remaining) in iter {
             assert!(entry.len() > 1000);
             assert!(remaining.catalog_data.is_empty());
