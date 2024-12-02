@@ -6,6 +6,7 @@
 // See the License for the specific language governing permissions and limitations under the License.
 
 use std::mem::size_of;
+use std::sync::LazyLock;
 
 use crate::chunks::firehose::firehose_log::FirehoseItemInfo;
 use crate::decoders::decoder;
@@ -27,11 +28,37 @@ const OCTAL_TYPES: [&str; 2] = ["o", "O"];
 const ERROR_TYPES: [&str; 1] = ["m"];
 const STRING_TYPES: [&str; 6] = ["c", "s", "@", "S", "C", "P"];
 
+/*
+Crazy Regex to try to get all log message formatters
+Formatters are based off of printf formatters with additional Apple values
+(                                 # start of capture group 1
+%                                 # literal "%"
+(?:                               # first option
+
+(?:{[^}]+}?)                      # Get String formatters with %{<variable>}<variable> values. Ex: %{public}#llx with team ID %{public}@
+(?:[-+0#]{0,5})                   # optional flags
+(?:\d+|\*)?                       # width
+(?:\.(?:\d+|\*))?                 # precision
+(?:h|hh|l|ll|t|q|w|I|z|I32|I64)?  # size
+[cCdiouxXeEfgGaAnpsSZPm@}]       # type
+
+|                                 # OR get regular string formatters, ex: %s, %d
+
+(?:[-+0 #]{0,5})                  # optional flags
+(?:\d+|\*)?                       # width
+(?:\.(?:\d+|\*))?                 # precision
+(?:h|hh|l|ll|w|I|t|q|z|I32|I64)?  # size
+[cCdiouxXeEfgGaAnpsSZPm@%]        # type
+))
+*/
+static MESSAGE_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(%(?:(?:\{[^}]+}?)(?:[-+0#]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*))?(?:h|hh|l|ll|w|I|z|t|q|I32|I64)?[cmCdiouxXeEfgGaAnpsSZP@}]|(?:[-+0 #]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*))?(?:h|hh|l||q|t|ll|w|I|z|I32|I64)?[cmCdiouxXeEfgGaAnpsSZP@%]))",).expect("failed to compile message regex")
+});
+
 /// Format the Unified Log message entry based on the parsed log items. Formatting follows the C lang prinf formatting process
 pub fn format_firehose_log_message(
     format_string: String,
     item_message: &Vec<FirehoseItemInfo>,
-    message_re: &Regex,
 ) -> String {
     let mut log_message = format_string;
     let mut format_and_message_vec: Vec<FormatAndMessage> = Vec::new();
@@ -56,7 +83,7 @@ pub fn format_firehose_log_message(
     if log_message.is_empty() {
         return item_message[0].message_strings.to_owned();
     }
-    let results = message_re.find_iter(&log_message);
+    let results = MESSAGE_REGEX.find_iter(&log_message);
 
     let mut item_index = 0;
     for formatter in results {
@@ -1098,7 +1125,6 @@ mod tests {
         format_alignment_right_space, format_firehose_log_message, format_left, format_right,
         parse_float, parse_formatter, parse_int, parse_signpost_format, parse_type_formatter,
     };
-    use regex::Regex;
 
     #[test]
     fn test_format_firehose_log_message() {
@@ -1109,9 +1135,8 @@ mod tests {
             item_type: 34,
             item_size: 0,
         });
-        let message_re = Regex::new(r"(%(?:(?:\{[^}]+}?)(?:[-+0#]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*))?(?:h|hh|l|ll|w|I|z|t|q|I32|I64)?[cmCdiouxXeEfgGaAnpsSZP@%}]|(?:[-+0 #]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*))?(?:h|hh|l||q|t|ll|w|I|z|I32|I64)?[cmCdiouxXeEfgGaAnpsSZP@%]))").unwrap();
 
-        let log_string = format_firehose_log_message(test_data, &item_message, &message_re);
+        let log_string = format_firehose_log_message(test_data, &item_message);
         assert_eq!(log_string, "opendirectoryd (build 796.100) launched...")
     }
 

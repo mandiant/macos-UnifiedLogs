@@ -28,7 +28,6 @@ use crate::util::{extract_string, padding_size, unixepoch_to_iso};
 use crate::uuidtext::UUIDText;
 use log::{error, warn};
 use nom::bytes::complete::take;
-use regex::Regex;
 use serde::Serialize;
 
 #[derive(Debug, Clone)]
@@ -53,9 +52,9 @@ struct LogIterator<'a> {
     shared_strings: &'a [SharedCacheStrings],
     timesync_data: &'a [TimesyncBoot],
     exclude_missing: bool,
-    message_re: Regex,
     catalog_data_iterator_index: usize,
 }
+
 impl<'a> LogIterator<'a> {
     fn new(
         unified_log_data: &'a UnifiedLogData,
@@ -64,50 +63,12 @@ impl<'a> LogIterator<'a> {
         timesync_data: &'a [TimesyncBoot],
         exclude_missing: bool,
     ) -> Result<Self, regex::Error> {
-        /*
-        Crazy Regex to try to get all log message formatters
-        Formatters are based off of printf formatters with additional Apple values
-        (                                 # start of capture group 1
-        %                                 # literal "%"
-        (?:                               # first option
-
-        (?:{[^}]+}?)                      # Get String formatters with %{<variable>}<variable> values. Ex: %{public}#llx with team ID %{public}@
-        (?:[-+0#]{0,5})                   # optional flags
-        (?:\d+|\*)?                       # width
-        (?:\.(?:\d+|\*))?                 # precision
-        (?:h|hh|l|ll|t|q|w|I|z|I32|I64)?  # size
-        [cCdiouxXeEfgGaAnpsSZPm@}]       # type
-
-        |                                 # OR get regular string formatters, ex: %s, %d
-
-        (?:[-+0 #]{0,5})                  # optional flags
-        (?:\d+|\*)?                       # width
-        (?:\.(?:\d+|\*))?                 # precision
-        (?:h|hh|l|ll|w|I|t|q|z|I32|I64)?  # size
-        [cCdiouxXeEfgGaAnpsSZPm@%]        # type
-        ))
-        */
-        let message_re_result = Regex::new(
-            r"(%(?:(?:\{[^}]+}?)(?:[-+0#]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*))?(?:h|hh|l|ll|w|I|z|t|q|I32|I64)?[cmCdiouxXeEfgGaAnpsSZP@}]|(?:[-+0 #]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*))?(?:h|hh|l||q|t|ll|w|I|z|I32|I64)?[cmCdiouxXeEfgGaAnpsSZP@%]))",
-        );
-        let message_re = match message_re_result {
-            Ok(message_re) => message_re,
-            Err(err) => {
-                error!(
-                    "Failed to compile regex for printf format parsing: {:?}",
-                    err
-                );
-                return Err(err);
-            }
-        };
-
         Ok(LogIterator {
             unified_log_data,
             strings_data,
             shared_strings,
             timesync_data,
             exclude_missing,
-            message_re,
             catalog_data_iterator_index: 0,
         })
     }
@@ -226,14 +187,12 @@ impl Iterator for LogIterator<'_> {
                                         format_firehose_log_message(
                                             results.format_string,
                                             &oversize_strings,
-                                            &self.message_re,
                                         )
                                     } else {
                                         // Format and map the log strings with the message format string found UUIDText or shared string file
                                         format_firehose_log_message(
                                             results.format_string,
                                             &firehose.message.item_info,
-                                            &self.message_re,
                                         )
                                     };
                                 // If we are tracking missing data (due to it being stored in another log file). Add missing data to vec to track and parse again once we got all data
@@ -311,7 +270,6 @@ impl Iterator for LogIterator<'_> {
                                 let log_message = format_firehose_log_message(
                                     results.format_string,
                                     &firehose.message.item_info,
-                                    &self.message_re,
                                 );
 
                                 if self.exclude_missing
@@ -374,14 +332,12 @@ impl Iterator for LogIterator<'_> {
                                         format_firehose_log_message(
                                             results.format_string,
                                             &oversize_strings,
-                                            &self.message_re,
                                         )
                                     } else {
                                         // Format and map the log strings with the message format string found UUIDText or shared string file
                                         format_firehose_log_message(
                                             results.format_string,
                                             &firehose.message.item_info,
-                                            &self.message_re,
                                         )
                                     };
                                 if self.exclude_missing
@@ -455,7 +411,6 @@ impl Iterator for LogIterator<'_> {
                                 let log_message = format_firehose_log_message(
                                     results.format_string,
                                     &firehose.message.item_info,
-                                    &self.message_re,
                                 );
 
                                 if self.exclude_missing
