@@ -105,9 +105,9 @@ pub fn collect_strings(path: &str) -> Result<Vec<UUIDText>, ParserError> {
 
     let entries = paths
         .flat_map(|path| {
-            path.inspect_err(|err| {
-                error!("[macos-unifiedlogs] Failed to get directory entry: {err:?}",)
-            })
+            path.map_err(
+                |err| error!("[macos-unifiedlogs] Failed to get directory entry: {err:?}",),
+            )
             .ok()
         })
         .collect::<Vec<_>>();

@@ -14,8 +14,8 @@ use byteorder::{BigEndian, WriteBytesExt};
 use log::{error, warn};
 use nom::{
     bytes::complete::take,
-    combinator::{fail, iterator, map_parser},
-    multi::fold_many0,
+    combinator::{fail, iterator, map, map_parser, verify},
+    multi::{fold_many0, many0},
     number::complete::{be_u128, be_u16, be_u32, be_u8, le_u32},
     sequence::tuple,
     IResult,
@@ -227,47 +227,94 @@ fn parse_svcb_alpn(mut input: &[u8]) -> nom::IResult<&[u8], String> {
 }
 
 /// Parse the IPs
+// fn parse_svcb_ip(data: &[u8]) -> nom::IResult<&[u8], String> {
+//     const IPV4: u16 = 4;
+//     const IPV6: u16 = 6;
+
+//     let mut dns_data = data;
+
+//     let mut ipv4_addrs = vec![];
+//     let mut ipv6_addrs = vec![];
+
+//     // IPs can either be IPv4 or/and IPv6
+//     while !dns_data.is_empty() {
+//         let (remaining_dns_data, (ip_version, ip_size)) =
+//             tuple((verify(be_u16, |val| *val == IPV4 || *val == IPV6), be_u16))(dns_data)?;
+
+//         let (remaining_dns_data, ip_data) = take(ip_size)(remaining_dns_data)?;
+
+//         dns_data = remaining_dns_data;
+
+//         // There can be multiple IPs
+//         match ip_version {
+//             IPV4 => {
+//                 let (_, mut addrs) =
+//                     many0(map(be_u32, |raw| Ipv4Addr::from(raw).to_string()))(ip_data)?;
+//                 ipv4_addrs.append(&mut addrs);
+//             }
+//             IPV6 => {
+//                 let (_, mut addrs) =
+//                     many0(map(be_u128, |raw| Ipv6Addr::from(raw).to_string()))(ip_data)?;
+//                 ipv6_addrs.append(&mut addrs);
+//             }
+//             _ => {}
+//         };
+//     }
+
+//     let message = format!(
+//         "ipv4 hint:{}, ipv6 hint:{}",
+//         ipv4_addrs.join(","),
+//         ipv6_addrs.join(",")
+//     );
+//     Ok((dns_data, message))
+// }
+
 fn parse_svcb_ip(mut input: &[u8]) -> nom::IResult<&[u8], String> {
-    fn ipv4_parser(input: &[u8]) -> nom::IResult<&[u8], Ipv4Addr> {
-        let (i, ip) = be_u32(input)?;
-        Ok((i, Ipv4Addr::from(ip)))
-    }
-
-    fn ipv6_parser(input: &[u8]) -> nom::IResult<&[u8], Ipv6Addr> {
-        let (i, ip) = be_u128(input)?;
-        Ok((i, Ipv6Addr::from(ip)))
-    }
-
     const IPV4: u16 = 4;
     const IPV6: u16 = 6;
 
-    let mut ipv4_hint = String::from("ipv4 hint:");
-    let mut ipv6_hint = String::from("ipv6 hint:");
+    fn ipv4_parser(input: &[u8]) -> nom::IResult<&[u8], Ipv4Addr> {
+        let (i, raw) = be_u32(input)?;
+        Ok((i, Ipv4Addr::from(raw)))
+    }
+
+    fn ipv6_parser(input: &[u8]) -> nom::IResult<&[u8], Ipv6Addr> {
+        let (i, raw) = be_u128(input)?;
+        Ok((i, Ipv6Addr::from(raw)))
+    }
+
+    let mut ipv4s = String::with_capacity(2 * 16); // let's reserve max space for 2 IPV4 addresses
+    let mut ipv6s = String::with_capacity(2 * 40); // let's reserve max space for 8 IPV6 addresses
 
     // IPs can either be IPv4 or/and IPv6
     while !input.is_empty() {
-        let (i, ip_version) = be_u16(input)?;
+        let (i, ip_version) = verify(be_u16, |val| *val == IPV4 || *val == IPV6)(input)?;
         let (i, ip_size) = be_u16(i)?;
-
         let (i, ip_data) = take(ip_size)(i)?;
         input = i;
 
         if ip_version == IPV4 {
             let mut iter = iterator(ip_data, ipv4_parser);
             for ip in iter.into_iter() {
-                write!(ipv4_hint, "{},", ip).ok(); // ignore errors on write in String
+                if !ipv4s.is_empty() {
+                    ipv4s.push(',');
+                }
+                write!(ipv4s, "{}", ip).ok(); // ignore errors on write in String
             }
             iter.finish()?;
         } else if ip_version == IPV6 {
             let mut iter = iterator(ip_data, ipv6_parser);
             for ip in iter.into_iter() {
-                write!(ipv6_hint, "{},", ip).ok(); // ignore errors on write in String
+                if !ipv6s.is_empty() {
+                    ipv6s.push(',');
+                }
+                write!(ipv6s, "{}", ip).ok(); // ignore errors on write in String
             }
             iter.finish()?;
         }
     }
 
-    let message = format!("{} {}", ipv4_hint, ipv6_hint);
+    let message = format!("ipv4 hint:{ipv4s}, ipv6 hint:{ipv6s}");
     Ok((input, message))
 }
 
@@ -638,8 +685,8 @@ mod tests {
     fn test_get_service_binding() {
         let test_data =
             "AAEAAAEAAwJoMgAEAAhoEJRAaBCVQAAGACAmBkcAAAAAAAAAAABoEJRAJgZHAAAAAAAAAAAAaBCVQA==";
-        let result = get_service_binding(test_data).unwrap();
-        assert_eq!(result, "rdata: 1 . alpn=h2, ipv4 hint:104.16.148.64,104.16.149.64, ipv6 hint:2606:4700::6810:9440,2606:4700::6810:9540,");
+        let result = get_service_binding(&test_data).unwrap();
+        assert_eq!(result, "rdata: 1 . alpn=h2, ipv4 hint:104.16.148.64,104.16.149.64, ipv6 hint:2606:4700::6810:9440,2606:4700::6810:9540");
     }
 
     #[test]
@@ -649,7 +696,7 @@ mod tests {
         let decoded_data_result = decode_standard(test_data).unwrap();
 
         let (_, result) = parse_svcb(&decoded_data_result).unwrap();
-        assert_eq!(result, "rdata: 1 . alpn=h2, ipv4 hint:104.16.148.64,104.16.149.64, ipv6 hint:2606:4700::6810:9440,2606:4700::6810:9540,");
+        assert_eq!(result, "rdata: 1 . alpn=h2, ipv4 hint:104.16.148.64,104.16.149.64, ipv6 hint:2606:4700::6810:9440,2606:4700::6810:9540");
     }
 
     #[test]
@@ -668,7 +715,7 @@ mod tests {
         ];
 
         let (_, result) = parse_svcb_ip(&test_data).unwrap();
-        assert_eq!(result, "ipv4 hint:104.16.148.64,104.16.149.64, ipv6 hint:2606:4700::6810:9440,2606:4700::6810:9540,");
+        assert_eq!(result, "ipv4 hint:104.16.148.64,104.16.149.64, ipv6 hint:2606:4700::6810:9440,2606:4700::6810:9540");
     }
 
     #[test]
