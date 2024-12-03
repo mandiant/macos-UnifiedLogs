@@ -14,8 +14,8 @@ use byteorder::{BigEndian, WriteBytesExt};
 use log::{error, warn};
 use nom::{
     bytes::complete::take,
-    combinator::{fail, iterator, map, map_parser, verify},
-    multi::{fold_many0, many0},
+    combinator::{fail, iterator, map_parser, verify},
+    multi::fold_many0,
     number::complete::{be_u128, be_u16, be_u32, be_u8, le_u32},
     sequence::tuple,
     IResult,
