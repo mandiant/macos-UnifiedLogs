@@ -13,7 +13,7 @@ use nom::{
     number::complete::{be_u128, le_u32, le_u64},
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct HeaderChunk {
     pub chunk_tag: u32,
     pub chunk_sub_tag: u32,
@@ -48,36 +48,8 @@ pub struct HeaderChunk {
 impl HeaderChunk {
     /// Parse the Unified Log tracev3 header data
     pub fn parse_header(data: &[u8]) -> nom::IResult<&[u8], HeaderChunk> {
-        let mut header_chunk = HeaderChunk {
-            chunk_tag: 0,
-            chunk_sub_tag: 0,
-            chunk_data_size: 0,
-            mach_time_numerator: 0,
-            mach_time_denominator: 0,
-            continous_time: 0,
-            unknown_time: 0,
-            unknown: 0,
-            bias_min: 0,
-            daylight_savings: 0,
-            unknown_flags: 0,
-            sub_chunk_tag: 0,
-            sub_chunk_data_size: 0,
-            sub_chunk_continous_time: 0,
-            sub_chunk_tag_2: 0,
-            sub_chunk_tag_data_size_2: 0,
-            unknown_2: 0,
-            unknown_3: 0,
-            build_version_string: String::new(),
-            hardware_model_string: String::new(),
-            sub_chunk_tag_3: 0,
-            sub_chunk_tag_data_size_3: 0,
-            boot_uuid: String::new(),
-            logd_pid: 0,
-            logd_exit_status: 0,
-            sub_chunk_tag_4: 0,
-            sub_chunk_tag_data_size_4: 0,
-            timezone_path: String::new(),
-        };
+        let mut header_chunk = HeaderChunk::default();
+
         let (input, chunk_tag) = take(size_of::<u32>())(data)?;
         let (input, chunk_sub_tag) = take(size_of::<u32>())(input)?;
         let (input, chunk_data_size) = take(size_of::<u64>())(input)?;

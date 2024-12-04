@@ -13,7 +13,7 @@ use nom::Needed;
 use serde::{Deserialize, Serialize};
 use std::mem::size_of;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct SharedCacheStrings {
     pub signature: u32,
     pub major_version: u16, // Version 1 up to Big Sur. Monterey has Version 2!
@@ -25,7 +25,7 @@ pub struct SharedCacheStrings {
     pub dsc_uuid: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct RangeDescriptor {
     pub range_offset: u64, // In Major version 2 this is 8 bytes, in version 1 its 4 bytes
     pub data_offset: u32,
@@ -34,7 +34,7 @@ pub struct RangeDescriptor {
     pub strings: Vec<u8>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct UUIDDescriptor {
     pub text_offset: u64, // Size appears to be 8 bytes in Major version: 2. 4 bytes in Major Version 1
     pub text_size: u32,
@@ -58,6 +58,9 @@ impl SharedCacheStrings {
             return Err(nom::Err::Incomplete(Needed::Unknown));
         }
 
+        let mut shared_cache_strings = SharedCacheStrings::default();
+        shared_cache_strings.signature = dsc_sig;
+
         let (input, major) = take(size_of::<u16>())(input)?;
         let (input, minor) = take(size_of::<u16>())(input)?;
         let (input, number_ranges) = take(size_of::<u32>())(input)?;
@@ -68,16 +71,10 @@ impl SharedCacheStrings {
         let (_, dsc_number_ranges) = le_u32(number_ranges)?;
         let (_, dsc_number_uuids) = le_u32(number_uuids)?;
 
-        let mut shared_cache_strings = SharedCacheStrings {
-            signature: dsc_sig,
-            major_version: dsc_major,
-            minor_version: dsc_minor,
-            number_ranges: dsc_number_ranges,
-            number_uuids: dsc_number_uuids,
-            ranges: Vec::new(),
-            uuids: Vec::new(),
-            dsc_uuid: String::new(),
-        };
+        shared_cache_strings.minor_version = dsc_minor;
+        shared_cache_strings.major_version = dsc_major;
+        shared_cache_strings.number_ranges = dsc_number_ranges;
+        shared_cache_strings.number_uuids = dsc_number_uuids;
 
         let mut range_count = 0;
         while range_count < shared_cache_strings.number_ranges {
@@ -113,13 +110,7 @@ impl SharedCacheStrings {
     fn get_ranges<'a>(data: &'a [u8], version: &u16) -> nom::IResult<&'a [u8], RangeDescriptor> {
         let version_number: u16 = 2;
         let mut input = data;
-        let mut range_data = RangeDescriptor {
-            range_offset: 0,
-            data_offset: 0,
-            range_size: 0,
-            unknown_uuid_index: 0,
-            strings: Vec::new(),
-        };
+        let mut range_data = RangeDescriptor::default();
 
         // Version 2 (Monterey and higher) changed the Range format a bit
         // range offset is now 8 bytes (vs 4 bytes) and starts at beginning
@@ -162,13 +153,7 @@ impl SharedCacheStrings {
 
     // Get UUID entries related to ranges
     fn get_uuids<'a>(data: &'a [u8], version: &u16) -> nom::IResult<&'a [u8], UUIDDescriptor> {
-        let mut uuid_data = UUIDDescriptor {
-            text_offset: 0,
-            text_size: 0,
-            uuid: String::new(),
-            path_offset: 0,
-            path_string: String::new(),
-        };
+        let mut uuid_data = UUIDDescriptor::default();
 
         let version_number: u16 = 2;
         let mut input = data;

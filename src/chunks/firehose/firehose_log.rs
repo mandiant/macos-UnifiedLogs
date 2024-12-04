@@ -6,7 +6,6 @@
 // See the License for the specific language governing permissions and limitations under the License.
 
 use crate::chunks::firehose::activity::FirehoseActivity;
-use crate::chunks::firehose::flags::FirehoseFormatters;
 use crate::chunks::firehose::loss::FirehoseLoss;
 use crate::chunks::firehose::nonactivity::FirehoseNonActivity;
 use crate::chunks::firehose::signpost::FirehoseSignpost;
@@ -22,7 +21,7 @@ use nom::{
 use serde::Serialize;
 use std::mem::size_of;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct FirehosePreamble {
     pub chunk_tag: u32,
     pub chunk_sub_tag: u32,
@@ -40,7 +39,7 @@ pub struct FirehosePreamble {
     pub public_data: Vec<Firehose>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Firehose {
     pub unknown_log_activity_type: u8, // 0x2 is Activity, 0x4 is non-activity, 0x6 is signpost, 0x3 trace
     pub unknown_log_type: u8, // Unkonwn but possibly log type (Info/Activity, Debug, Error, Fault, Signpost, System, Default)
@@ -60,7 +59,7 @@ pub struct Firehose {
     pub message: FirehoseItemData, // Log values extracted
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct FirehoseItemType {
     pub item_type: u8,
     item_size: u8,
@@ -69,13 +68,13 @@ pub struct FirehoseItemType {
     pub message_strings: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct FirehoseItemData {
     pub item_info: Vec<FirehoseItemInfo>,
     pub backtrace_strings: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Default)]
 pub struct FirehoseItemInfo {
     pub message_strings: String, // The message entry.
     pub item_type: u8,           // Type of item: strings, numbers, objects, precision
@@ -87,22 +86,7 @@ impl FirehosePreamble {
     pub fn parse_firehose_preamble(
         firehose_input_data: &[u8],
     ) -> nom::IResult<&[u8], FirehosePreamble> {
-        let mut firehose_data = FirehosePreamble {
-            chunk_tag: 0,
-            chunk_sub_tag: 0,
-            chunk_data_size: 0,
-            first_number_proc_id: 0,
-            second_number_proc_id: 0,
-            collapsed: 0,
-            unknown: Vec::new(),
-            public_data_size: 0,
-            private_data_virtual_offset: 0,
-            unkonwn2: 0,
-            unknown3: 0,
-            base_continous_time: 0,
-            public_data: Vec::new(),
-            ttl: 0,
-        };
+        let mut firehose_data = FirehosePreamble::default();
 
         let (input, chunk_tag) = take(size_of::<u32>())(firehose_input_data)?;
         let (input, chunk_sub_tag) = take(size_of::<u32>())(input)?;
@@ -261,10 +245,7 @@ impl FirehosePreamble {
         let mut items_data: Vec<FirehoseItemType> = Vec::new();
 
         let mut firehose_input = data;
-        let mut firehose_item_data = FirehoseItemData {
-            item_info: Vec::new(),
-            backtrace_strings: Vec::new(),
-        };
+        let mut firehose_item_data = FirehoseItemData::default();
 
         // Firehose number item values
         let number_item_type: Vec<u8> = vec![0x0, 0x2];
@@ -450,101 +431,7 @@ impl FirehosePreamble {
 
     // Parse all the different types of Firehose data (activity, non-activity, loss, trace, signpost)
     fn parse_firehose(data: &[u8]) -> nom::IResult<&[u8], Firehose> {
-        let mut firehose_results = Firehose {
-            unknown_log_activity_type: 0,
-            unknown_log_type: 0,
-            flags: 0,
-            format_string_location: 0,
-            thread_id: 0,
-            continous_time_delta: 0,
-            continous_time_delta_upper: 0,
-            data_size: 0,
-            firehose_activity: FirehoseActivity {
-                unknown_activity_id: 0,
-                unknown_sentinal: 0,
-                pid: 0,
-                unknown_activity_id_2: 0,
-                unknown_sentinal_2: 0,
-                unknown_activity_id_3: 0,
-                unknown_sentinal_3: 0,
-                unknown_message_string_ref: 0,
-                unknown_pc_id: 0,
-                firehose_formatters: FirehoseFormatters {
-                    main_exe: false,
-                    shared_cache: false,
-                    has_large_offset: 0,
-                    large_shared_cache: 0,
-                    absolute: false,
-                    uuid_relative: String::new(),
-                    main_plugin: false,
-                    pc_style: false,
-                    main_exe_alt_index: 0,
-                },
-            },
-            firehose_non_activity: FirehoseNonActivity {
-                unknown_activity_id: 0,
-                unknown_sentinal: 0,
-                private_strings_offset: 0,
-                private_strings_size: 0,
-                unknown_message_string_ref: 0,
-                subsystem_value: 0,
-                ttl_value: 0,
-                data_ref_value: 0,
-                unknown_pc_id: 0,
-                firehose_formatters: FirehoseFormatters {
-                    main_exe: false,
-                    shared_cache: false,
-                    has_large_offset: 0,
-                    large_shared_cache: 0,
-                    absolute: false,
-                    uuid_relative: String::new(),
-                    main_plugin: false,
-                    pc_style: false,
-                    main_exe_alt_index: 0,
-                },
-            },
-            firehose_loss: FirehoseLoss {
-                start_time: 0,
-                end_time: 0,
-                count: 0,
-            },
-            firehose_trace: FirehoseTrace {
-                unknown_pc_id: 0,
-                message_data: FirehoseItemData {
-                    item_info: Vec::new(),
-                    backtrace_strings: Vec::new(),
-                },
-            },
-            firehose_signpost: FirehoseSignpost {
-                unknown_pc_id: 0,
-                unknown_activity_id: 0,
-                unknown_sentinel: 0,
-                subsystem: 0,
-                signpost_id: 0,
-                signpost_name: 0,
-                private_strings_offset: 0,
-                private_strings_size: 0,
-                ttl_value: 0,
-                firehose_formatters: FirehoseFormatters {
-                    main_exe: false,
-                    shared_cache: false,
-                    has_large_offset: 0,
-                    large_shared_cache: 0,
-                    absolute: false,
-                    uuid_relative: String::new(),
-                    main_plugin: false,
-                    pc_style: false,
-                    main_exe_alt_index: 0,
-                },
-                data_ref_value: 0,
-            },
-            unknown_item: 0,
-            number_items: 0,
-            message: FirehoseItemData {
-                item_info: Vec::new(),
-                backtrace_strings: Vec::new(),
-            },
-        };
+        let mut firehose_results = Firehose::default();
 
         let (input, unknown_log_activity_type) = take(size_of::<u8>())(data)?;
         let (input, unknown_log_type) = take(size_of::<u8>())(input)?;
@@ -728,13 +615,9 @@ impl FirehosePreamble {
         let (_, item_type) = le_u8(item_type)?;
         let (_, item_size) = le_u8(item_size)?;
 
-        let mut item = FirehoseItemType {
-            item_type,
-            item_size,
-            offset: 0,
-            message_string_size: 0,
-            message_strings: String::new(),
-        };
+        let mut item = FirehoseItemType::default();
+        item.item_type = item_type;
+        item.item_size = item_size;
 
         // Firehose string item values
         let string_item: Vec<u8> = vec![

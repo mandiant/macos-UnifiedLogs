@@ -15,6 +15,7 @@ use nom::{
 };
 use std::mem::size_of;
 
+#[derive(Debug, Clone, Default)]
 struct LocationTrackerState {
     distance_filter: f64,
     desired_accuracy: f64,
@@ -629,36 +630,8 @@ mod tests {
 
     #[test]
     fn test_location_tracker_object() {
-        let test_data = LocationTrackerState {
-            distance_filter: 0.0,
-            desired_accuracy: 0.0,
-            updating_location: 0,
-            requesting_location: 0,
-            requesting_ranging: 0,
-            updating_ranging: 0,
-            updating_heading: 0,
-            heading_filter: 0.0,
-            allows_location_prompts: 0,
-            allows_altered_locations: 0,
-            dynamic_accuracy: 0,
-            previous_authorization_status_valid: 0,
-            previous_authorization_status: 0,
-            limits_precision: 0,
-            activity_type: 0,
-            pauses_location_updates: 0,
-            paused: 0,
-            allows_background_updates: 0,
-            shows_background_location: 0,
-            allows_map_correction: 0,
-            batching_location: 0,
-            updating_vehicle_speed: 0,
-            updating_vehicle_heading: 0,
-            match_info: 0,
-            ground_altitude: 0,
-            fusion_info: 0,
-            courtesy_prompt: 0,
-            is_authorized_for_widgets: 0,
-        };
+        let test_data = LocationTrackerState::default();
+
         let result = location_tracker_object(&test_data);
 
         assert_eq!(

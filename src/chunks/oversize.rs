@@ -11,7 +11,7 @@ use nom::bytes::complete::take;
 use nom::number::complete::{le_u16, le_u32, le_u64, le_u8};
 use std::mem::size_of;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Oversize {
     pub chunk_tag: u32,
     pub chunk_subtag: u32,
@@ -30,23 +30,7 @@ pub struct Oversize {
 impl Oversize {
     /// Parse the oversize log entry. Oversize entries contain strings that are too large to fit in a normal Firehose log entry
     pub fn parse_oversize(data: &[u8]) -> nom::IResult<&[u8], Oversize> {
-        let mut oversize_results = Oversize {
-            chunk_tag: 0,
-            chunk_subtag: 0,
-            chunk_data_size: 0,
-            first_proc_id: 0,
-            second_proc_id: 0,
-            ttl: 0,
-            unknown_reserved: Vec::new(),
-            continuous_time: 0,
-            data_ref_index: 0,
-            public_data_size: 0,
-            private_data_size: 0,
-            message_items: FirehoseItemData {
-                item_info: Vec::new(),
-                backtrace_strings: Vec::new(),
-            },
-        };
+        let mut oversize_results = Oversize::default();
 
         let (input, chunk_tag) = take(size_of::<u32>())(data)?;
         let (input, chunk_sub_tag) = take(size_of::<u32>())(input)?;

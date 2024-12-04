@@ -13,7 +13,7 @@ use nom::number::complete::{le_u32, le_u64, le_u8};
 use plist::Value;
 use std::mem::size_of;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Statedump {
     pub chunk_tag: u32,
     pub chunk_subtag: u32,
@@ -36,24 +36,8 @@ pub struct Statedump {
 impl Statedump {
     /// Parse Statedump log entry. Statedumps are special log entries that may contain a plist file, custom object, or protocol buffer
     pub fn parse_statedump(data: &[u8]) -> nom::IResult<&[u8], Statedump> {
-        let mut statedump_results = Statedump {
-            chunk_tag: 0,
-            chunk_subtag: 0,
-            chunk_data_size: 0,
-            first_proc_id: 0,
-            second_proc_id: 0,
-            ttl: 0,
-            unknown_reserved: Vec::new(),
-            continuous_time: 0,
-            activity_id: 0,
-            uuid: String::new(),
-            unknown_data_type: 0,
-            unknown_data_size: 0,
-            decoder_library: String::new(),
-            decoder_type: String::new(),
-            title_name: String::new(),
-            statedump_data: Vec::new(),
-        };
+        let mut statedump_results = Statedump::default();
+
         let (input, chunk_tag) = take(size_of::<u32>())(data)?;
         let (input, chunk_sub_tag) = take(size_of::<u32>())(input)?;
         let (input, chunk_data_size) = take(size_of::<u64>())(input)?;

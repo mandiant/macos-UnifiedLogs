@@ -14,7 +14,7 @@ use std::mem::size_of;
    Introduced in macOS Monterey (12).  Appears to be a "simpler" version of Statedump?
    So far appears to just contain a single string
 */
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct SimpleDump {
     pub chunk_tag: u32,
     pub chunk_subtag: u32,
@@ -38,25 +38,8 @@ pub struct SimpleDump {
 impl SimpleDump {
     /// Parse Simpledump log entry.  Introduced in macOS Monterey (12)
     pub fn parse_simpledump(data: &[u8]) -> nom::IResult<&[u8], SimpleDump> {
-        let mut simpledump_resuls = SimpleDump {
-            chunk_tag: 0,
-            chunk_subtag: 0,
-            chunk_data_size: 0,
-            first_proc_id: 0,
-            second_proc_id: 0,
-            continous_time: 0,
-            thread_id: 0,
-            unknown_offset: 0,
-            unknown_ttl: 0,
-            unknown_type: 0,
-            sender_uuid: String::new(),
-            dsc_uuid: String::new(),
-            unknown_number_message_strings: 0,
-            unknown_size_subsystem_string: 0,
-            unknown_size_message_string: 0,
-            subsystem: String::new(),
-            message_string: String::new(),
-        };
+        let mut simpledump_resuls = SimpleDump::default();
+
         let (input, chunk_tag) = take(size_of::<u32>())(data)?;
         let (input, chunk_sub_tag) = take(size_of::<u32>())(input)?;
         let (input, chunk_data_size) = take(size_of::<u64>())(input)?;

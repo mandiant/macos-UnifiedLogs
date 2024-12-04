@@ -9,7 +9,7 @@ use nom::bytes::complete::take;
 use nom::number::complete::le_u64;
 use std::mem::size_of;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct FirehoseLoss {
     pub start_time: u64,
     pub end_time: u64,
@@ -20,11 +20,7 @@ impl FirehoseLoss {
     /// Parse loss Firehose log entry.
     //  Ex: tp 16 + 48: loss
     pub fn parse_firehose_loss(data: &[u8]) -> nom::IResult<&[u8], FirehoseLoss> {
-        let mut firehose_loss = FirehoseLoss {
-            start_time: 0,
-            end_time: 0,
-            count: 0,
-        };
+        let mut firehose_loss = FirehoseLoss::default();
 
         let (input, start_time) = take(size_of::<u64>())(data)?;
         let (input, end_time) = take(size_of::<u64>())(input)?;

@@ -16,7 +16,7 @@ use nom::number::complete::{le_u16, le_u32, le_u64, le_u8};
 use nom::Needed;
 use std::mem::size_of;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct FirehoseSignpost {
     pub unknown_pc_id: u32, // Appears to be used to calculate string offset for firehose events with Absolute flag
     pub unknown_activity_id: u32,
@@ -38,29 +38,7 @@ impl FirehoseSignpost {
         data: &'a [u8],
         firehose_flags: &u16,
     ) -> nom::IResult<&'a [u8], FirehoseSignpost> {
-        let mut firehose_signpost = FirehoseSignpost {
-            unknown_pc_id: 0,
-            unknown_activity_id: 0,
-            unknown_sentinel: 0,
-            subsystem: 0,
-            signpost_id: 0,
-            signpost_name: 0,
-            private_strings_offset: 0,
-            private_strings_size: 0,
-            ttl_value: 0,
-            firehose_formatters: FirehoseFormatters {
-                main_exe: false,
-                shared_cache: false,
-                has_large_offset: 0,
-                large_shared_cache: 0,
-                absolute: false,
-                uuid_relative: String::new(),
-                main_plugin: false,
-                pc_style: false,
-                main_exe_alt_index: 0,
-            },
-            data_ref_value: 0,
-        };
+        let mut firehose_signpost = FirehoseSignpost::default();
 
         let mut input = data;
 
