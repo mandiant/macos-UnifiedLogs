@@ -669,12 +669,15 @@ mod tests {
         assert_eq!(result, "ipv4 hint:104.16.148.64,104.16.149.64, ipv6 hint:2606:4700::6810:9440,2606:4700::6810:9540");
     }
 
-    #[test] 
+    #[test]
     fn test_parse_svcb_ip_should_not_infine_loop() {
         let test_data = [
-            0, 4, 0, 4, 104, 16, 148, 64, // 104.16.148.64
-            0, 6, 0, 16, 38, 6, 71, 0, 0, 0, 0, 0, 0, 0, 0, 0, 104, 16, 148, 64, // 2606:4700::6810:9440
-            0, 42, 0, 0 // [invalid data] infinite loop (consuming too much) in the previous version
+            // 104.16.148.64
+            0, 4, 0, 4, 104, 16, 148, 64, //
+            // 2606:4700::6810:9440
+            0, 6, 0, 16, 38, 6, 71, 0, 0, 0, 0, 0, 0, 0, 0, 0, 104, 16, 148, 64,
+            // [invalid data] infinite loop (consuming too much) in the previous version
+            0, 42, 0, 0,
         ];
 
         let result = parse_svcb_ip(&test_data);
