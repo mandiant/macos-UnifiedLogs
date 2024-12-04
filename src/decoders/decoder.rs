@@ -137,7 +137,7 @@ pub(crate) fn check_objects(
     match message_value {
         Ok(value) => value,
         Err(e) => {
-            log::error!("[macos-unifiedlogs] Failed to parse DNS header counts. Error: {e:?}");
+            log::error!("[macos-unifiedlogs] Failed to decode log object. Error: {e:?}");
             e.to_string()
         }
     }
