@@ -288,7 +288,7 @@ pub(crate) fn get_dns_mac_addr(input: &str) -> Result<String, DecoderError<'_>> 
 
 /// Parse the MAC Address
 fn parse_mac_addr(input: &[u8]) -> nom::IResult<&[u8], String> {
-    let (input, mac_string) = fold_many0(
+    fold_many0(
         be_u8,
         || String::with_capacity(input.len() * 3), // This buffer will not have to reallocate/grow
         |mut acc, item| {
@@ -298,8 +298,7 @@ fn parse_mac_addr(input: &[u8]) -> nom::IResult<&[u8], String> {
             write!(&mut acc, "{:02X?}", item).ok(); // ignore errors on write in String
             acc
         },
-    )(input)?;
-    Ok((input, mac_string))
+    )(input)
 }
 
 /// Get IP Address info from log data
