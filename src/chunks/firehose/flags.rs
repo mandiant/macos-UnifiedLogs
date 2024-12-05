@@ -11,7 +11,7 @@ use nom::number::complete::{be_u128, le_u16};
 use nom::Needed;
 use std::mem::size_of;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct FirehoseFormatters {
     pub main_exe: bool,
     pub shared_cache: bool,
@@ -30,17 +30,8 @@ impl FirehoseFormatters {
         data: &'a [u8],
         firehose_flags: &u16,
     ) -> nom::IResult<&'a [u8], FirehoseFormatters> {
-        let mut formatter_flags = FirehoseFormatters {
-            main_exe: false,
-            shared_cache: false,
-            has_large_offset: 0,
-            large_shared_cache: 0,
-            absolute: false,
-            uuid_relative: String::new(),
-            main_plugin: false,
-            pc_style: false,
-            main_exe_alt_index: 0,
-        };
+        let mut formatter_flags = FirehoseFormatters::default();
+
         let message_strings_uuid: u16 = 0x2; // main_exe flag
         let large_shared_cache = 0xc; // large_shared_cache flag
         let large_offset = 0x20; // has_large_offset flag

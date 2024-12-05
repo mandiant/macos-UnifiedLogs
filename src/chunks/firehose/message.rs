@@ -13,7 +13,7 @@ use crate::dsc::SharedCacheStrings;
 use crate::util::extract_string;
 use crate::uuidtext::{UUIDText, UUIDTextEntry};
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct MessageData {
     pub library: String,
     pub format_string: String,
@@ -37,13 +37,7 @@ impl MessageData {
         original_offset: u64,
     ) -> nom::IResult<&'a [u8], MessageData> {
         debug!("[macos-unifiedlogs] Extracting format string from shared cache file (dsc)");
-        let mut message_data = MessageData {
-            library: String::new(),
-            format_string: String::new(),
-            process: String::new(),
-            library_uuid: String::new(),
-            process_uuid: String::new(),
-        };
+        let mut message_data = MessageData::default();
 
         // Check if the string offset is "dynamic" (the formatter is "%s")
         if original_offset & 0x80000000 != 0 {
@@ -187,13 +181,10 @@ impl MessageData {
         let (_, main_uuid) = MessageData::get_catalog_dsc(catalogs, first_proc_id, second_proc_id);
 
         // log entries with main_exe flag do not use dsc cache uuid file
-        let mut message_data = MessageData {
-            library: String::new(),
-            format_string: String::new(),
-            process: String::new(),
-            library_uuid: main_uuid.to_owned(),
-            process_uuid: main_uuid,
-        };
+        let mut message_data = MessageData::default();
+
+        message_data.library_uuid = main_uuid.to_owned();
+        message_data.process_uuid = main_uuid;
 
         // If most significant bit is set, the string offset is "dynamic" (the formatter is "%s")
         if original_offset & 0x80000000 != 0 {

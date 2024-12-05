@@ -12,7 +12,7 @@ use nom::Needed;
 use serde::{Deserialize, Serialize};
 use std::mem::size_of;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct TimesyncBoot {
     pub signature: u16,
     pub header_size: u16,
@@ -26,7 +26,7 @@ pub struct TimesyncBoot {
     pub timesync: Vec<Timesync>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct Timesync {
     // Timestamps are in UTC
     pub signature: u32,
@@ -43,18 +43,7 @@ impl TimesyncBoot {
         let mut timesync_data: Vec<TimesyncBoot> = Vec::new();
         let mut input = data;
 
-        let mut timesync_boot = TimesyncBoot {
-            signature: 0,
-            header_size: 0,
-            unknown: 0,
-            boot_uuid: String::new(),
-            timebase_numerator: 0,
-            timebase_denominator: 0,
-            boot_time: 0,
-            timezone_offset_mins: 0,
-            daylight_savings: 0,
-            timesync: Vec::new(),
-        };
+        let mut timesync_boot = TimesyncBoot::default();
 
         while !input.is_empty() {
             let (_, signature) = take(size_of::<u32>())(input)?;

@@ -31,14 +31,14 @@ use nom::bytes::complete::take;
 use regex::Regex;
 use serde::Serialize;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct UnifiedLogData {
     pub header: Vec<HeaderChunk>,
     pub catalog_data: Vec<UnifiedLogCatalogData>,
     pub oversize: Vec<Oversize>, // Keep a global cache of oversize string
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct UnifiedLogCatalogData {
     pub catalog: CatalogChunk,
     pub firehose: Vec<FirehosePreamble>,
@@ -638,28 +638,7 @@ impl LogData {
             oversize: Vec::new(),
         };
 
-        let mut catalog_data = UnifiedLogCatalogData {
-            catalog: CatalogChunk {
-                chunk_tag: 0,
-                chunk_sub_tag: 0,
-                chunk_data_size: 0,
-                catalog_subsystem_strings_offset: 0,
-                catalog_process_info_entries_offset: 0,
-                number_process_information_entries: 0,
-                catalog_offset_sub_chunks: 0,
-                number_sub_chunks: 0,
-                unknown: Vec::new(),
-                earliest_firehose_timestamp: 0,
-                catalog_uuids: Vec::new(),
-                catalog_subsystem_strings: Vec::new(),
-                catalog_process_info_entries: Vec::new(),
-                catalog_subchunks: Vec::new(),
-            },
-            firehose: Vec::new(),
-            simpledump: Vec::new(),
-            statedump: Vec::new(),
-            oversize: Vec::new(),
-        };
+        let mut catalog_data = UnifiedLogCatalogData::default();
 
         let mut input = data;
         let chunk_preamble_size = 16; // Include preamble size in total chunk size
@@ -681,28 +660,7 @@ impl LogData {
                 if catalog_data.catalog.chunk_tag != 0 {
                     unified_log_data_true.catalog_data.push(catalog_data);
                 }
-                catalog_data = UnifiedLogCatalogData {
-                    catalog: CatalogChunk {
-                        chunk_tag: 0,
-                        chunk_sub_tag: 0,
-                        chunk_data_size: 0,
-                        catalog_subsystem_strings_offset: 0,
-                        catalog_process_info_entries_offset: 0,
-                        number_process_information_entries: 0,
-                        catalog_offset_sub_chunks: 0,
-                        number_sub_chunks: 0,
-                        unknown: Vec::new(),
-                        earliest_firehose_timestamp: 0,
-                        catalog_uuids: Vec::new(),
-                        catalog_subsystem_strings: Vec::new(),
-                        catalog_process_info_entries: Vec::new(),
-                        catalog_subchunks: Vec::new(),
-                    },
-                    firehose: Vec::new(),
-                    simpledump: Vec::new(),
-                    statedump: Vec::new(),
-                    oversize: Vec::new(),
-                };
+                catalog_data = UnifiedLogCatalogData::default();
 
                 LogData::get_catalog_data(chunk_data, &mut catalog_data);
             } else if preamble.chunk_tag == chunkset_chunk {
@@ -946,17 +904,9 @@ impl LogData {
 #[cfg(test)]
 mod tests {
     use super::{LogData, UnifiedLogData};
+
     use crate::{
-        catalog::CatalogChunk,
-        chunks::firehose::{
-            activity::FirehoseActivity,
-            firehose_log::{Firehose, FirehoseItemData},
-            flags::FirehoseFormatters,
-            loss::FirehoseLoss,
-            nonactivity::FirehoseNonActivity,
-            signpost::FirehoseSignpost,
-            trace::FirehoseTrace,
-        },
+        chunks::firehose::firehose_log::Firehose,
         parser::{collect_shared_strings, collect_strings, collect_timesync, iter_log, parse_log},
         unified_log::UnifiedLogCatalogData,
     };
@@ -1144,28 +1094,7 @@ mod tests {
             68, 234, 2, 0, 119, 171, 170, 119, 76, 234, 2, 0, 240, 254, 0, 0, 0, 1, 0, 0, 1, 0, 0,
             0, 0, 0, 3, 0, 0, 0, 0, 0, 19, 0, 47, 0,
         ];
-        let mut data = UnifiedLogCatalogData {
-            catalog: CatalogChunk {
-                chunk_tag: 0,
-                chunk_sub_tag: 0,
-                chunk_data_size: 0,
-                catalog_subsystem_strings_offset: 0,
-                catalog_process_info_entries_offset: 0,
-                number_process_information_entries: 0,
-                catalog_offset_sub_chunks: 0,
-                number_sub_chunks: 0,
-                unknown: Vec::new(),
-                earliest_firehose_timestamp: 0,
-                catalog_uuids: Vec::new(),
-                catalog_subsystem_strings: Vec::new(),
-                catalog_process_info_entries: Vec::new(),
-                catalog_subchunks: Vec::new(),
-            },
-            firehose: Vec::new(),
-            simpledump: Vec::new(),
-            statedump: Vec::new(),
-            oversize: Vec::new(),
-        };
+        let mut data = UnifiedLogCatalogData::default();
 
         LogData::get_catalog_data(&test_chunk_catalog, &mut data);
         assert_eq!(data.catalog.chunk_tag, 0x600b);
@@ -1214,34 +1143,9 @@ mod tests {
 
         let buffer = fs::read(test_path).unwrap();
 
-        let mut unified_log = UnifiedLogCatalogData {
-            catalog: CatalogChunk {
-                chunk_tag: 0,
-                chunk_sub_tag: 0,
-                chunk_data_size: 0,
-                catalog_subsystem_strings_offset: 0,
-                catalog_process_info_entries_offset: 0,
-                number_process_information_entries: 0,
-                catalog_offset_sub_chunks: 0,
-                number_sub_chunks: 0,
-                unknown: Vec::new(),
-                earliest_firehose_timestamp: 0,
-                catalog_uuids: Vec::new(),
-                catalog_subsystem_strings: Vec::new(),
-                catalog_process_info_entries: Vec::new(),
-                catalog_subchunks: Vec::new(),
-            },
-            firehose: Vec::new(),
-            simpledump: Vec::new(),
-            statedump: Vec::new(),
-            oversize: Vec::new(),
-        };
+        let mut unified_log = UnifiedLogCatalogData::default();
 
-        let mut log_data = UnifiedLogData {
-            header: Vec::new(),
-            catalog_data: Vec::new(),
-            oversize: Vec::new(),
-        };
+        let mut log_data = UnifiedLogData::default();
 
         LogData::get_chunkset_data(&buffer, &mut unified_log, &mut log_data);
         assert_eq!(unified_log.catalog.chunk_tag, 0);
@@ -1266,101 +1170,7 @@ mod tests {
         let first_proc_id = 1;
         let second_proc_id = 2;
         let time = 11;
-        let test_firehose = Firehose {
-            unknown_log_activity_type: 0,
-            unknown_log_type: 0,
-            flags: 0,
-            format_string_location: 0,
-            thread_id: 0,
-            continous_time_delta: 0,
-            continous_time_delta_upper: 0,
-            data_size: 0,
-            firehose_activity: FirehoseActivity {
-                unknown_activity_id: 0,
-                unknown_sentinal: 0,
-                pid: 0,
-                unknown_activity_id_2: 0,
-                unknown_sentinal_2: 0,
-                unknown_activity_id_3: 0,
-                unknown_sentinal_3: 0,
-                unknown_message_string_ref: 0,
-                unknown_pc_id: 0,
-                firehose_formatters: FirehoseFormatters {
-                    main_exe: false,
-                    shared_cache: false,
-                    has_large_offset: 0,
-                    large_shared_cache: 0,
-                    absolute: false,
-                    uuid_relative: String::new(),
-                    main_plugin: false,
-                    pc_style: false,
-                    main_exe_alt_index: 0,
-                },
-            },
-            firehose_non_activity: FirehoseNonActivity {
-                unknown_activity_id: 0,
-                unknown_sentinal: 0,
-                private_strings_offset: 0,
-                private_strings_size: 0,
-                unknown_message_string_ref: 0,
-                subsystem_value: 0,
-                ttl_value: 0,
-                data_ref_value: 0,
-                unknown_pc_id: 0,
-                firehose_formatters: FirehoseFormatters {
-                    main_exe: false,
-                    shared_cache: false,
-                    has_large_offset: 0,
-                    large_shared_cache: 0,
-                    absolute: false,
-                    uuid_relative: String::new(),
-                    main_plugin: false,
-                    pc_style: false,
-                    main_exe_alt_index: 0,
-                },
-            },
-            firehose_loss: FirehoseLoss {
-                start_time: 0,
-                end_time: 0,
-                count: 0,
-            },
-            firehose_trace: FirehoseTrace {
-                unknown_pc_id: 0,
-                message_data: FirehoseItemData {
-                    item_info: Vec::new(),
-                    backtrace_strings: Vec::new(),
-                },
-            },
-            firehose_signpost: FirehoseSignpost {
-                unknown_pc_id: 0,
-                unknown_activity_id: 0,
-                unknown_sentinel: 0,
-                subsystem: 0,
-                signpost_id: 0,
-                signpost_name: 0,
-                private_strings_offset: 0,
-                private_strings_size: 0,
-                ttl_value: 0,
-                firehose_formatters: FirehoseFormatters {
-                    main_exe: false,
-                    shared_cache: false,
-                    has_large_offset: 0,
-                    large_shared_cache: 0,
-                    absolute: false,
-                    uuid_relative: String::new(),
-                    main_plugin: false,
-                    pc_style: false,
-                    main_exe_alt_index: 0,
-                },
-                data_ref_value: 0,
-            },
-            unknown_item: 0,
-            number_items: 0,
-            message: FirehoseItemData {
-                item_info: Vec::new(),
-                backtrace_strings: Vec::new(),
-            },
-        };
+        let test_firehose = Firehose::default();
 
         let missing_firehose =
             LogData::track_missing(first_proc_id, second_proc_id, time, test_firehose);

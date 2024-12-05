@@ -19,7 +19,7 @@ use crate::{
     util::{extract_string, padding_size},
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct CatalogChunk {
     pub chunk_tag: u32,
     pub chunk_sub_tag: u32,
@@ -37,7 +37,7 @@ pub struct CatalogChunk {
     pub catalog_subchunks: Vec<CatalogSubchunk>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ProcessInfoEntry {
     pub index: u16,
     pub unknown: u16, // flags?
@@ -59,7 +59,7 @@ pub struct ProcessInfoEntry {
 }
 
 // Part of ProcessInfoEntry
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ProcessUUIDEntry {
     pub size: u32,
     pub unknown: u32,
@@ -69,7 +69,7 @@ pub struct ProcessUUIDEntry {
 }
 
 // Part of ProcessInfoEntry
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ProcessInfoSubsystem {
     pub identifer: u16,
     pub subsystem_offset: u16, // Represents the offset to the subsystem from the start of the subsystem entries
@@ -77,7 +77,7 @@ pub struct ProcessInfoSubsystem {
 }
 
 // Part of CatalogChunk, possible 64-bit alignment padding at end
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct CatalogSubchunk {
     pub start: u64,
     pub end: u64,
@@ -89,7 +89,7 @@ pub struct CatalogSubchunk {
     pub string_offsets: Vec<u16>, // string_offsets size = number_string_offsets * u16
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct SubsystemInfo {
     pub subsystem: String,
     pub category: String,
@@ -98,22 +98,7 @@ pub struct SubsystemInfo {
 impl CatalogChunk {
     /// Parse log Catalog data. The log Catalog contains metadata related to log entries such as Process info, Subsystem info, and the compressed log entries
     pub fn parse_catalog(data: &[u8]) -> nom::IResult<&[u8], CatalogChunk> {
-        let mut catalog_chunk = CatalogChunk {
-            chunk_tag: 0,
-            chunk_sub_tag: 0,
-            chunk_data_size: 0,
-            catalog_subsystem_strings_offset: 0,
-            catalog_process_info_entries_offset: 0,
-            number_process_information_entries: 0,
-            catalog_offset_sub_chunks: 0,
-            number_sub_chunks: 0,
-            unknown: Vec::new(),
-            earliest_firehose_timestamp: 0,
-            catalog_uuids: Vec::new(),
-            catalog_subsystem_strings: Vec::new(),
-            catalog_process_info_entries: Vec::new(),
-            catalog_subchunks: Vec::new(),
-        };
+        let mut catalog_chunk = CatalogChunk::default();
 
         // Parse initial part Catalog chunk based on known sizes
         let (input, chunk_tag) = take(size_of::<u32>())(data)?;
@@ -217,25 +202,7 @@ impl CatalogChunk {
         data: &'a [u8],
         uuids: &[String],
     ) -> nom::IResult<&'a [u8], ProcessInfoEntry> {
-        let mut catalog_process_entry = ProcessInfoEntry {
-            index: 0,
-            unknown: 0,
-            catalog_main_uuid_index: 0,
-            catalog_dsc_uuid_index: 0,
-            first_number_proc_id: 0,
-            second_number_proc_id: 0,
-            pid: 0,
-            effective_user_id: 0,
-            unknown2: 0,
-            number_uuids_entries: 0,
-            unknown3: 0,
-            uuid_info_entries: Vec::new(),
-            number_subsystems: 0,
-            unknown4: 0,
-            subsystem_entries: Vec::new(),
-            main_uuid: String::new(),
-            dsc_uuid: String::new(),
-        };
+        let mut catalog_process_entry = ProcessInfoEntry::default();
 
         // Get all static sized data
         let (input, index) = take(size_of::<u16>())(data)?;
@@ -396,16 +363,7 @@ impl CatalogChunk {
 
     // Parse the Catalog Subchunk metadata. This metadata is related to the compressed (typically) Chunkset data
     fn parse_catalog_subchunk(data: &[u8]) -> nom::IResult<&[u8], CatalogSubchunk> {
-        let mut catalog_subchunk = CatalogSubchunk {
-            start: 0,
-            end: 0,
-            uncompressed_size: 0,
-            compression_algorithm: 0,
-            number_index: 0,
-            indexes: Vec::new(),
-            number_string_offsets: 0,
-            string_offsets: Vec::new(),
-        };
+        let mut catalog_subchunk = CatalogSubchunk::default();
 
         // Get static size subchunk data
         let (input, start) = take(size_of::<u64>())(data)?;
@@ -478,10 +436,7 @@ impl CatalogChunk {
         second_proc_id: &u32,
         catalog: &'a CatalogChunk,
     ) -> nom::IResult<&'a [u8], SubsystemInfo> {
-        let mut subsystem_info = SubsystemInfo {
-            subsystem: String::new(),
-            category: String::new(),
-        };
+        let mut subsystem_info = SubsystemInfo::default();
 
         // Go through catalog entries until first and second proc id match the log entry
         for process_info in &catalog.catalog_process_info_entries {

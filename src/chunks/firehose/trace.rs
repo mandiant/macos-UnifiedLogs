@@ -15,7 +15,7 @@ use crate::chunks::firehose::firehose_log::{FirehoseItemData, FirehoseItemInfo};
 use crate::chunks::firehose::message::MessageData;
 use crate::uuidtext::UUIDText;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct FirehoseTrace {
     pub unknown_pc_id: u32, // Appears to be used to calculate string offset for firehose events with Absolute flag
     pub message_data: FirehoseItemData,
@@ -25,13 +25,8 @@ impl FirehoseTrace {
     /// Parse Trace Firehose log entry.
     //  Ex: tp 504 + 34: trace default (main_exe)
     pub fn parse_firehose_trace(data: &[u8]) -> nom::IResult<&[u8], FirehoseTrace> {
-        let mut firehose_trace = FirehoseTrace {
-            unknown_pc_id: 0,
-            message_data: FirehoseItemData {
-                item_info: Vec::new(),
-                backtrace_strings: Vec::new(),
-            },
-        };
+        let mut firehose_trace = FirehoseTrace::default();
+
         let (input, unknown_pc_id) = take(size_of::<u32>())(data)?;
         let (_, firehose_unknown_pc_id) = le_u32(unknown_pc_id)?;
 

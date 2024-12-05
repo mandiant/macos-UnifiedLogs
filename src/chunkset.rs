@@ -22,7 +22,7 @@ use crate::{
     chunks::oversize::Oversize, preamble::LogPreamble, unified_log::UnifiedLogCatalogData,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct ChunksetChunk {
     pub chunk_tag: u32,
     pub chunk_sub_tag: u32,
@@ -37,16 +37,7 @@ pub struct ChunksetChunk {
 impl ChunksetChunk {
     /// Parse the Chunkset data that contains the actual log entries
     pub fn parse_chunkset(data: &[u8]) -> nom::IResult<&[u8], ChunksetChunk> {
-        let mut chunkset_chunk = ChunksetChunk {
-            chunk_tag: 0,
-            chunk_sub_tag: 0,
-            chunk_data_size: 0,
-            signature: 0,
-            uncompress_size: 0,
-            block_size: 0,
-            decompressed_data: Vec::new(),
-            footer: 0,
-        };
+        let mut chunkset_chunk = ChunksetChunk::default();
 
         let (input, chunk_tag) = take(size_of::<u32>())(data)?;
         let (input, chunk_sub_tag) = take(size_of::<u32>())(input)?;
@@ -2304,28 +2295,7 @@ mod tests {
         test_path.push("tests/test_data/Chunkset Tests/big_sur_oversize_chunkset.raw");
         let buffer = fs::read(test_path).unwrap();
 
-        let mut unified_log = UnifiedLogCatalogData {
-            catalog: CatalogChunk {
-                chunk_tag: 0,
-                chunk_sub_tag: 0,
-                chunk_data_size: 0,
-                catalog_subsystem_strings_offset: 0,
-                catalog_process_info_entries_offset: 0,
-                number_process_information_entries: 0,
-                catalog_offset_sub_chunks: 0,
-                number_sub_chunks: 0,
-                unknown: Vec::new(),
-                earliest_firehose_timestamp: 0,
-                catalog_uuids: Vec::new(),
-                catalog_subsystem_strings: Vec::new(),
-                catalog_process_info_entries: Vec::new(),
-                catalog_subchunks: Vec::new(),
-            },
-            firehose: Vec::new(),
-            simpledump: Vec::new(),
-            statedump: Vec::new(),
-            oversize: Vec::new(),
-        };
+        let mut unified_log = UnifiedLogCatalogData::default();
 
         let oversize_chunk: u32 = 0x6002;
         ChunksetChunk::get_chunkset_data(&buffer, oversize_chunk, &mut unified_log);
@@ -2351,28 +2321,7 @@ mod tests {
         test_path.push("tests/test_data/Chunkset Tests/big_sur_statedump_chunkset.raw");
         let buffer = fs::read(test_path).unwrap();
 
-        let mut unified_log = UnifiedLogCatalogData {
-            catalog: CatalogChunk {
-                chunk_tag: 0,
-                chunk_sub_tag: 0,
-                chunk_data_size: 0,
-                catalog_subsystem_strings_offset: 0,
-                catalog_process_info_entries_offset: 0,
-                number_process_information_entries: 0,
-                catalog_offset_sub_chunks: 0,
-                number_sub_chunks: 0,
-                unknown: Vec::new(),
-                earliest_firehose_timestamp: 0,
-                catalog_uuids: Vec::new(),
-                catalog_subsystem_strings: Vec::new(),
-                catalog_process_info_entries: Vec::new(),
-                catalog_subchunks: Vec::new(),
-            },
-            firehose: Vec::new(),
-            simpledump: Vec::new(),
-            statedump: Vec::new(),
-            oversize: Vec::new(),
-        };
+        let mut unified_log = UnifiedLogCatalogData::default();
 
         let statedump_chunk = 0x6003;
         ChunksetChunk::get_chunkset_data(&buffer, statedump_chunk, &mut unified_log);
@@ -2411,28 +2360,7 @@ mod tests {
 
         let buffer = fs::read(test_path).unwrap();
 
-        let mut unified_log = UnifiedLogCatalogData {
-            catalog: CatalogChunk {
-                chunk_tag: 0,
-                chunk_sub_tag: 0,
-                chunk_data_size: 0,
-                catalog_subsystem_strings_offset: 0,
-                catalog_process_info_entries_offset: 0,
-                number_process_information_entries: 0,
-                catalog_offset_sub_chunks: 0,
-                number_sub_chunks: 0,
-                unknown: Vec::new(),
-                earliest_firehose_timestamp: 0,
-                catalog_uuids: Vec::new(),
-                catalog_subsystem_strings: Vec::new(),
-                catalog_process_info_entries: Vec::new(),
-                catalog_subchunks: Vec::new(),
-            },
-            firehose: Vec::new(),
-            simpledump: Vec::new(),
-            statedump: Vec::new(),
-            oversize: Vec::new(),
-        };
+        let mut unified_log = UnifiedLogCatalogData::default();
 
         let simpledump_chunk = 0x6004;
         ChunksetChunk::get_chunkset_data(&buffer, simpledump_chunk, &mut unified_log);

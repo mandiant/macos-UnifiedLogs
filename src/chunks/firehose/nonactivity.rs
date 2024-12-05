@@ -18,7 +18,7 @@ use nom::{
 };
 use std::mem::size_of;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct FirehoseNonActivity {
     pub unknown_activity_id: u32,        // if flag 0x0001
     pub unknown_sentinal: u32,           // always 0x80000000? if flag 0x0001
@@ -39,28 +39,8 @@ impl FirehoseNonActivity {
         data: &'a [u8],
         firehose_flags: &u16,
     ) -> nom::IResult<&'a [u8], FirehoseNonActivity> {
-        let mut non_activity = FirehoseNonActivity {
-            unknown_activity_id: 0,
-            unknown_sentinal: 0,
-            private_strings_offset: 0,
-            private_strings_size: 0,
-            unknown_message_string_ref: 0,
-            subsystem_value: 0,
-            ttl_value: 0,
-            data_ref_value: 0,
-            unknown_pc_id: 0,
-            firehose_formatters: FirehoseFormatters {
-                main_exe: false,
-                shared_cache: false,
-                has_large_offset: 0,
-                large_shared_cache: 0,
-                absolute: false,
-                uuid_relative: String::new(),
-                main_plugin: false,
-                pc_style: false,
-                main_exe_alt_index: 0,
-            },
-        };
+        let mut non_activity = FirehoseNonActivity::default();
+
         let mut input = data;
         let activity_id_current: u16 = 0x1; // has_current_aid flag
 

@@ -1,5 +1,4 @@
 use crate::{
-    catalog::CatalogChunk,
     header::HeaderChunk,
     preamble::LogPreamble,
     unified_log::{LogData, UnifiedLogCatalogData, UnifiedLogData},
@@ -27,28 +26,7 @@ impl Iterator for UnifiedLogIterator {
             oversize: Vec::new(),
         };
 
-        let mut catalog_data = UnifiedLogCatalogData {
-            catalog: CatalogChunk {
-                chunk_tag: 0,
-                chunk_sub_tag: 0,
-                chunk_data_size: 0,
-                catalog_subsystem_strings_offset: 0,
-                catalog_process_info_entries_offset: 0,
-                number_process_information_entries: 0,
-                catalog_offset_sub_chunks: 0,
-                number_sub_chunks: 0,
-                unknown: Vec::new(),
-                earliest_firehose_timestamp: 0,
-                catalog_uuids: Vec::new(),
-                catalog_subsystem_strings: Vec::new(),
-                catalog_process_info_entries: Vec::new(),
-                catalog_subchunks: Vec::new(),
-            },
-            firehose: Vec::new(),
-            simpledump: Vec::new(),
-            statedump: Vec::new(),
-            oversize: Vec::new(),
-        };
+        let mut catalog_data = UnifiedLogCatalogData::default();
 
         let mut input = self.data.as_slice();
         let chunk_preamble_size = 16; // Include preamble size in total chunk size

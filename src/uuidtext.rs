@@ -12,7 +12,7 @@ use nom::Needed;
 use serde::{Deserialize, Serialize};
 use std::mem::size_of;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct UUIDText {
     pub uuid: String,
     pub signature: u32,
@@ -22,7 +22,7 @@ pub struct UUIDText {
     pub entry_descriptors: Vec<UUIDTextEntry>,
     pub footer_data: Vec<u8>, // Collection of strings containing sender process/library with end of string characters
 }
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct UUIDTextEntry {
     pub range_start_offset: u32,
     pub entry_size: u32,
@@ -30,15 +30,7 @@ pub struct UUIDTextEntry {
 impl UUIDText {
     /// Parse the UUID files in uuidinfo directory. Contains the base log message string
     pub fn parse_uuidtext(data: &[u8]) -> nom::IResult<&[u8], UUIDText> {
-        let mut uuidtext_data = UUIDText {
-            uuid: String::new(),
-            signature: 0,
-            unknown_major_version: 0,
-            unknown_minor_version: 0,
-            number_entries: 0,
-            entry_descriptors: Vec::new(),
-            footer_data: Vec::new(),
-        };
+        let mut uuidtext_data = UUIDText::default();
 
         let expected_uuidtext_signature = 0x66778899;
         let (input, signature) = take(size_of::<u32>())(data)?;
