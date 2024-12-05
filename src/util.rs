@@ -32,8 +32,8 @@ pub(crate) fn padding_size_four(data: u64) -> u64 {
 
 /// Extract a size based on provided string size from Firehose string item entries
 pub(crate) fn extract_string_size(data: &[u8], message_size: u64) -> nom::IResult<&[u8], String> {
-    let null_string = 0;
-    if message_size == null_string {
+    const NULL_STRING: u64 = 0;
+    if message_size == NULL_STRING {
         return Ok((data, String::from("(null)")));
     }
 
@@ -69,11 +69,11 @@ pub(crate) fn extract_string(data: &[u8]) -> nom::IResult<&[u8], String> {
     let last_value = data.last();
     match last_value {
         Some(value) => {
-            let has_end_of_string: u8 = 0;
+            const NULL_BYTE: u8 = 0;
 
             // If message data does not end with end of string character (0)
             // just grab everything and convert what we have to string
-            if value != &has_end_of_string {
+            if value != &NULL_BYTE {
                 let (input, path) = take(data.len())(data)?;
                 let path_string = from_utf8(path);
                 match path_string {

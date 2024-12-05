@@ -265,11 +265,11 @@ mod tests {
         assert_eq!(results.unknown_activity_id_3, 64435);
         assert_eq!(results.unknown_sentinal_3, 2147483648);
         assert_eq!(results.unknown_message_string_ref, 0);
-        assert_eq!(results.firehose_formatters.main_exe, false);
-        assert_eq!(results.firehose_formatters.absolute, false);
-        assert_eq!(results.firehose_formatters.shared_cache, false);
-        assert_eq!(results.firehose_formatters.main_plugin, false);
-        assert_eq!(results.firehose_formatters.pc_style, false);
+        assert!(!results.firehose_formatters.main_exe);
+        assert!(!results.firehose_formatters.absolute);
+        assert!(!results.firehose_formatters.shared_cache);
+        assert!(!results.firehose_formatters.main_plugin);
+        assert!(!results.firehose_formatters.pc_style);
         assert_eq!(results.firehose_formatters.main_exe_alt_index, 0);
         assert_eq!(results.firehose_formatters.uuid_relative, "");
         assert_eq!(results.unknown_pc_id, 303578944);

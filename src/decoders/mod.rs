@@ -14,3 +14,36 @@ mod network;
 mod opendirectory;
 mod time;
 mod uuid;
+
+pub enum DecoderError<'a> {
+    Parse {
+        input: &'a [u8],
+        parser_name: &'a str,
+        message: &'a str,
+    },
+}
+
+impl<'a> std::error::Error for DecoderError<'a> {}
+
+impl<'a> std::fmt::Display for DecoderError<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Parse { message, .. } => write!(f, "{message}"),
+        }
+    }
+}
+
+impl<'a> std::fmt::Debug for DecoderError<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Parse {
+                parser_name,
+                message,
+                input,
+            } => write!(
+                f,
+                "Failed at {parser_name} parser, data {input:?}: {message}"
+            ),
+        }
+    }
+}

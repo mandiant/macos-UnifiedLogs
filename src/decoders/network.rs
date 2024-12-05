@@ -9,6 +9,7 @@ use crate::util::decode_standard;
 use log::{error, warn};
 use nom::{
     bytes::complete::take,
+    combinator::map,
     number::complete::{be_u128, be_u16, be_u32, be_u8},
 };
 use std::net::Ipv6Addr;
@@ -150,21 +151,13 @@ fn get_sockaddr_data(data: &[u8]) -> nom::IResult<&[u8], String> {
 }
 
 /// Get the IPv4 data
-pub(crate) fn get_ip_four(data: &[u8]) -> nom::IResult<&[u8], String> {
-    let (ip_data, ip_addr_data) = take(size_of::<u32>())(data)?;
-    let (_, ip) = be_u32(ip_addr_data)?;
-    let ip = Ipv4Addr::from(ip);
-
-    Ok((ip_data, ip.to_string()))
+pub(crate) fn get_ip_four(input: &[u8]) -> nom::IResult<&[u8], String> {
+    map(be_u32, |val| Ipv4Addr::from(val).to_string())(input)
 }
 
 /// Get the IPv6 data
-pub(crate) fn get_ip_six(data: &[u8]) -> nom::IResult<&[u8], String> {
-    let (ip_data, ip_addr_data) = take(size_of::<u128>())(data)?;
-    let (_, ip) = be_u128(ip_addr_data)?;
-    let ip = Ipv6Addr::from(ip);
-
-    Ok((ip_data, ip.to_string()))
+pub(crate) fn get_ip_six(input: &[u8]) -> nom::IResult<&[u8], String> {
+    map(be_u128, |val| Ipv6Addr::from(val).to_string())(input)
 }
 
 #[cfg(test)]

@@ -22,9 +22,9 @@ pub(crate) fn lowercase_bool(bool_data: &str) -> String {
 }
 
 /// Return int value to bool
-pub(crate) fn lowercase_int_bool(bool_data: &u8) -> String {
-    let false_bool = 0;
-    if bool_data == &false_bool {
+pub(crate) fn lowercase_int_bool(bool_data: u8) -> String {
+    const FALSE_BOOL: u8 = 0;
+    if bool_data == FALSE_BOOL {
         return String::from("false");
     }
     String::from("true")
@@ -32,7 +32,7 @@ pub(crate) fn lowercase_int_bool(bool_data: &u8) -> String {
 
 #[cfg(test)]
 mod tests {
-    use crate::decoders::bool::{lowercase_bool, lowercase_int_bool, uppercase_bool};
+    use super::*;
 
     #[test]
     fn test_uppercase_bool() {
@@ -59,7 +59,7 @@ mod tests {
     #[test]
     fn test_lowercase_int_bool() {
         let test_data = 0;
-        let results = lowercase_int_bool(&test_data);
+        let results = lowercase_int_bool(test_data);
         assert_eq!(results, "false");
     }
 }
