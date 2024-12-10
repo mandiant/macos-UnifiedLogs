@@ -47,19 +47,21 @@ impl SharedCacheStrings {
     /// Parse shared strings data (the file(s) in /private/var/db/uuidtext/dsc)
     pub fn parse_dsc(data: &[u8]) -> nom::IResult<&[u8], SharedCacheStrings> {
         let (input, sig) = take(size_of::<u32>())(data)?;
-        let (_, dsc_sig) = le_u32(sig)?;
+        let (_, signature) = le_u32(sig)?;
 
         let expected_dsc_signature = 0x64736368;
-        if expected_dsc_signature != dsc_sig {
+        if expected_dsc_signature != signature {
             error!(
                 "[macos-unifiedlogs] Incorrect DSC file signature. Expected {}. Got: {}",
-                expected_dsc_signature, dsc_sig
+                expected_dsc_signature, signature
             );
             return Err(nom::Err::Incomplete(Needed::Unknown));
         }
 
-        let mut shared_cache_strings = SharedCacheStrings::default();
-        shared_cache_strings.signature = dsc_sig;
+        let mut shared_cache_strings = SharedCacheStrings {
+            signature,
+            ..Default::default()
+        };
 
         let (input, major) = take(size_of::<u16>())(input)?;
         let (input, minor) = take(size_of::<u16>())(input)?;

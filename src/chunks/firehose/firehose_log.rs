@@ -615,9 +615,11 @@ impl FirehosePreamble {
         let (_, item_type) = le_u8(item_type)?;
         let (_, item_size) = le_u8(item_size)?;
 
-        let mut item = FirehoseItemType::default();
-        item.item_type = item_type;
-        item.item_size = item_size;
+        let mut item = FirehoseItemType {
+            item_type,
+            item_size,
+            ..Default::default()
+        };
 
         // Firehose string item values
         let string_item: Vec<u8> = vec![

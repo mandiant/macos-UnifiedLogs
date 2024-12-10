@@ -181,10 +181,11 @@ impl MessageData {
         let (_, main_uuid) = MessageData::get_catalog_dsc(catalogs, first_proc_id, second_proc_id);
 
         // log entries with main_exe flag do not use dsc cache uuid file
-        let mut message_data = MessageData::default();
-
-        message_data.library_uuid = main_uuid.to_owned();
-        message_data.process_uuid = main_uuid;
+        let mut message_data = MessageData {
+            library_uuid: main_uuid.to_owned(),
+            process_uuid: main_uuid,
+            ..Default::default()
+        };
 
         // If most significant bit is set, the string offset is "dynamic" (the formatter is "%s")
         if original_offset & 0x80000000 != 0 {
