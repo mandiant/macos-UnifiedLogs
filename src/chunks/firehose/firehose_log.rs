@@ -82,6 +82,15 @@ pub struct FirehoseItemInfo {
 }
 
 impl FirehosePreamble {
+    // Now at the end of firehose item types.
+    // Remaining data (if any) contains strings for the string item types
+    const STRING_ITEM: [u8; 8] = [0x20, 0x22, 0x40, 0x42, 0x30, 0x31, 0x32, 0xf2];
+    const PRIVATE_NUMBER: u8 = 0x1;
+    // 0x81 and 0xf1 Added in macOS Sequioa
+    const PRIVATE_STRINGS: [u8; 7] = [0x21, 0x25, 0x35, 0x31, 0x41, 0x81, 0xf1];
+    const LOG_TYPES: [u8; 5] = [0x2, 0x6, 0x4, 0x7, 0x3];
+    const REMNANT_DATA: u8 = 0x0;
+
     /// Parse the start of the Firehose data
     pub fn parse_firehose_preamble(
         firehose_input_data: &[u8],
@@ -139,7 +148,6 @@ impl FirehosePreamble {
         let (mut input, mut public_data) =
             take(firehose_public_data_size - public_data_size_offset)(log_data)?;
 
-        let log_types = [0x2, 0x6, 0x4, 0x7, 0x3];
 
         let remnant_data = 0x0;
         // Go through all the public data associated with log Firehose entry
@@ -147,10 +155,10 @@ impl FirehosePreamble {
             let (firehose_input, firehose_public_data) =
                 FirehosePreamble::parse_firehose(public_data)?;
             public_data = firehose_input;
-            if !log_types.contains(&firehose_public_data.unknown_log_activity_type)
+            if !Self::LOG_TYPES.contains(&firehose_public_data.unknown_log_activity_type)
                 || public_data.len() < 24
             {
-                if remnant_data == firehose_public_data.unknown_log_activity_type {
+                if Self::REMNANT_DATA == firehose_public_data.unknown_log_activity_type {
                     break;
                 }
                 if firehose_private_data_virtual_offset != 0x1000 {
@@ -313,13 +321,6 @@ impl FirehosePreamble {
             }
         }
 
-        // 0x81 and 0xf1 Added in macOS Sequioa
-        let private_strings: Vec<u8> = vec![0x21, 0x25, 0x35, 0x31, 0x41, 0x81, 0xf1];
-        let private_number = 0x1;
-        // Now at the end of firehose item types.
-        // Remaining data (if any) contains strings for the string item types
-        let string_item: Vec<u8> = vec![0x20, 0x22, 0x40, 0x42, 0x30, 0x31, 0x32, 0xf2];
-
         for item in &mut items_data {
             // We already got number items above since the values immediantly follow the number type
             if number_item_type.contains(&item.item_type) {
@@ -327,14 +328,14 @@ impl FirehosePreamble {
             }
 
             // Check if item type is a private string. This is used for privacy related data
-            if private_strings.contains(&item.item_type)
+            if Self::PRIVATE_STRINGS.contains(&item.item_type)
                 || sensitive_items.contains(&item.item_type)
             {
                 item.message_strings = String::from("<private>");
                 continue;
             }
 
-            if item.item_type == private_number {
+            if item.item_type == Self::PRIVATE_NUMBER {
                 continue;
             }
 
@@ -350,10 +351,10 @@ impl FirehosePreamble {
             if firehose_input.is_empty() {
                 break;
             }
-            if string_item.contains(&item.item_type) {
+            if Self::STRING_ITEM.contains(&item.item_type) {
                 let (item_value_input, message_string) = FirehosePreamble::parse_item_string(
                     firehose_input,
-                    &item.item_type,
+                    item.item_type,
                     item.message_string_size,
                 )?;
                 firehose_input = item_value_input;
@@ -620,14 +621,15 @@ impl FirehosePreamble {
         item.item_size = item_size;
 
         // Firehose string item values
-        let string_item: Vec<u8> = vec![
+        const STRING_ITEM: [u8; 14] = [
             0x20, 0x21, 0x22, 0x25, 0x40, 0x41, 0x42, 0x30, 0x31, 0x32, 0xf2, 0x35, 0x81, 0xf1,
         ];
-        let private_number = 0x1;
+        const PRIVATE_NUMBER: u8 = 0x1;
+
         // String and private number items metadata is 4 bytes
         // first two (2) bytes point to the offset of the string data
         // last two (2) bytes is the size of of string
-        if string_item.contains(&item.item_type) || item.item_type == private_number {
+        if STRING_ITEM.contains(&item.item_type) || item.item_type == PRIVATE_NUMBER {
             // The offset is relative to start of string data (after all other firehose items)
             let (input, offset) = take(size_of::<u16>())(firehose_input)?;
             let (_, message_offset) = le_u16(offset)?;
@@ -640,17 +642,17 @@ impl FirehosePreamble {
         }
 
         // Precision items just contain the length for the actual item. Ex: %*s
-        let precision_items = [0x10, 0x12];
-        if precision_items.contains(&item.item_type) {
+        const PRECISION_ITEMS: [u8; 2] = [0x10, 0x12];
+        if PRECISION_ITEMS.contains(&item.item_type) {
             let (input, _) = take(item.item_size)(firehose_input)?;
             firehose_input = input;
         }
-        let sensitive_items = [0x5, 0x45, 0x85];
-        if sensitive_items.contains(&item.item_type) {
             let (input, offset) = take(size_of::<u16>())(firehose_input)?;
             let (_, message_offset) = le_u16(offset)?;
             let (input, message_data_size) = take(size_of::<u16>())(input)?;
             let (_, message_size) = le_u16(message_data_size)?;
+        const SENSITIVE_ITEMS: [u8; 3] = [0x5, 0x45, 0x85];
+        if SENSITIVE_ITEMS.contains(&item.item_type) {
 
             item.offset = message_offset;
             item.message_string_size = message_size;
@@ -660,26 +662,27 @@ impl FirehosePreamble {
     }
 
     // Parse the item string
-    fn parse_item_string<'a>(
-        data: &'a [u8],
-        item_type: &u8,
+    fn parse_item_string(
+        data: &[u8],
+        item_type: u8,
         message_size: u16,
-    ) -> nom::IResult<&'a [u8], String> {
+    ) -> nom::IResult<&[u8], String> {
         // If message item size is greater than the remaining data, just use the rest of the data
         if message_size as usize > data.len() {
             return extract_string_size(data, data.len() as u64);
         }
 
         let (input, message_data) = take(message_size)(data)?;
-        let arbitrary: Vec<u8> = vec![0x30, 0x31, 0x32];
+
+        const ARBITRARY: [u8; 3] = [0x30, 0x31, 0x32];
         // 0x30, 0x31, and 0x32 represent arbitrary data, need to be decoded again
         // Ex: name: %{private, mask.hash, mdnsresponder:domain_name}.*P, type: A, rdata: %{private, mask.hash, network:in_addr}.4P
-        if arbitrary.contains(item_type) {
+        if ARBITRARY.contains(&item_type) {
             return Ok((input, encode_standard(message_data)));
         }
 
-        let base64_raw_bytes: u8 = 0xf2;
-        if item_type == &base64_raw_bytes {
+        const BASE64_RAW_BYTES: u8 = 0xf2;
+        if item_type == BASE64_RAW_BYTES {
             return Ok((input, encode_standard(message_data)));
         }
 
