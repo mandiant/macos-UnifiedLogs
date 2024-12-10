@@ -14,6 +14,7 @@ use crate::util::{encode_standard, extract_string_size, padding_size, padding_si
 use log::{debug, error, warn};
 use nom::bytes::complete::take_while;
 use nom::combinator::map;
+use nom::multi::many_m_n;
 use nom::number::complete::{be_u128, le_i16, le_i32, le_i64, le_i8};
 use nom::{
     bytes::complete::take,
@@ -449,11 +450,8 @@ impl FirehosePreamble {
         let unknown_remnant_data = 0x0; // 0x0 appears to be remnant data or garbage data (log command does not parse it either)
 
         if unknown_log_activity_type == activity {
-            let (activity_data, activity) = FirehoseActivity::parse_activity(
-                firehose_input,
-                &flags,
-                &unknown_log_type,
-            )?;
+            let (activity_data, activity) =
+                FirehoseActivity::parse_activity(firehose_input, &flags, &unknown_log_type)?;
             firehose_input = activity_data;
             firehose_results.firehose_activity = activity;
         } else if unknown_log_activity_type == nonactivity {
@@ -503,11 +501,8 @@ impl FirehosePreamble {
         firehose_results.unknown_item = unknown_item;
         firehose_results.number_items = number_items;
 
-        let (_, firehose_item_data) = FirehosePreamble::collect_items(
-            firehose_input,
-            &number_items,
-            &flags,
-        )?;
+        let (_, firehose_item_data) =
+            FirehosePreamble::collect_items(firehose_input, &number_items, &flags)?;
 
         firehose_results.message = firehose_item_data;
 
@@ -526,55 +521,33 @@ impl FirehosePreamble {
 
     // Parse Backtrace data for log entry (chunk). This only exists if has_context_data flag is set
     fn get_backtrace_data(data: &[u8]) -> nom::IResult<&[u8], Vec<String>> {
-        let (input, _unknown_data) = take(size_of::<u16>())(data)?;
-        let (input, _unknown_data2) = take(size_of::<u8>())(input)?;
-        let (input, number_uuids) = take(size_of::<u8>())(input)?;
-        let (mut input, number_offsets) = take(size_of::<u16>())(input)?;
+        let (input, _unknown_data) = take(3usize)(data)?;
+        let (input, uuid_count) = map(le_u8, usize::from)(input)?;
+        let (input, offset_count) = map(le_u16, usize::from)(input)?;
 
-        let (_, backtrace_uuid_count) = le_u8(number_uuids)?;
-        let (_, backtrace_offsets_count) = le_u16(number_offsets)?;
+        let (input, uuid_vec) = many_m_n(uuid_count, uuid_count, be_u128)(input)?;
 
-        let mut uuid_vec: Vec<String> = Vec::new();
-        let mut count = 0;
-        while count < backtrace_uuid_count {
-            let (uuid_input, uuid_data) = take(size_of::<u128>())(input)?;
-            let (_, uuid) = be_u128(uuid_data)?;
-            uuid_vec.push(format!("{:X}", uuid));
-            input = uuid_input;
-            count += 1;
-        }
-        count = 0;
-        let mut offsets_vec: Vec<u32> = Vec::new();
-        while (u16::from(count)) < backtrace_offsets_count {
-            let (offset_input, offset) = take(size_of::<u32>())(input)?;
-            let (_, backtrace_offsets) = le_u32(offset)?;
-            offsets_vec.push(backtrace_offsets);
-            input = offset_input;
-            count += 1;
-        }
+        let (input, offsets_vec) = many_m_n(offset_count, offset_count, le_u32)(input)?;
 
-        let mut backtrace_data: Vec<String> = Vec::new();
-        count = 0;
-        while (u16::from(count)) < backtrace_offsets_count {
-            let (index_input, index) = take(size_of::<u8>())(input)?;
-            let (_, uuid_index) = le_u8(index)?;
-            if (uuid_index as usize) < uuid_vec.len() {
-                backtrace_data.push(format!(
-                    "{:?} +0x{:?}",
-                    uuid_vec[uuid_index as usize], offsets_vec[count as usize]
-                ));
-            } else {
-                backtrace_data.push(format!(
-                    "00000000-0000-0000-0000-000000000000 +0x{:?}",
-                    offsets_vec[count as usize]
-                ));
-            }
-            input = index_input;
-            count += 1;
-        }
-        let padding_size = padding_size_four(u64::from(backtrace_offsets_count));
+        let (mut input, indexes) =
+            many_m_n(offset_count, offset_count, map(le_u8, usize::from))(input)?;
+
+        let backtrace_data = indexes
+            .iter()
+            .enumerate()
+            .map(|(i, idx)| {
+                format!(
+                    "\"{:X}\" +0x{:?}",
+                    uuid_vec.get(*idx).unwrap_or(&0),
+                    offsets_vec.get(i).unwrap_or(&0u32)
+                )
+            })
+            .collect::<Vec<String>>();
+
+        let padding_size = padding_size_four(u64::try_from(offset_count).unwrap());
         let (backtrace_input, _) = take(padding_size)(input)?;
         input = backtrace_input;
+
         Ok((input, backtrace_data))
     }
 
