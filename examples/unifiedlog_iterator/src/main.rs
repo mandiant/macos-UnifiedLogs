@@ -17,6 +17,7 @@ use macos_unifiedlogs::timesync::TimesyncBoot;
 use macos_unifiedlogs::unified_log::{LogData, UnifiedLogData};
 use macos_unifiedlogs::uuidtext::UUIDText;
 use simplelog::{Config, SimpleLogger};
+use std::collections::HashMap;
 use std::error::Error;
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -130,7 +131,7 @@ fn parse_live_system(writer: &mut OutputWriter) {
 fn parse_trace_file(
     string_results: &[UUIDText],
     shared_strings_results: &[SharedCacheStrings],
-    timesync_data: &[TimesyncBoot],
+    timesync_data: &HashMap<String, TimesyncBoot>,
     path: &str,
     writer: &mut OutputWriter,
 ) {
@@ -317,7 +318,7 @@ fn iterate_chunks(
     missing: &mut Vec<UnifiedLogData>,
     strings_data: &[UUIDText],
     shared_strings: &[SharedCacheStrings],
-    timesync_data: &[TimesyncBoot],
+    timesync_data: &HashMap<String, TimesyncBoot>,
     writer: &mut OutputWriter,
     oversize_strings: &mut UnifiedLogData,
 ) -> usize {
