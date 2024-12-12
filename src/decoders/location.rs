@@ -7,12 +7,16 @@
 
 use crate::util::decode_standard;
 
-use super::bool::{lowercase_bool, lowercase_int_bool};
-use log::{error, warn};
+use super::{
+    bool::{lowercase_bool, lowercase_int_bool},
+    DecoderError,
+};
+use log::warn;
 use nom::{
     bytes::complete::take,
     number::complete::{le_f64, le_i32, le_i64, le_u32, le_u8},
     sequence::tuple,
+    IResult,
 };
 
 #[derive(Debug, Default)]
@@ -48,7 +52,7 @@ struct LocationTrackerState {
 }
 
 /// Convert Core Location Client Autherization Status code to string
-pub(crate) fn client_authorization_status(status: &str) -> String {
+pub(crate) fn client_authorization_status(status: &str) -> Result<String, DecoderError<'_>> {
     let message = match status {
         "0" => "Not Determined",
         "1" => "Restricted",
@@ -56,18 +60,18 @@ pub(crate) fn client_authorization_status(status: &str) -> String {
         "3" => "Authorized Always",
         "4" => "Authorized When In Use",
         _ => {
-            warn!(
-                "Unknown Core Location client authorization status: {}",
-                status
-            );
-            status
+            return Err(DecoderError::Parse {
+                input: status.as_bytes(),
+                parser_name: "client authorization status",
+                message: "Unknown Core Location client authorization status",
+            });
         }
     };
-    message.to_string()
+    Ok(message.to_string())
 }
 
 /// Convert Core Location Daemon Status type to string
-pub(crate) fn daemon_status_type(status: &str) -> String {
+pub(crate) fn daemon_status_type(status: &str) -> Result<String, DecoderError<'_>> {
     // Found in dyldcache liblog
     let message = match status {
         "0" => "Reachability Unavailable",
@@ -75,15 +79,18 @@ pub(crate) fn daemon_status_type(status: &str) -> String {
         "2" => "Reachability Large",
         "56" => "Reachability Unachievable",
         _ => {
-            warn!("Unknown Core Location daemon status type: {}", status);
-            status
+            return Err(DecoderError::Parse {
+                input: status.as_bytes(),
+                parser_name: "daemon status type",
+                message: "Unknown Core Location daemon status type",
+            });
         }
     };
-    message.to_string()
+    Ok(message.to_string())
 }
 
 /// Convert Core Location Subhaverester id to string
-pub(crate) fn subharvester_identifier(status: &str) -> String {
+pub(crate) fn subharvester_identifier(status: &str) -> Result<String, DecoderError<'_>> {
     // Found in dyldcache liblog
     let message = match status {
         "1" => "Wifi",
@@ -100,46 +107,36 @@ pub(crate) fn subharvester_identifier(status: &str) -> String {
         "12" => "Ionosphere",
         "13" => "Unknown",
         _ => {
-            warn!(
-                "Unknown Core Location subhaverster identifier type: {}",
-                status
-            );
-            status
+            return Err(DecoderError::Parse {
+                input: status.as_bytes(),
+                parser_name: "subharvester identifier",
+                message: "Unknown Core Location subhaverster identifier type",
+            });
         }
     };
-    message.to_string()
+    Ok(message.to_string())
 }
 
 /// Convert Core Location SQLITE code to string
-pub(crate) fn sqlite(status: &str) -> String {
-    let decoded_data_result = decode_standard(status);
-    let decoded_data = match decoded_data_result {
-        Ok(result) => result,
-        Err(err) => {
-            error!(
-                "[macos-unifiedlogs] Failed to base64 decodesqlite {}, error: {:?}",
-                status, err
-            );
-            return String::from("Failed to base64 decode sqlite details");
-        }
-    };
+pub(crate) fn sqlite_location(input: &str) -> Result<&'static str, DecoderError<'_>> {
+    let decoded_data = decode_standard(input).map_err(|_| DecoderError::Parse {
+        input: input.as_bytes(),
+        parser_name: "sqlite location",
+        message: "Failed to base64 decode sqlite details",
+    })?;
 
-    let message_result = get_sqlite_data(&decoded_data);
-    match message_result {
-        Ok((_, result)) => result,
-        Err(err) => {
-            error!(
-                "[macos-unifiedlogs] Failed to get sqlite {}, error code, error: {:?}",
-                status, err
-            );
-            String::from("Failed to get sqlite error")
-        }
-    }
+    let (_, result) = get_sqlite_data(&decoded_data).map_err(|_| DecoderError::Parse {
+        input: input.as_bytes(),
+        parser_name: "sqlite location",
+        message: "Failed to get sqlite error",
+    })?;
+
+    Ok(result)
 }
 
 /// Get the SQLITE error message
-fn get_sqlite_data(data: &[u8]) -> nom::IResult<&[u8], String> {
-    let (empty, sqlite_code) = le_u32(data)?;
+fn get_sqlite_data(input: &[u8]) -> IResult<&[u8], &'static str> {
+    let (input, sqlite_code) = le_u32(input)?;
 
     // Found at https://www.sqlite.org/rescode.html
     let message = match sqlite_code {
@@ -184,35 +181,28 @@ fn get_sqlite_data(data: &[u8]) -> nom::IResult<&[u8], String> {
         }
     };
 
-    Ok((empty, message.to_string()))
+    Ok((input, message))
 }
 
 /// Parse the manager tracker state data
-pub(crate) fn client_manager_state_tracker_state(status: &str) -> String {
-    let decoded_data_result = decode_standard(status);
-    let decoded_data = match decoded_data_result {
-        Ok(result) => result,
-        Err(err) => {
-            error!("[macos-unifiedlogs] Failed to base64 decode client manager tracker state {}, error: {:?}", status, err);
-            return String::from("Failed to base64 decode client manager tracker state");
-        }
-    };
+pub(crate) fn client_manager_state_tracker_state(input: &str) -> Result<String, DecoderError<'_>> {
+    let decoded_data = decode_standard(input).map_err(|_| DecoderError::Parse {
+        input: input.as_bytes(),
+        parser_name: "client manager state tracker state",
+        message: "Failed to base64 decode client manager tracker state",
+    })?;
 
-    let message_result = get_state_tracker_data(&decoded_data);
-    match message_result {
-        Ok((_, result)) => result,
-        Err(err) => {
-            error!(
-                "[macos-unifiedlogs] Failed to get client tracker data {}, error: {:?}",
-                status, err
-            );
-            String::from("Failed to get client tracker data")
-        }
-    }
+    let (_, result) = get_state_tracker_data(&decoded_data).map_err(|_| DecoderError::Parse {
+        input: input.as_bytes(),
+        parser_name: "client manager state tracker state",
+        message: "Failed to get client tracker data",
+    })?;
+
+    Ok(result)
 }
 
 /// Get the tracker data
-pub(crate) fn get_state_tracker_data(input: &[u8]) -> nom::IResult<&[u8], String> {
+pub(crate) fn get_state_tracker_data(input: &[u8]) -> IResult<&[u8], String> {
     let (input, (location_enabled, location_restricted)) = tuple((le_u32, le_u32))(input)?;
     Ok((
         input,
@@ -225,27 +215,23 @@ pub(crate) fn get_state_tracker_data(input: &[u8]) -> nom::IResult<&[u8], String
 }
 
 /// Parse location tracker state data
-pub(crate) fn location_manager_state_tracker_state(status: &str) -> String {
-    let decoded_data_result = decode_standard(status);
-    let decoded_data = match decoded_data_result {
-        Ok(result) => result,
-        Err(err) => {
-            error!("[macos-unifiedlogs] Failed to base64 decode location manager tracker state {}, error: {:?}", status, err);
-            return String::from("Failed to base64 decode logon manager trackder data");
-        }
-    };
+pub(crate) fn location_manager_state_tracker_state(
+    input: &str,
+) -> Result<String, DecoderError<'_>> {
+    let decoded_data = decode_standard(input).map_err(|_| DecoderError::Parse {
+        input: input.as_bytes(),
+        parser_name: "location manager state tracker state",
+        message: "Failed to base64 decode logon manager trackder data",
+    })?;
 
-    let message_result = get_location_tracker_state(&decoded_data);
-    match message_result {
-        Ok((_, result)) => result,
-        Err(err) => {
-            error!(
-                "[macos-unifiedlogs] Failed to get location tracker data {}, error: {:?}",
-                status, err
-            );
-            String::from("Failed to get logon manager trackder data")
-        }
-    }
+    let (_, result) =
+        get_location_tracker_state(&decoded_data).map_err(|_| DecoderError::Parse {
+            input: input.as_bytes(),
+            parser_name: "location manager state tracker state",
+            message: "Failed to get logon manager tracker data",
+        })?;
+
+    Ok(result)
 }
 
 /// Get the location state data
@@ -546,22 +532,13 @@ pub(crate) fn get_daemon_status_tracker(input: &[u8]) -> nom::IResult<&[u8], Str
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        decoders::location::{
-            client_manager_state_tracker_state, daemon_status_type, get_daemon_status_tracker,
-            get_location_tracker_state, get_sqlite_data, get_state_tracker_data, io_message,
-            location_manager_state_tracker_state, location_tracker_object, sqlite,
-            subharvester_identifier, LocationTrackerState,
-        },
-        util::decode_standard,
-    };
-
-    use super::client_authorization_status;
+    use super::*;
+    use crate::util::decode_standard;
 
     #[test]
     fn test_client_authorization_status() {
         let test_data = "0";
-        let result = client_authorization_status(test_data);
+        let result = client_authorization_status(test_data).unwrap();
 
         assert_eq!(result, "Not Determined")
     }
@@ -569,7 +546,7 @@ mod tests {
     #[test]
     fn test_daemon_status_type() {
         let test_data = "2";
-        let result = daemon_status_type(test_data);
+        let result = daemon_status_type(test_data).unwrap();
 
         assert_eq!(result, "Reachability Large")
     }
@@ -577,7 +554,7 @@ mod tests {
     #[test]
     fn test_subharvester_identifier() {
         let test_data = "2";
-        let result = subharvester_identifier(test_data);
+        let result = subharvester_identifier(test_data).unwrap();
 
         assert_eq!(result, "Tracks")
     }
@@ -585,7 +562,7 @@ mod tests {
     #[test]
     fn test_sqlite() {
         let test_data = "AAAAAA==";
-        let result = sqlite(test_data);
+        let result = sqlite_location(test_data).unwrap();
 
         assert_eq!(result, "SQLITE OK")
     }
@@ -603,7 +580,7 @@ mod tests {
     #[test]
     fn test_client_manager_state_tracker_state() {
         let test_data = "AQAAAAAAAAA=";
-        let result = client_manager_state_tracker_state(test_data);
+        let result = client_manager_state_tracker_state(test_data).unwrap();
 
         assert_eq!(
             result,
@@ -639,7 +616,7 @@ mod tests {
     #[test]
     fn test_location_manager_state_tracker_state() {
         let test_data = "AAAAAAAA8L8AAAAAAABZQAAAAAAAAAAAAAAAAAAA8D8BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAQAAAAAAAAAA";
-        let result = location_manager_state_tracker_state(test_data);
+        let result = location_manager_state_tracker_state(test_data).unwrap();
 
         assert_eq!(
             result,
