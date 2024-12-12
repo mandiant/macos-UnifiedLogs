@@ -14,9 +14,8 @@ use nom::{
     number::complete::{le_f64, le_i32, le_i64, le_u32, le_u8},
     sequence::tuple,
 };
-use std::mem::size_of;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 struct LocationTrackerState {
     distance_filter: f64,
     desired_accuracy: f64,
