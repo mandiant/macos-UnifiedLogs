@@ -70,9 +70,9 @@ pub(crate) fn check_objects(
     } else if format_string.contains("odtypes:mbridtype") {
         Ok(member_id_type(&message_values[index].message_strings))
     } else if format_string.contains("odtypes:mbr_details") {
-        Ok(member_details(&message_values[index].message_strings))
+        member_details(&message_values[index].message_strings)
     } else if format_string.contains("odtypes:nt_sid_t") {
-        Ok(sid_details(&message_values[index].message_strings))
+        sid_details(&message_values[index].message_strings)
     } else if format_string.contains("location:CLClientAuthorizationStatus") {
         client_authorization_status(&message_values[index].message_strings)
     } else if format_string.contains("location:CLDaemonStatus_Type::Reachability") {

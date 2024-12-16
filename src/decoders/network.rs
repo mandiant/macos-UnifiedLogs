@@ -5,6 +5,7 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
+use super::DecoderError;
 use crate::util::decode_standard;
 use log::warn;
 use nom::{
@@ -13,7 +14,6 @@ use nom::{
     sequence::tuple,
 };
 use std::net::{Ipv4Addr, Ipv6Addr};
-use super::DecoderError;
 
 /// Parse an IPv6 address
 pub(crate) fn ipv_six(input: &str) -> Result<Ipv6Addr, DecoderError<'_>> {

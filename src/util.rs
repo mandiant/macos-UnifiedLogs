@@ -5,29 +5,28 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-use base64::engine::general_purpose;
-use base64::DecodeError;
-use base64::Engine;
-use chrono::SecondsFormat;
-use chrono::TimeZone;
-use chrono::Utc;
+use base64::{engine::general_purpose, DecodeError, Engine};
+use chrono::{SecondsFormat, TimeZone, Utc};
 use log::{error, warn};
-use nom::bytes::complete::take;
-use nom::bytes::complete::take_while;
+use nom::{
+    bytes::complete::{take, take_while},
+    combinator::{fail, opt},
+    sequence::tuple,
+};
 use std::str::from_utf8;
 
 /// Calculate 8 byte padding
 pub(crate) fn padding_size(data: u64) -> u64 {
-    let alignment = 8;
+    const ALIGNMENT: u64 = 8;
     // Calculate padding to achieve 64-bit alignment
-    (alignment - (data & (alignment - 1))) & (alignment - 1)
+    (ALIGNMENT - (data & (ALIGNMENT - 1))) & (ALIGNMENT - 1)
 }
 
 /// Calculate 4 byte padding
 pub(crate) fn padding_size_four(data: u64) -> u64 {
-    let alignment = 4;
+    const ALIGNMENT: u64 = 4;
     // Calculate padding to achieve 64-bit alignment
-    (alignment - (data & (alignment - 1))) & (alignment - 1)
+    (ALIGNMENT - (data & (ALIGNMENT - 1))) & (ALIGNMENT - 1)
 }
 
 /// Extract a size based on provided string size from Firehose string item entries
@@ -64,13 +63,36 @@ pub(crate) fn extract_string_size(data: &[u8], message_size: u64) -> nom::IResul
     Ok((input, String::from("Could not find path string")))
 }
 
+const NULL_BYTE: u8 = 0;
+
+/// Extract an UTF8 string from a byte array, stops at NULL_BYTE or END OF STRING
+/// Consumes the end byte
+pub(crate) fn cstring(input: &[u8]) -> nom::IResult<&[u8], String> {
+    let (input, (str_part, _)) =
+        tuple((take_while(|b: u8| b != NULL_BYTE), opt(take(1_usize))))(input)?;
+    match from_utf8(str_part) {
+        Ok(results) => Ok((input, results.to_string())),
+        Err(_) => fail(input),
+    }
+}
+
+/// Extract an UTF8 string from a byte array, stops at NULL_BYTE or END OF STRING
+/// Consumes the end byte
+/// Fails if the string is empty
+pub(crate) fn non_empty_cstring(input: &[u8]) -> nom::IResult<&[u8], String> {
+    let (input, (str_part, _)) =
+        tuple((take_while(|b: u8| b != NULL_BYTE), opt(take(1_usize))))(input)?;
+    match from_utf8(str_part) {
+        Ok(s) if !s.is_empty() => Ok((input, s.to_string())),
+        _ => fail(input),
+    }
+}
+
 /// Extract strings that contain end of string characters
 pub(crate) fn extract_string(data: &[u8]) -> nom::IResult<&[u8], String> {
     let last_value = data.last();
     match last_value {
         Some(value) => {
-            const NULL_BYTE: u8 = 0;
-
             // If message data does not end with end of string character (0)
             // just grab everything and convert what we have to string
             if value != &NULL_BYTE {
@@ -130,8 +152,7 @@ pub(crate) fn unixepoch_to_iso(timestamp: &i64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_standard, encode_standard, unixepoch_to_iso};
-    use crate::util::{extract_string, extract_string_size, padding_size, padding_size_four};
+    use super::*;
 
     #[test]
     fn test_padding_size() {
@@ -180,5 +201,54 @@ mod tests {
     fn test_unixepoch_to_iso() {
         let result = unixepoch_to_iso(&1650767813342574583);
         assert_eq!(result, "2022-04-24T02:36:53.342574583Z");
+    }
+
+    #[test]
+    fn test_cstring() -> anyhow::Result<()> {
+        let input = &[55, 57, 54, 46, 49, 48, 48, 0];
+        let (output, s) = cstring(input)?;
+        assert!(output.is_empty());
+        assert_eq!(s, "796.100");
+
+        let input = &[55, 57, 54, 46, 49, 48, 48];
+        let (output, s) = cstring(input)?;
+        assert!(output.is_empty());
+        assert_eq!(s, "796.100");
+
+        let input = &[55, 57, 54, 46, 49, 48, 48, 0, 42, 42, 42];
+        let (output, s) = cstring(input)?;
+        assert_eq!(output, [42, 42, 42]);
+        assert_eq!(s, "796.100");
+
+        let input = &[0, 42, 42, 42];
+        let (output, s) = cstring(input)?;
+        assert_eq!(output, [42, 42, 42]);
+        assert_eq!(s, "");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_non_empty_cstring() -> anyhow::Result<()> {
+        let input = &[55, 57, 54, 46, 49, 48, 48, 0];
+        let (output, s) = non_empty_cstring(input)?;
+        assert!(output.is_empty());
+        assert_eq!(s, "796.100");
+
+        let input = &[55, 57, 54, 46, 49, 48, 48];
+        let (output, s) = non_empty_cstring(input)?;
+        assert!(output.is_empty());
+        assert_eq!(s, "796.100");
+
+        let input = &[55, 57, 54, 46, 49, 48, 48, 0, 42, 42, 42];
+        let (output, s) = non_empty_cstring(input)?;
+        assert_eq!(output, [42, 42, 42]);
+        assert_eq!(s, "796.100");
+
+        let input = &[0, 42, 42, 42];
+        let result = non_empty_cstring(input);
+        assert!(result.is_err());
+
+        Ok(())
     }
 }
