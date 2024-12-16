@@ -17,7 +17,8 @@ use crate::{
         },
         location::{
             client_authorization_status, client_manager_state_tracker_state, daemon_status_type,
-            io_message, location_manager_state_tracker_state, sqlite, subharvester_identifier,
+            io_message, location_manager_state_tracker_state, sqlite_location,
+            subharvester_identifier,
         },
         network::{ipv_four, ipv_six, sockaddr},
         opendirectory::{errors, member_details, member_id_type, sid_details},
@@ -73,25 +74,17 @@ pub(crate) fn check_objects(
     } else if format_string.contains("odtypes:nt_sid_t") {
         Ok(sid_details(&message_values[index].message_strings))
     } else if format_string.contains("location:CLClientAuthorizationStatus") {
-        Ok(client_authorization_status(
-            &message_values[index].message_strings,
-        ))
+        client_authorization_status(&message_values[index].message_strings)
     } else if format_string.contains("location:CLDaemonStatus_Type::Reachability") {
-        Ok(daemon_status_type(&message_values[index].message_strings))
+        daemon_status_type(&message_values[index].message_strings)
     } else if format_string.contains("location:CLSubHarvesterIdentifier") {
-        Ok(subharvester_identifier(
-            &message_values[index].message_strings,
-        ))
+        subharvester_identifier(&message_values[index].message_strings)
     } else if format_string.contains("location:SqliteResult") {
-        Ok(sqlite(&message_values[index].message_strings))
+        sqlite_location(&message_values[index].message_strings).map(ToString::to_string)
     } else if format_string.contains("location:_CLClientManagerStateTrackerState") {
-        Ok(client_manager_state_tracker_state(
-            &message_values[index].message_strings,
-        ))
+        client_manager_state_tracker_state(&message_values[index].message_strings)
     } else if format_string.contains("location:_CLLocationManagerStateTrackerState") {
-        Ok(location_manager_state_tracker_state(
-            &message_values[index].message_strings,
-        ))
+        location_manager_state_tracker_state(&message_values[index].message_strings)
     } else if format_string.contains("network:in6_addr") {
         Ok(ipv_six(&message_values[index].message_strings))
     } else if format_string.contains("network:in_addr") {

@@ -7,15 +7,19 @@
 
 use crate::util::decode_standard;
 
-use super::bool::{lowercase_bool, lowercase_int_bool};
-use log::{error, warn};
+use super::{
+    bool::{lowercase_bool, lowercase_int_bool},
+    DecoderError,
+};
+use log::warn;
 use nom::{
     bytes::complete::take,
     number::complete::{le_f64, le_i32, le_i64, le_u32, le_u8},
+    sequence::tuple,
+    IResult,
 };
-use std::mem::size_of;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 struct LocationTrackerState {
     distance_filter: f64,
     desired_accuracy: f64,
@@ -48,7 +52,7 @@ struct LocationTrackerState {
 }
 
 /// Convert Core Location Client Autherization Status code to string
-pub(crate) fn client_authorization_status(status: &str) -> String {
+pub(crate) fn client_authorization_status(status: &str) -> Result<String, DecoderError<'_>> {
     let message = match status {
         "0" => "Not Determined",
         "1" => "Restricted",
@@ -56,18 +60,18 @@ pub(crate) fn client_authorization_status(status: &str) -> String {
         "3" => "Authorized Always",
         "4" => "Authorized When In Use",
         _ => {
-            warn!(
-                "Unknown Core Location client authorization status: {}",
-                status
-            );
-            status
+            return Err(DecoderError::Parse {
+                input: status.as_bytes(),
+                parser_name: "client authorization status",
+                message: "Unknown Core Location client authorization status",
+            });
         }
     };
-    message.to_string()
+    Ok(message.to_string())
 }
 
 /// Convert Core Location Daemon Status type to string
-pub(crate) fn daemon_status_type(status: &str) -> String {
+pub(crate) fn daemon_status_type(status: &str) -> Result<String, DecoderError<'_>> {
     // Found in dyldcache liblog
     let message = match status {
         "0" => "Reachability Unavailable",
@@ -75,15 +79,18 @@ pub(crate) fn daemon_status_type(status: &str) -> String {
         "2" => "Reachability Large",
         "56" => "Reachability Unachievable",
         _ => {
-            warn!("Unknown Core Location daemon status type: {}", status);
-            status
+            return Err(DecoderError::Parse {
+                input: status.as_bytes(),
+                parser_name: "daemon status type",
+                message: "Unknown Core Location daemon status type",
+            });
         }
     };
-    message.to_string()
+    Ok(message.to_string())
 }
 
 /// Convert Core Location Subhaverester id to string
-pub(crate) fn subharvester_identifier(status: &str) -> String {
+pub(crate) fn subharvester_identifier(status: &str) -> Result<String, DecoderError<'_>> {
     // Found in dyldcache liblog
     let message = match status {
         "1" => "Wifi",
@@ -100,47 +107,36 @@ pub(crate) fn subharvester_identifier(status: &str) -> String {
         "12" => "Ionosphere",
         "13" => "Unknown",
         _ => {
-            warn!(
-                "Unknown Core Location subhaverster identifier type: {}",
-                status
-            );
-            status
+            return Err(DecoderError::Parse {
+                input: status.as_bytes(),
+                parser_name: "subharvester identifier",
+                message: "Unknown Core Location subhaverster identifier type",
+            });
         }
     };
-    message.to_string()
+    Ok(message.to_string())
 }
 
 /// Convert Core Location SQLITE code to string
-pub(crate) fn sqlite(status: &str) -> String {
-    let decoded_data_result = decode_standard(status);
-    let decoded_data = match decoded_data_result {
-        Ok(result) => result,
-        Err(err) => {
-            error!(
-                "[macos-unifiedlogs] Failed to base64 decodesqlite {}, error: {:?}",
-                status, err
-            );
-            return String::from("Failed to base64 decode sqlite details");
-        }
-    };
+pub(crate) fn sqlite_location(input: &str) -> Result<&'static str, DecoderError<'_>> {
+    let decoded_data = decode_standard(input).map_err(|_| DecoderError::Parse {
+        input: input.as_bytes(),
+        parser_name: "sqlite location",
+        message: "Failed to base64 decode sqlite details",
+    })?;
 
-    let message_result = get_sqlite_data(&decoded_data);
-    match message_result {
-        Ok((_, result)) => result,
-        Err(err) => {
-            error!(
-                "[macos-unifiedlogs] Failed to get sqlite {}, error code, error: {:?}",
-                status, err
-            );
-            String::from("Failed to get sqlite error")
-        }
-    }
+    let (_, result) = get_sqlite_data(&decoded_data).map_err(|_| DecoderError::Parse {
+        input: input.as_bytes(),
+        parser_name: "sqlite location",
+        message: "Failed to get sqlite error",
+    })?;
+
+    Ok(result)
 }
 
 /// Get the SQLITE error message
-fn get_sqlite_data(data: &[u8]) -> nom::IResult<&[u8], String> {
-    let (empty, sqlite_data) = take(size_of::<u32>())(data)?;
-    let (_, sqlite_code) = le_u32(sqlite_data)?;
+fn get_sqlite_data(input: &[u8]) -> IResult<&[u8], &'static str> {
+    let (input, sqlite_code) = le_u32(input)?;
 
     // Found at https://www.sqlite.org/rescode.html
     let message = match sqlite_code {
@@ -185,43 +181,31 @@ fn get_sqlite_data(data: &[u8]) -> nom::IResult<&[u8], String> {
         }
     };
 
-    Ok((empty, message.to_string()))
+    Ok((input, message))
 }
 
 /// Parse the manager tracker state data
-pub(crate) fn client_manager_state_tracker_state(status: &str) -> String {
-    let decoded_data_result = decode_standard(status);
-    let decoded_data = match decoded_data_result {
-        Ok(result) => result,
-        Err(err) => {
-            error!("[macos-unifiedlogs] Failed to base64 decode client manager tracker state {}, error: {:?}", status, err);
-            return String::from("Failed to base64 decode client manager tracker state");
-        }
-    };
+pub(crate) fn client_manager_state_tracker_state(input: &str) -> Result<String, DecoderError<'_>> {
+    let decoded_data = decode_standard(input).map_err(|_| DecoderError::Parse {
+        input: input.as_bytes(),
+        parser_name: "client manager state tracker state",
+        message: "Failed to base64 decode client manager tracker state",
+    })?;
 
-    let message_result = get_state_tracker_data(&decoded_data);
-    match message_result {
-        Ok((_, result)) => result,
-        Err(err) => {
-            error!(
-                "[macos-unifiedlogs] Failed to get client tracker data {}, error: {:?}",
-                status, err
-            );
-            String::from("Failed to get client tracker data")
-        }
-    }
+    let (_, result) = get_state_tracker_data(&decoded_data).map_err(|_| DecoderError::Parse {
+        input: input.as_bytes(),
+        parser_name: "client manager state tracker state",
+        message: "Failed to get client tracker data",
+    })?;
+
+    Ok(result)
 }
 
 /// Get the tracker data
-pub(crate) fn get_state_tracker_data(data: &[u8]) -> nom::IResult<&[u8], String> {
-    let (location_data, location_enabled_data) = take(size_of::<u32>())(data)?;
-    let (location_data, location_restricted_data) = take(size_of::<u32>())(location_data)?;
-
-    let (_, location_enabled) = le_u32(location_enabled_data)?;
-    let (_, location_restricted) = le_u32(location_restricted_data)?;
-
+pub(crate) fn get_state_tracker_data(input: &[u8]) -> IResult<&[u8], String> {
+    let (input, (location_enabled, location_restricted)) = tuple((le_u32, le_u32))(input)?;
     Ok((
-        location_data,
+        input,
         format!(
             "{{\"locationRestricted\":{}, \"locationServicesenabledStatus\":{}}}",
             lowercase_bool(&format!("{}", location_restricted)),
@@ -231,93 +215,85 @@ pub(crate) fn get_state_tracker_data(data: &[u8]) -> nom::IResult<&[u8], String>
 }
 
 /// Parse location tracker state data
-pub(crate) fn location_manager_state_tracker_state(status: &str) -> String {
-    let decoded_data_result = decode_standard(status);
-    let decoded_data = match decoded_data_result {
-        Ok(result) => result,
-        Err(err) => {
-            error!("[macos-unifiedlogs] Failed to base64 decode location manager tracker state {}, error: {:?}", status, err);
-            return String::from("Failed to base64 decode logon manager trackder data");
-        }
-    };
+pub(crate) fn location_manager_state_tracker_state(
+    input: &str,
+) -> Result<String, DecoderError<'_>> {
+    let decoded_data = decode_standard(input).map_err(|_| DecoderError::Parse {
+        input: input.as_bytes(),
+        parser_name: "location manager state tracker state",
+        message: "Failed to base64 decode logon manager trackder data",
+    })?;
 
-    let message_result = get_location_tracker_state(&decoded_data);
-    match message_result {
-        Ok((_, result)) => result,
-        Err(err) => {
-            error!(
-                "[macos-unifiedlogs] Failed to get location tracker data {}, error: {:?}",
-                status, err
-            );
-            String::from("Failed to get logon manager trackder data")
-        }
-    }
+    let (_, result) =
+        get_location_tracker_state(&decoded_data).map_err(|_| DecoderError::Parse {
+            input: input.as_bytes(),
+            parser_name: "location manager state tracker state",
+            message: "Failed to get logon manager tracker data",
+        })?;
+
+    Ok(result)
 }
 
 /// Get the location state data
-pub(crate) fn get_location_tracker_state(data: &[u8]) -> nom::IResult<&[u8], String> {
-    // Found at https://github.com/cmsj/ApplePrivateHeaders/blob/main/macOS/11.3/System/Library/Frameworks/CoreLocation.framework/Versions/A/CoreLocation/CoreLocation-Structs.h and in dyldcache
-    let (location_data, distance_filter_data) = take(size_of::<u64>())(data)?;
-    let (location_data, desired_accuracy_data) = take(size_of::<u64>())(location_data)?;
-    let (location_data, updating_location_data) = take(size_of::<u8>())(location_data)?;
-    let (location_data, requesting_location_data) = take(size_of::<u8>())(location_data)?;
-    let (location_data, requesting_ranging_data) = take(size_of::<u8>())(location_data)?;
-    let (location_data, updating_ranging_data) = take(size_of::<u8>())(location_data)?;
-    let (location_data, updating_heading_data) = take(size_of::<u8>())(location_data)?;
+pub(crate) fn get_location_tracker_state(input: &[u8]) -> nom::IResult<&[u8], String> {
+    // https://github.com/cmsj/ApplePrivateHeaders/blob/main/macOS/11.3/System/Library/Frameworks/CoreLocation.framework/Versions/A/CoreLocation/CoreLocation-Structs.h and in dyldcache
 
     // Padding? Reserved?
-    let unknown_data_length: usize = 3;
-    let (location_data, _) = take(unknown_data_length)(location_data)?;
-    let (location_data, heading_filter_data) = take(size_of::<u64>())(location_data)?;
-    let (location_data, allows_location_prompts_data) = take(size_of::<u8>())(location_data)?;
-    let (location_data, allows_altered_accessory_location_data) =
-        take(size_of::<u8>())(location_data)?;
-    let (location_data, dynamic_accuracy_reduction_enabled_data) =
-        take(size_of::<u8>())(location_data)?;
-
-    let (location_data, previous_authorization_status_valid_data) =
-        take(size_of::<u8>())(location_data)?;
-    let (location_data, previous_authorization_status_data) =
-        take(size_of::<u32>())(location_data)?;
-    let (location_data, limits_precision_data) = take(size_of::<u8>())(location_data)?;
-
+    const UNKNOWN_DATA_LENGTH: usize = 3;
     // padding? Reserved?
-    let unkonwn_data_length2: usize = 7;
-    let (location_data, _) = take(unkonwn_data_length2)(location_data)?;
+    const UNKONWN_DATA_LENGTH2: usize = 7;
 
-    let (location_data, activity_type_data) = take(size_of::<u64>())(location_data)?;
-    let (location_data, pause_location_updates_auto_data) = take(size_of::<u32>())(location_data)?;
+    let (
+        input,
+        (
+            distance_filter,
+            desired_accuracy,
+            updating_location,
+            requesting_location,
+            requesting_ranging,
+            updating_ranging,
+            updating_heading,
+        ),
+    ) = tuple((le_f64, le_f64, le_u8, le_u8, le_u8, le_u8, le_u8))(input)?;
 
-    let (location_data, paused_data) = take(size_of::<u8>())(location_data)?;
-    let (location_data, allows_background_location_data) = take(size_of::<u8>())(location_data)?;
-    let (location_data, shows_background_location_data) = take(size_of::<u8>())(location_data)?;
-    let (location_data, allows_map_correction_data) = take(size_of::<u8>())(location_data)?;
+    let (
+        input,
+        (
+            _unknown,
+            heading_filter,
+            allows_location_prompts,
+            allows_altered_locations,
+            dynamic_accuracy,
+        ),
+    ) = tuple((take(UNKNOWN_DATA_LENGTH), le_f64, le_u8, le_u8, le_u8))(input)?;
 
-    let (_, distance_filter) = le_f64(distance_filter_data)?;
-    let (_, desired_accuracy) = le_f64(desired_accuracy_data)?;
-    let (_, updating_location) = le_u8(updating_location_data)?;
-    let (_, requesting_location) = le_u8(requesting_location_data)?;
-    let (_, requesting_ranging) = le_u8(requesting_ranging_data)?;
-    let (_, updating_ranging) = le_u8(updating_ranging_data)?;
-    let (_, updating_heading) = le_u8(updating_heading_data)?;
+    let (
+        input,
+        (
+            previous_authorization_status_valid,
+            previous_authorization_status,
+            limits_precision,
+            _unknown2,
+            activity_type,
+            pauses_location_updates,
+        ),
+    ) = tuple((
+        le_u8,
+        le_i32,
+        le_u8,
+        take(UNKONWN_DATA_LENGTH2),
+        le_i64,
+        le_i32,
+    ))(input)?;
 
-    let (_, heading_filter) = le_f64(heading_filter_data)?;
-    let (_, allows_location_prompts) = le_u8(allows_location_prompts_data)?;
-    let (_, allows_altered_locations) = le_u8(allows_altered_accessory_location_data)?;
-    let (_, dynamic_accuracy) = le_u8(dynamic_accuracy_reduction_enabled_data)?;
+    let (
+        input,
+        (paused, allows_background_updates, shows_background_location, allows_map_correction),
+    ) = tuple((le_u8, le_u8, le_u8, le_u8))(input)?;
 
-    let (_, previous_authorization_status_valid) = le_u8(previous_authorization_status_valid_data)?;
-    let (_, previous_authorization_status) = le_i32(previous_authorization_status_data)?;
-    let (_, limits_precision) = le_u8(limits_precision_data)?;
-    let (_, activity_type) = le_i64(activity_type_data)?;
-    let (_, pauses_location_updates) = le_i32(pause_location_updates_auto_data)?;
+    let location_data = input;
 
-    let (_, paused) = le_u8(paused_data)?;
-    let (_, allows_background_updates) = le_u8(allows_background_location_data)?;
-    let (_, shows_background_location) = le_u8(shows_background_location_data)?;
-    let (_, allows_map_correction) = le_u8(allows_map_correction_data)?;
-
-    let mut tracker = LocationTrackerState {
+    let tracker = LocationTrackerState {
         distance_filter,
         desired_accuracy,
         updating_location,
@@ -338,55 +314,44 @@ pub(crate) fn get_location_tracker_state(data: &[u8]) -> nom::IResult<&[u8], Str
         allows_background_updates,
         shows_background_location,
         allows_map_correction,
-        batching_location: 0,
-        updating_vehicle_speed: 0,
-        updating_vehicle_heading: 0,
-        match_info: 0,
-        ground_altitude: 0,
-        fusion_info: 0,
-        courtesy_prompt: 0,
-        is_authorized_for_widgets: 0,
+        ..Default::default()
     };
 
     // Sometimes location data only has 64 bytes of data. Seen only on Catalina. Though this might be a setting configuration?
     // All other systems have 72 bytes of location data even systems before Catalina (ex: Mojave)
     // Return early if we only have 64 bytes to work with
-    let catalina_size = 64;
-    if data.len() == catalina_size {
+    const CATALINA_SIZE: usize = 64;
+    if input.len() == CATALINA_SIZE {
         return Ok((location_data, location_tracker_object(&tracker)));
     }
 
-    let (location_data, batching_location_data) = take(size_of::<u8>())(location_data)?;
-    let (location_data, updating_vehicle_speed_data) = take(size_of::<u8>())(location_data)?;
+    let (
+        input,
+        (
+            batching_location,
+            updating_vehicle_speed,
+            updating_vehicle_heading,
+            match_info,
+            ground_altitude,
+            fusion_info,
+            courtesy_prompt,
+            is_authorized_for_widgets,
+        ),
+    ) = tuple((le_u8, le_u8, le_u8, le_u8, le_u8, le_u8, le_u8, le_u8))(input)?;
 
-    let (location_data, updating_vehicle_heading_data) = take(size_of::<u8>())(location_data)?;
-    let (location_data, match_info_data) = take(size_of::<u8>())(location_data)?;
-    let (location_data, ground_altitude_data) = take(size_of::<u8>())(location_data)?;
-    let (location_data, fusion_info_data) = take(size_of::<u8>())(location_data)?;
-    let (location_data, courtesy_prompt_data) = take(size_of::<u8>())(location_data)?;
+    let tracker = LocationTrackerState {
+        batching_location,
+        updating_vehicle_speed,
+        updating_vehicle_heading,
+        match_info,
+        ground_altitude,
+        fusion_info,
+        courtesy_prompt,
+        is_authorized_for_widgets,
+        ..tracker
+    };
 
-    let (location_data, is_authorized_widget_data) = take(size_of::<u8>())(location_data)?;
-
-    let (_, batching_location) = le_u8(batching_location_data)?;
-    let (_, updating_vehicle) = le_u8(updating_vehicle_speed_data)?;
-
-    let (_, updating_vehicle_heading) = le_u8(updating_vehicle_heading_data)?;
-    let (_, match_info) = le_u8(match_info_data)?;
-    let (_, ground_altitude) = le_u8(ground_altitude_data)?;
-    let (_, fusion_info) = le_u8(fusion_info_data)?;
-    let (_, courtesy_prompt) = le_u8(courtesy_prompt_data)?;
-    let (_, is_authorized) = le_u8(is_authorized_widget_data)?;
-
-    tracker.batching_location = batching_location;
-    tracker.updating_vehicle_speed = updating_vehicle;
-    tracker.updating_vehicle_heading = updating_vehicle_heading;
-    tracker.match_info = match_info;
-    tracker.ground_altitude = ground_altitude;
-    tracker.fusion_info = fusion_info;
-    tracker.courtesy_prompt = courtesy_prompt;
-    tracker.is_authorized_for_widgets = is_authorized;
-
-    Ok((location_data, location_tracker_object(&tracker)))
+    Ok((input, location_tracker_object(&tracker)))
 }
 
 /// Create the location tracker json object
@@ -490,36 +455,40 @@ pub(crate) fn io_message(data: &str) -> String {
 }
 
 /// Parse and get the location Daemon tracker
-pub(crate) fn get_daemon_status_tracker(data: &[u8]) -> nom::IResult<&[u8], String> {
+pub(crate) fn get_daemon_status_tracker(input: &[u8]) -> nom::IResult<&[u8], String> {
     // https://gist.github.com/razvand/578f94748b624f4d47c1533f5a02b095
-    let (location_data, level_data) = take(size_of::<u64>())(data)?;
-    let (location_data, charged_data) = take(size_of::<u8>())(location_data)?;
-    let (location_data, connected_data) = take(size_of::<u8>())(location_data)?;
-    let (location_data, charger_type_data) = take(size_of::<u32>())(location_data)?;
-    let (location_data, was_connected_data) = take(size_of::<u8>())(location_data)?;
+    const RESERVED_SIZE: usize = 9;
 
-    let reserved_size: usize = 9;
-    let (location_data, _reserved) = take(reserved_size)(location_data)?;
-
-    let (location_data, reachability_data) = take(size_of::<u32>())(location_data)?;
-    let (location_data, thermal_level_data) = take(size_of::<u32>())(location_data)?;
-    let (location_data, airplane_data) = take(size_of::<u8>())(location_data)?;
-    let (location_data, battery_saver_data) = take(size_of::<u8>())(location_data)?;
-    let (location_data, push_service_data) = take(size_of::<u8>())(location_data)?;
-    let (location_data, restricted_data) = take(size_of::<u8>())(location_data)?;
-
-    let (_, level) = le_f64(level_data)?;
-    let (_, charged) = le_u8(charged_data)?;
-    let (_, connected) = le_u8(connected_data)?;
-    let (_, charger_type) = le_u32(charger_type_data)?;
-    let (_, was_connected) = le_u8(was_connected_data)?;
-
-    let (_, reachability) = le_u32(reachability_data)?;
-    let (_, thermal_level) = le_i32(thermal_level_data)?;
-    let (_, airplane) = le_u8(airplane_data)?;
-    let (_, battery_saver) = le_u8(battery_saver_data)?;
-    let (_, push_service) = le_u8(push_service_data)?;
-    let (_, restricted) = le_u8(restricted_data)?;
+    let (
+        location_data,
+        (
+            level,
+            charged,
+            connected,
+            charger_type,
+            was_connected,
+            _reserved,
+            reachability,
+            thermal_level,
+            airplane,
+            battery_saver,
+            push_service,
+            restricted,
+        ),
+    ) = tuple((
+        le_f64,
+        le_u8,
+        le_u8,
+        le_u32,
+        le_u8,
+        take(RESERVED_SIZE),
+        le_u32,
+        le_i32,
+        le_u8,
+        le_u8,
+        le_u8,
+        le_u8,
+    ))(input)?;
 
     let reachability_str = match reachability {
         2 => "kReachabilityLarge",
@@ -563,22 +532,13 @@ pub(crate) fn get_daemon_status_tracker(data: &[u8]) -> nom::IResult<&[u8], Stri
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        decoders::location::{
-            client_manager_state_tracker_state, daemon_status_type, get_daemon_status_tracker,
-            get_location_tracker_state, get_sqlite_data, get_state_tracker_data, io_message,
-            location_manager_state_tracker_state, location_tracker_object, sqlite,
-            subharvester_identifier, LocationTrackerState,
-        },
-        util::decode_standard,
-    };
-
-    use super::client_authorization_status;
+    use super::*;
+    use crate::util::decode_standard;
 
     #[test]
     fn test_client_authorization_status() {
         let test_data = "0";
-        let result = client_authorization_status(test_data);
+        let result = client_authorization_status(test_data).unwrap();
 
         assert_eq!(result, "Not Determined")
     }
@@ -586,7 +546,7 @@ mod tests {
     #[test]
     fn test_daemon_status_type() {
         let test_data = "2";
-        let result = daemon_status_type(test_data);
+        let result = daemon_status_type(test_data).unwrap();
 
         assert_eq!(result, "Reachability Large")
     }
@@ -594,7 +554,7 @@ mod tests {
     #[test]
     fn test_subharvester_identifier() {
         let test_data = "2";
-        let result = subharvester_identifier(test_data);
+        let result = subharvester_identifier(test_data).unwrap();
 
         assert_eq!(result, "Tracks")
     }
@@ -602,7 +562,7 @@ mod tests {
     #[test]
     fn test_sqlite() {
         let test_data = "AAAAAA==";
-        let result = sqlite(test_data);
+        let result = sqlite_location(test_data).unwrap();
 
         assert_eq!(result, "SQLITE OK")
     }
@@ -620,7 +580,7 @@ mod tests {
     #[test]
     fn test_client_manager_state_tracker_state() {
         let test_data = "AQAAAAAAAAA=";
-        let result = client_manager_state_tracker_state(test_data);
+        let result = client_manager_state_tracker_state(test_data).unwrap();
 
         assert_eq!(
             result,
@@ -656,7 +616,7 @@ mod tests {
     #[test]
     fn test_location_manager_state_tracker_state() {
         let test_data = "AAAAAAAA8L8AAAAAAABZQAAAAAAAAAAAAAAAAAAA8D8BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAQAAAAAAAAAA";
-        let result = location_manager_state_tracker_state(test_data);
+        let result = location_manager_state_tracker_state(test_data).unwrap();
 
         assert_eq!(
             result,
