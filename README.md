@@ -30,10 +30,13 @@ Data that is currently extracted includes:
 
 ## Running
 
-Three (3) simple example binaries are available in `examples`.
+Four example binaries are available in `examples`.
 
 - `unifiedlog_parser` - Can parse all logs into a single CSV file. It can also
   be run on a live system. The resulting CSV file will likely be quite large
+- `unifiedlog_iterator` - Can parse all logs into a single CSV file using an
+  iterator. May use less memory than the other example files. It can also be run
+  on a live system. The resulting CSV file will likely be quite large
 - `unifiedlog_parser_json` - Can parse all logs into JSON files. It can also be
   run on a live system. Each log file (tracev3 file) will correspond to a single
   JSON file. Depending on the logs, hundreds of JSON files may get created
