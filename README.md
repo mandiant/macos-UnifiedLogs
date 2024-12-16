@@ -30,7 +30,7 @@ Data that is currently extracted includes:
 
 ## Running
 
-Four example binaries are available in `examples`.
+Four example binaries are available.
 
 - `unifiedlog_parser` - Can parse all logs into a single CSV file. It can also
   be run on a live system. The resulting CSV file will likely be quite large
@@ -38,15 +38,10 @@ Four example binaries are available in `examples`.
   iterator. May use less memory than the other example files. It can also be run
   on a live system. The resulting CSV file will likely be quite large
 - `unifiedlog_parser_json` - Can parse all logs into JSON files. It can also be
-  run on a live system. Each log file (tracev3 file) will correspond to a single
-  JSON file. Depending on the logs, hundreds of JSON files may get created
+  run on a live system. Each log file will be parsed to a single JSON file.
 - `parse_tracev3` - Can parse a single tracev3 file without any timesync or
-  uuidtext files, to a JSON file. However, without the uuidtext or timesync
-  files the resulting JSON file will be heavily incomplete.
-
-See `RUNNING.md` for overview of running the example binaries See `Library.md`
-for overview of how to use the library. Simple example projects are also
-available to review and use
+  uuidtext files to JSON. However, without the uuidtext or timesync files the
+  resulting JSON file will be incomplete.
 
 ## Limitations
 
