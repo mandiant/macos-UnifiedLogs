@@ -1,0 +1,19 @@
+on:
+  push:
+    tags:
+      - v[0-9]+.*
+
+name: Publish
+
+jobs:
+  crates_publish:
+    name: Publish (crates.io)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Logon to Crates
+        run: cargo login ${{ secrets.CRATES_IO_API_TOKEN }}
+      - name: "Publish"
+        run: cargo publish
