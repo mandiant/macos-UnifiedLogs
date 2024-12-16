@@ -86,11 +86,11 @@ pub(crate) fn check_objects(
     } else if format_string.contains("location:_CLLocationManagerStateTrackerState") {
         location_manager_state_tracker_state(&message_values[index].message_strings)
     } else if format_string.contains("network:in6_addr") {
-        Ok(ipv_six(&message_values[index].message_strings))
+        ipv_six(&message_values[index].message_strings).map(|ip| ip.to_string())
     } else if format_string.contains("network:in_addr") {
-        Ok(ipv_four(&message_values[index].message_strings))
+        ipv_four(&message_values[index].message_strings).map(|ip| ip.to_string())
     } else if format_string.contains("network:sockaddr") {
-        Ok(sockaddr(&message_values[index].message_strings))
+        sockaddr(&message_values[index].message_strings)
     } else if format_string.contains("time_t") {
         Ok(parse_time(&message_values[index].message_strings))
     } else if format_string.contains("mdns:dnshdr") {

@@ -324,9 +324,9 @@ fn parse_dns_ip_addr(data: &[u8]) -> nom::IResult<&[u8], String> {
     const IPV4: u32 = 4;
     const IPV6: u32 = 6;
     if ip_version == IPV4 {
-        return get_ip_four(data);
+        return get_ip_four(data).map(|(data, result)| (data, result.to_string()));
     } else if ip_version == IPV6 {
-        return get_ip_six(data);
+        return get_ip_six(data).map(|(data, result)| (data, result.to_string()));
     } else {
         fail(data)
     }
