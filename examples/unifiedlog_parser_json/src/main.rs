@@ -15,6 +15,7 @@ use macos_unifiedlogs::timesync::TimesyncBoot;
 use macos_unifiedlogs::unified_log::{LogData, UnifiedLogData};
 use macos_unifiedlogs::uuidtext::UUIDText;
 use simplelog::{Config, SimpleLogger};
+use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
 use std::fs::OpenOptions;
@@ -105,7 +106,7 @@ fn parse_live_system() {
 fn parse_trace_file(
     string_results: &[UUIDText],
     shared_strings_results: &[SharedCacheStrings],
-    timesync_data: &[TimesyncBoot],
+    timesync_data: &HashMap<String, TimesyncBoot>,
     path: &str,
 ) {
     // We need to persist the Oversize log entries (they contain large strings that don't fit in normal log entries)

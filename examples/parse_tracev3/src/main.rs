@@ -6,13 +6,10 @@
 // See the License for the specific language governing permissions and limitations under the License.
 
 use log::LevelFilter;
-use macos_unifiedlogs::dsc::SharedCacheStrings;
 use macos_unifiedlogs::parser::{build_log, parse_log};
-use macos_unifiedlogs::timesync::TimesyncBoot;
 use macos_unifiedlogs::unified_log::LogData;
-use macos_unifiedlogs::uuidtext::UUIDText;
-
 use simplelog::{Config, SimpleLogger};
+use std::collections::HashMap;
 use std::env;
 use std::error::Error;
 use std::fs::OpenOptions;
@@ -39,9 +36,9 @@ fn parse_trace_file(path: &str) {
     let log_data = parse_log(path).unwrap();
     let filename = Path::new(path);
     // Pass empty UUID, UUID cache, timesync files
-    let string_results: Vec<UUIDText> = Vec::new();
-    let shared_strings_results: Vec<SharedCacheStrings> = Vec::new();
-    let timesync_data: Vec<TimesyncBoot> = Vec::new();
+    let string_results = Vec::new();
+    let shared_strings_results = Vec::new();
+    let timesync_data = HashMap::new();
     let exclude_missing = false;
 
     // We only get minimal data since we dont have the log metadata
