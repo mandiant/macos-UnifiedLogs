@@ -5,13 +5,16 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-use crate::util::{decode_standard, extract_string};
-use log::{error, warn};
+use super::DecoderError;
+use crate::util::{decode_standard, non_empty_cstring};
+use log::warn;
 use nom::{
-    bytes::complete::{take, take_while},
+    bytes::complete::take,
+    multi::fold_many0,
     number::complete::{le_i32, le_u32, le_u8},
+    sequence::tuple,
 };
-use std::mem::size_of;
+use std::fmt::Write;
 
 /// Convert Open Directory error codes to message
 pub(crate) fn errors(oderror: &str) -> String {
@@ -119,165 +122,109 @@ pub(crate) fn member_id_type(member_string: &str) -> String {
 }
 
 /// Convert Open Directory member details to string
-pub(crate) fn member_details(member_string: &str) -> String {
-    let decoded_data_result = decode_standard(member_string);
-    let decoded_data = match decoded_data_result {
-        Ok(result) => result,
-        Err(err) => {
-            error!("[macos-unifiedlogs] Failed to base64 decode open directory member details data {}, error: {:?}", member_string, err);
-            return String::from("Failed to base64 decode member details");
-        }
-    };
-    let message_result = get_member_data(&decoded_data);
-    match message_result {
-        Ok((_, result)) => result,
-        Err(err) => {
-            error!(
-                "[macos-unifiedlogs] Failed to get open directory member details: {:?}",
-                err
-            );
-            format!(
-                "Failed to get open directory member details: {}",
-                member_string
-            )
-        }
-    }
+pub(crate) fn member_details(input: &str) -> Result<String, DecoderError<'_>> {
+    let decoded_data = decode_standard(input).map_err(|_| DecoderError::Parse {
+        input: input.as_bytes(),
+        parser_name: "member details",
+        message: "Failed to base64 decode open directory member details data",
+    })?;
+
+    let (_, result) = get_member_data(&decoded_data).map_err(|_| DecoderError::Parse {
+        input: input.as_bytes(),
+        parser_name: "member details",
+        message: "Failed to get open directory member details",
+    })?;
+
+    Ok(result)
 }
 
 /// Parse SID log data to SID string
-pub(crate) fn sid_details(sid_string: &str) -> String {
-    let decoded_data_result = decode_standard(sid_string);
-    let decoded_data = match decoded_data_result {
-        Ok(result) => result,
-        Err(err) => {
-            error!("[macos-unifiedlogs] Failed to base64 decode open directory SID details data {}, error: {:?}", sid_string, err);
-            return String::from("Failed to base64 decode SID details");
-        }
-    };
-    let message_result = get_sid_data(&decoded_data);
-    match message_result {
-        Ok((_, result)) => result,
-        Err(err) => {
-            error!(
-                "[macos-unifiedlogs] Failed to get open directory sid details: {:?}",
-                err
-            );
+pub(crate) fn sid_details(input: &str) -> Result<String, DecoderError<'_>> {
+    let decoded_data = decode_standard(input).map_err(|_| DecoderError::Parse {
+        input: input.as_bytes(),
+        parser_name: "sid details",
+        message: "Failed to base64 decode open directory SID details data",
+    })?;
 
-            format!("Failed to get open directory sid details: {}", sid_string)
-        }
-    }
+    let (_, result) = get_sid_data(&decoded_data).map_err(|_| DecoderError::Parse {
+        input: input.as_bytes(),
+        parser_name: "sid details",
+        message: "Failed to get open directory sid details",
+    })?;
+
+    Ok(result)
 }
 
 /// Parse Open Directory membership details data
-fn get_member_data(data: &[u8]) -> nom::IResult<&[u8], String> {
-    let (mut member_details, member_type_data) = take(size_of::<u8>())(data)?;
-    let (_, member_type) = le_u8(member_type_data)?;
+fn get_member_data(input: &[u8]) -> nom::IResult<&[u8], String> {
+    let (input, member_type) = le_u8(input)?;
+    let (input, member_message) = match member_type {
+        35 | 163 => {
+            // UID
+            let (input, uid) = get_member_id(input)?;
+            (input, format!("user: {uid}"))
+        }
+        36 | 160 | 164 => {
+            // USER
+            let (input, name) = non_empty_cstring(input)?;
+            (input, format!("user: {name}"))
+        }
+        68 => {
+            // GROUP
+            let (input, name) = non_empty_cstring(input)?;
+            (input, format!("group: {name}"))
+        }
+        195 => {
+            // GID
+            let (input, gid) = get_member_id(input)?;
+            (input, format!("group: {gid}"))
+        }
+        _ => {
+            warn!("[macos-unifiedlogs] Unknown open directory member type: {member_type}",);
+            (input, format!("Unknown Member type {member_type}: @"))
+        }
+    };
 
-    let user_type = [36, 160, 164];
-    let uid_type = [35, 163];
-    let group_type = [68];
-    let gid_type = [195];
-
-    let member_message;
-    if uid_type.contains(&member_type) {
-        let (details, uid) = get_member_id(member_details)?;
-        member_details = details;
-        member_message = format!("user: {}", uid);
-    } else if user_type.contains(&member_type) {
-        let (details, name) = get_member_string(member_details)?;
-        member_details = details;
-        member_message = format!("user: {}", name);
-    } else if gid_type.contains(&member_type) {
-        let (details, gid) = get_member_id(member_details)?;
-        member_details = details;
-        member_message = format!("group: {}", gid);
-    } else if group_type.contains(&member_type) {
-        let (details, name) = get_member_string(member_details)?;
-        member_details = details;
-        member_message = format!("group: {}", name);
-    } else {
-        warn!(
-            "[macos-unifiedlogs] Unknown open directory member type: {}",
-            member_type
-        );
-        member_message = format!("Unknown Member type {}: @", member_type);
-    }
-
-    let mut source_path = String::from(" <not found>");
-    if !member_details.is_empty() {
-        let (details, path) = get_member_string(member_details)?;
-        source_path = path;
-        member_details = details;
-    }
-
-    if source_path != " <not found>" {
-        source_path = format!("@{}", source_path)
-    }
+    let (input, source_path) = match non_empty_cstring(input) {
+        Ok((input, path)) => (input, format!("@{path}")),
+        Err(_) => (input, " <not found>".to_string()),
+    };
 
     let message = format!("{}{}", member_message, source_path);
-    Ok((member_details, message))
+    Ok((input, message))
 }
 
 /// Get UID/GID for Opendirectory membership
-fn get_member_id(data: &[u8]) -> nom::IResult<&[u8], i32> {
-    let (details, id_data) = take(size_of::<u32>())(data)?;
-    let (_, id) = le_i32(id_data)?;
-    Ok((details, id))
-}
-
-/// Get the username/group name for Opendirectory membership
-fn get_member_string(data: &[u8]) -> nom::IResult<&[u8], String> {
-    let mut string_value = String::from(" <not found>");
-    let (details, string_data) = take_while(|b: u8| b != 0)(data)?;
-    if string_data.is_empty() {
-        return Ok((details, string_value));
-    }
-
-    let (_, value) = extract_string(string_data)?;
-    if value != "Could not extract string" {
-        string_value = value;
-    }
-
-    // Nom of end string character
-    let (details, _) = take(size_of::<u8>())(details)?;
-    Ok((details, string_value))
+fn get_member_id(input: &[u8]) -> nom::IResult<&[u8], i32> {
+    le_i32(input)
 }
 
 /// Parse the SID data
-fn get_sid_data(data: &[u8]) -> nom::IResult<&[u8], String> {
-    let (sid_details, revision_data) = take(size_of::<u8>())(data)?;
-    let (sid_details, unknown_size_data) = take(size_of::<u8>())(sid_details)?;
-    let (_, unknown_size) = le_u8(unknown_size_data)?;
+fn get_sid_data(input: &[u8]) -> nom::IResult<&[u8], String> {
+    let (input, revision) = le_u8(input)?;
 
-    let (sid_details, _) = take(unknown_size)(sid_details)?;
-    let (sid_details, authority_data) = take(size_of::<u8>())(sid_details)?;
-    let (mut sid_details, subauthority_data) = take(size_of::<u32>())(sid_details)?;
+    let (input, unknown_size) = le_u8(input)?;
+    let (input, _) = take(unknown_size)(input)?;
 
-    let (_, revision) = le_u8(revision_data)?;
-    let (_, authority) = le_u8(authority_data)?;
-    let (_, subauthority) = le_u8(subauthority_data)?;
+    let (input, authority) = le_u8(input)?;
+    let (input, (subauthority, _)) = tuple((le_u8, take(3_usize)))(input)?;
 
-    let mut message = format!("S-{}-{}-{}", revision, authority, subauthority);
+    let (input, message) = fold_many0(
+        le_u32,
+        || format!("S-{}-{}-{}", revision, authority, subauthority),
+        |mut acc, additional_subauthority| {
+            write!(&mut acc, "-{additional_subauthority}").ok(); // ignored Write error
+            acc
+        },
+    )(input)?;
 
-    let subauthorit_size = 4;
-    while sid_details.len() >= subauthorit_size {
-        let (details, additional_subauthority_data) = take(subauthorit_size)(sid_details)?;
-        sid_details = details;
-        let (_, subauthority) = le_u32(additional_subauthority_data)?;
-        message = format!("{}-{}", message, subauthority);
-    }
-    Ok((sid_details, message))
+    Ok((input, message))
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        decoders::opendirectory::{
-            errors, get_member_data, get_member_id, get_member_string, get_sid_data,
-            member_details, member_id_type, sid_details,
-        },
-        util::decode_standard,
-    };
+    use super::*;
+    use crate::util::decode_standard;
 
     #[test]
     fn test_errors() {
@@ -304,14 +251,14 @@ mod tests {
     #[test]
     fn test_member_details_user() {
         let test_data = "I/7///8vTG9jYWwvRGVmYXVsdAA=";
-        let result = member_details(test_data);
+        let result = member_details(test_data).unwrap();
         assert_eq!(result, "user: -2@/Local/Default");
     }
 
     #[test]
     fn test_member_details_group() {
         let test_data = "RGNvbS5hcHBsZS5zaGFyZXBvaW50Lmdyb3VwLjEAL0xvY2FsL0RlZmF1bHQA";
-        let result = member_details(test_data);
+        let result = member_details(test_data).unwrap();
         assert_eq!(result, "group: com.apple.sharepoint.group.1@/Local/Default");
     }
 
@@ -331,7 +278,7 @@ mod tests {
             108, 116, 0,
         ];
 
-        let (_, result) = get_member_string(&test_data).unwrap();
+        let (_, result) = non_empty_cstring(&test_data).unwrap();
         assert_eq!(result, "nobody");
     }
 
@@ -346,7 +293,7 @@ mod tests {
     #[test]
     fn test_sid_details() {
         let test_data = "AQUAAAAAAAUVAAAAxbsdAg3Yp1FTmi50HAYAAA==";
-        let result = sid_details(test_data);
+        let result = sid_details(test_data).unwrap();
         assert_eq!(result, "S-1-5-21-35503045-1369954317-1949211219-1564");
     }
 
