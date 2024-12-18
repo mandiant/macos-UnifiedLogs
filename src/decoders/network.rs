@@ -110,12 +110,12 @@ fn get_sockaddr_data(input: &[u8]) -> nom::IResult<&[u8], String> {
 
 /// Get the IPv4 data
 pub(crate) fn get_ip_four(input: &[u8]) -> nom::IResult<&[u8], Ipv4Addr> {
-    map(be_u32, |val| Ipv4Addr::from(val))(input)
+    map(be_u32, Ipv4Addr::from)(input)
 }
 
 /// Get the IPv6 data
 pub(crate) fn get_ip_six(input: &[u8]) -> nom::IResult<&[u8], Ipv6Addr> {
-    map(be_u128, |val| Ipv6Addr::from(val))(input)
+    map(be_u128, Ipv6Addr::from)(input)
 }
 
 #[cfg(test)]

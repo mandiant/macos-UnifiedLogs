@@ -66,7 +66,7 @@ pub(crate) fn extract_string_size(data: &[u8], message_size: u64) -> nom::IResul
 const NULL_BYTE: u8 = 0;
 
 #[allow(dead_code)]
-/// Extract an UTF8 string from a byte array, stops at NULL_BYTE or END OF STRING
+/// Extract an UTF8 string from a byte array, stops at `NULL_BYTE` or END OF STRING
 /// Consumes the end byte
 pub(crate) fn cstring(input: &[u8]) -> nom::IResult<&[u8], String> {
     let (input, (str_part, _)) =
@@ -77,7 +77,7 @@ pub(crate) fn cstring(input: &[u8]) -> nom::IResult<&[u8], String> {
     }
 }
 
-/// Extract an UTF8 string from a byte array, stops at NULL_BYTE or END OF STRING
+/// Extract an UTF8 string from a byte array, stops at `NULL_BYTE` or END OF STRING
 /// Consumes the end byte
 /// Fails if the string is empty
 pub(crate) fn non_empty_cstring(input: &[u8]) -> nom::IResult<&[u8], String> {
