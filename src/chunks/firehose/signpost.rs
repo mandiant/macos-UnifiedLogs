@@ -251,6 +251,7 @@ impl FirehoseSignpost {
 #[cfg(test)]
 mod tests {
     use crate::chunks::firehose::signpost::FirehoseSignpost;
+    use crate::filesystem::LogarchiveProvider;
     use crate::parser::{collect_shared_strings, collect_strings, parse_log};
     use std::path::PathBuf;
 
@@ -285,15 +286,15 @@ mod tests {
     fn test_get_firehose_signpost_big_sur() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         test_path.push("tests/test_data/system_logs_big_sur.logarchive");
-        let string_results = collect_strings(&test_path.display().to_string()).unwrap();
+        let provider = LogarchiveProvider::new(test_path.as_path());
 
-        test_path.push("dsc");
-        let shared_strings_results =
-            collect_shared_strings(&test_path.display().to_string()).unwrap();
-        test_path.pop();
+        let string_results = collect_strings(&provider).unwrap();
+        let shared_strings_results = collect_shared_strings(&provider).unwrap();
 
         test_path.push("Signpost/0000000000000001.tracev3");
-        let log_data = parse_log(&test_path.display().to_string()).unwrap();
+
+        let handle = std::fs::File::open(&test_path).unwrap();
+        let log_data = parse_log(handle).unwrap();
 
         let activity_type = 0x6;
 

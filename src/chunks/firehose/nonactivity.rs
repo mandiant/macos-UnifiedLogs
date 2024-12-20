@@ -233,7 +233,10 @@ impl FirehoseNonActivity {
 #[cfg(test)]
 mod tests {
     use super::FirehoseNonActivity;
-    use crate::parser::{collect_shared_strings, collect_strings, parse_log};
+    use crate::{
+        filesystem::LogarchiveProvider,
+        parser::{collect_shared_strings, collect_strings, parse_log},
+    };
     use std::path::PathBuf;
 
     #[test]
@@ -277,15 +280,15 @@ mod tests {
     fn test_get_firehose_non_activity_big_sur() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         test_path.push("tests/test_data/system_logs_big_sur.logarchive");
-        let string_results = collect_strings(&test_path.display().to_string()).unwrap();
 
-        test_path.push("dsc");
-        let shared_strings_results =
-            collect_shared_strings(&test_path.display().to_string()).unwrap();
-        test_path.pop();
+        let provider = LogarchiveProvider::new(test_path.as_path());
+        let string_results = collect_strings(&provider).unwrap();
+
+        let shared_strings_results = collect_shared_strings(&provider).unwrap();
 
         test_path.push("Persist/0000000000000004.tracev3");
-        let log_data = parse_log(&test_path.display().to_string()).unwrap();
+        let handle = std::fs::File::open(&test_path).unwrap();
+        let log_data = parse_log(handle).unwrap();
 
         let activity_type = 0x4;
 

@@ -907,6 +907,7 @@ mod tests {
 
     use crate::{
         chunks::firehose::firehose_log::Firehose,
+        filesystem::LogarchiveProvider,
         parser::{collect_shared_strings, collect_strings, collect_timesync, iter_log, parse_log},
         unified_log::UnifiedLogCatalogData,
     };
@@ -982,20 +983,17 @@ mod tests {
     fn test_build_log() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         test_path.push("tests/test_data/system_logs_big_sur.logarchive");
-        let string_results = collect_strings(&test_path.display().to_string()).unwrap();
 
-        test_path.push("dsc");
-        let shared_strings_results =
-            collect_shared_strings(&test_path.display().to_string()).unwrap();
-        test_path.pop();
+        let provider = LogarchiveProvider::new(test_path.as_path());
 
-        test_path.push("timesync");
-        let timesync_data = collect_timesync(&test_path.display().to_string()).unwrap();
-        test_path.pop();
+        let string_results = collect_strings(&provider).unwrap();
+        let shared_strings_results = collect_shared_strings(&provider).unwrap();
+        let timesync_data = collect_timesync(&provider).unwrap();
 
         test_path.push("Persist/0000000000000002.tracev3");
 
-        let log_data = parse_log(&test_path.display().to_string()).unwrap();
+        let reader = std::fs::File::open(test_path).unwrap();
+        let log_data = parse_log(reader).unwrap();
 
         let exclude_missing = false;
         let (results, _) = LogData::build_log(
@@ -1005,6 +1003,7 @@ mod tests {
             &timesync_data,
             exclude_missing,
         );
+
         assert_eq!(results.len(), 207366);
         assert_eq!(results[0].process, "/usr/libexec/lightsoutmanagementd");
         assert_eq!(results[0].subsystem, "com.apple.lom");
@@ -1190,8 +1189,9 @@ mod tests {
         test_path.push(
             "tests/test_data/system_logs_big_sur.logarchive/Persist/0000000000000002.tracev3",
         );
+        let reader = std::fs::File::open(test_path).unwrap();
 
-        let log_data = parse_log(&test_path.display().to_string()).unwrap();
+        let log_data = parse_log(reader).unwrap();
 
         LogData::add_missing(
             &log_data.catalog_data[0],

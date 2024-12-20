@@ -36,7 +36,14 @@ fn main() {
 
 // Parse single tracev3 file
 fn parse_trace_file(path: &str) {
-    let log_data = parse_log(path).unwrap();
+    let handle = match std::fs::File::open(&path) {
+        Ok(handle) => handle,
+        Err(e) => {
+            log::error!("Failed to open tracev3 file {}: {:?}", path, e);
+            return;
+        }
+    };
+    let log_data = parse_log(handle).unwrap();
     let filename = Path::new(path);
     // Pass empty UUID, UUID cache, timesync files
     let string_results: Vec<UUIDText> = Vec::new();
