@@ -5,8 +5,6 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-use std::path::PathBuf;
-
 use criterion::{criterion_group, criterion_main, Criterion};
 use macos_unifiedlogs::{
     dsc::SharedCacheStrings,
@@ -15,6 +13,7 @@ use macos_unifiedlogs::{
     unified_log::UnifiedLogData,
     uuidtext::UUIDText,
 };
+use std::{collections::HashMap, path::PathBuf};
 
 fn big_sur_parse_log(path: &str) {
     let _ = parse_log(&path).unwrap();
@@ -24,7 +23,7 @@ fn bench_build_log(
     log_data: &UnifiedLogData,
     string_results: &Vec<UUIDText>,
     shared_strings_results: &Vec<SharedCacheStrings>,
-    timesync_data: &Vec<TimesyncBoot>,
+    timesync_data: &HashMap<String, TimesyncBoot>,
     exclude_missing: bool,
 ) {
     let (_, _) = build_log(

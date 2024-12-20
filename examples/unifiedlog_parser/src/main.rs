@@ -16,11 +16,12 @@ use macos_unifiedlogs::timesync::TimesyncBoot;
 use macos_unifiedlogs::unified_log::{LogData, UnifiedLogData};
 use macos_unifiedlogs::uuidtext::UUIDText;
 use simplelog::{Config, SimpleLogger};
+use std::collections::HashMap;
 use std::error::Error;
-use std::{fs, io};
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
+use std::{fs, io};
 
 use clap::Parser;
 use csv::Writer;
@@ -101,7 +102,7 @@ fn parse_live_system(writer: &mut Writer<Box<dyn Write>>) {
         &shared_strings,
         &timesync_data,
         "/private/var/db/diagnostics",
-        writer
+        writer,
     );
 
     eprintln!("\nFinished parsing Unified Log data.");
@@ -112,9 +113,9 @@ fn parse_live_system(writer: &mut Writer<Box<dyn Write>>) {
 fn parse_trace_file(
     string_results: &[UUIDText],
     shared_strings_results: &[SharedCacheStrings],
-    timesync_data: &[TimesyncBoot],
+    timesync_data: &HashMap<String, TimesyncBoot>,
     path: &str,
-    writer: &mut Writer<Box<dyn Write>>
+    writer: &mut Writer<Box<dyn Write>>,
 ) {
     // We need to persist the Oversize log entries (they contain large strings that don't fit in normal log entries)
     // Some log entries have Oversize strings located in different tracev3 files.
@@ -318,8 +319,7 @@ fn parse_trace_file(
     // Since we have all Oversize entries now. Go through any log entries that we were not able to build before
     for mut leftover_data in missing_data {
         // Add all of our previous oversize data to logs for lookups
-        leftover_data
-            .oversize = oversize_strings.oversize.clone();
+        leftover_data.oversize = oversize_strings.oversize.clone();
 
         // Exclude_missing = false
         // If we fail to find any missing data its probably due to the logs rolling
@@ -340,10 +340,12 @@ fn parse_trace_file(
 
 fn construct_writer(output_path: &str) -> Result<Writer<Box<dyn Write>>, Box<dyn Error>> {
     let writer = if output_path != "" {
-        Box::new(OpenOptions::new()
-            .append(true)
-            .create(true)
-            .open(output_path)?) as Box<dyn Write>
+        Box::new(
+            OpenOptions::new()
+                .append(true)
+                .create(true)
+                .open(output_path)?,
+        ) as Box<dyn Write>
     } else {
         Box::new(io::stdout()) as Box<dyn Write>
     };
@@ -376,7 +378,10 @@ fn output_header(writer: &mut Writer<Box<dyn Write>>) -> Result<(), Box<dyn Erro
 }
 
 // Append or create csv file
-fn output(results: &Vec<LogData>, writer: &mut Writer<Box<dyn Write>>) -> Result<(), Box<dyn Error>> {
+fn output(
+    results: &Vec<LogData>,
+    writer: &mut Writer<Box<dyn Write>>,
+) -> Result<(), Box<dyn Error>> {
     for data in results {
         let date_time = Utc.timestamp_nanos(data.time as i64);
         writer.write_record(&[
