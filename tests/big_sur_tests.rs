@@ -370,7 +370,7 @@ fn test_parse_all_persist_logs_with_network_big_sur() {
     assert_eq!(error_type, 215);
     assert_eq!(create_type, 687);
     assert_eq!(state_simple_dump, 34);
-    assert_eq!(signpost, 37);
+    assert_eq!(signpost, 62);
 }
 
 #[test]
