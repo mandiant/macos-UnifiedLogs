@@ -2786,9 +2786,7 @@ mod tests {
         assert_eq!(firehose.firehose_non_activity.private_strings_offset, 0);
         assert_eq!(firehose.firehose_non_activity.private_strings_size, 0);
         assert_eq!(firehose.firehose_non_activity.unknown_message_string_ref, 0);
-        assert!(
-            !firehose.firehose_non_activity.firehose_formatters.main_exe
-        );
+        assert!(!firehose.firehose_non_activity.firehose_formatters.main_exe);
 
         assert_eq!(firehose.firehose_non_activity.subsystem_value, 14);
         assert_eq!(firehose.firehose_non_activity.ttl_value, 0);

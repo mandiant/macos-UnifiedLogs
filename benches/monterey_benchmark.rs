@@ -9,7 +9,12 @@ use std::{fs::File, path::PathBuf};
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use macos_unifiedlogs::{
-    dsc::SharedCacheStrings, filesystem::LogarchiveProvider, parser::{build_log, collect_shared_strings, collect_strings, collect_timesync, parse_log}, timesync::TimesyncBoot, unified_log::UnifiedLogData, uuidtext::UUIDText
+    dsc::SharedCacheStrings,
+    filesystem::LogarchiveProvider,
+    parser::{build_log, collect_shared_strings, collect_strings, collect_timesync, parse_log},
+    timesync::TimesyncBoot,
+    unified_log::UnifiedLogData,
+    uuidtext::UUIDText,
 };
 fn monterey_parse_log(path: &str) {
     let handle = File::open(PathBuf::from(path).as_path()).unwrap();

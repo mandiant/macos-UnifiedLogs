@@ -1,4 +1,3 @@
-
 /// Implementing this trait allows library consumers to provide the files required by the parser in
 /// arbitrary formats, as long as they are provided as an iterator of items that implement [Read].
 ///

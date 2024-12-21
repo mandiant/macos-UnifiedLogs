@@ -168,7 +168,7 @@ impl FileProvider for LogarchiveProvider {
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::UUIDText))
                 .filter_map(|entry| {
                     Some(Box::new(LocalFile::new(entry.path()).ok()?) as Box<dyn SourceFile>)
-                })
+                }),
         )
     }
 
@@ -180,7 +180,7 @@ impl FileProvider for LogarchiveProvider {
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::Dsc))
                 .filter_map(|entry| {
                     Some(Box::new(LocalFile::new(entry.path()).ok()?) as Box<dyn SourceFile>)
-                })
+                }),
         )
     }
 
