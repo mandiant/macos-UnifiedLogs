@@ -11,17 +11,17 @@
 
 # Running test suite
 1. Follow steps above
-2. Download `tests.zip` from Github releases
-3. Copy/move `tests.zip` to clone repo
-4. Decompress `tests.zip`
+2. Download `test_data.zip` from Github releases
+3. Copy/move `test_data.zip` to clone repo `tests` directory
+4. Decompress `test_data.zip`
 5. Execute `cargo test --release` to run tests
    * You can also just use `cargo test` to run tests but it will be slower
 
 
 # Running benchmarks
-1. Download `tests.zip` from Github releases
-2. Copy/move `tests.zip` to clone repo
-3. Decompress `tests.zip`
+1. Download `test_data.zip` from Github releases
+2. Copy/move `test_data.zip` to clone repo `tests` directory
+3. Decompress `test_data.zip`
 4. Run `cargo bench`  
 or  
 4. Install criterion, `cargo install cargo-criterion`
