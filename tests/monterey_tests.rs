@@ -120,7 +120,7 @@ fn test_parse_all_logs_monterey() {
         );
         log_data_vec.append(&mut data);
     }
-    assert_eq!(log_data_vec.len(), 2299798);
+    assert_eq!(log_data_vec.len(), 2397109);
 
     let mut unknown_strings = 0;
     let mut invalid_offsets = 0;
