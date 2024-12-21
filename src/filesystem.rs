@@ -1,7 +1,31 @@
-use crate::traits::FileProvider;
-use std::io::Read;
+use crate::traits::{FileProvider, SourceFile};
+use std::fs::File;
 use std::path::{Component, Path, PathBuf};
 use walkdir::WalkDir;
+
+pub struct LocalFile {
+    reader: File,
+    source: String,
+}
+
+impl LocalFile {
+    fn new(path: &Path) -> std::io::Result<Self> {
+        Ok(Self {
+            reader: File::open(path)?,
+            source: path.as_os_str().to_string_lossy().to_string(),
+        })
+    }
+}
+
+impl SourceFile for LocalFile {
+    fn reader(&mut self) -> Box<&mut dyn std::io::Read> {
+        Box::new(&mut self.reader)
+    }
+
+    fn source_path(&self) -> &str {
+        self.source.as_str()
+    }
+}
 
 /// Provides an implementation of [`FileProvider`] that enumerates the
 /// required files at the correct paths on a live macOS system. These files are only present on
@@ -64,7 +88,7 @@ impl From<&Path> for LogFileType {
 }
 
 impl FileProvider for LiveSystemProvider {
-    fn tracev3_files(&self) -> Box<dyn Iterator<Item = Box<dyn std::io::Read>>> {
+    fn tracev3_files(&self) -> Box<dyn Iterator<Item = Box<dyn SourceFile>>> {
         let path = PathBuf::from("/private/var/db/diagnostics");
         Box::new(
             WalkDir::new(path)
@@ -72,57 +96,32 @@ impl FileProvider for LiveSystemProvider {
                 .filter_map(|entry| entry.ok())
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::TraceV3))
                 .filter_map(|entry| {
-                    Some(Box::new(std::fs::File::open(entry.path()).ok()?) as Box<dyn Read>)
+                    Some(Box::new(LocalFile::new(entry.path()).ok()?) as Box<dyn SourceFile>)
                 }),
         )
     }
 
-    fn uuidtext_files(&self) -> Box<dyn Iterator<Item = (Box<dyn std::io::Read>, String)>> {
+    fn uuidtext_files(&self) -> Box<dyn Iterator<Item = Box<dyn SourceFile>>> {
         let path = PathBuf::from("/private/var/db/uuidtext");
         Box::new(
             WalkDir::new(path)
                 .into_iter()
                 .filter_map(|entry| entry.ok())
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::UUIDText))
-                .map(|entry| {
-                    (
-                        std::fs::File::open(entry.path()),
-                        entry
-                            .file_name()
-                            .to_os_string()
-                            .to_string_lossy()
-                            .into_owned(),
-                    )
-                })
-                .map(|(handle, file_name)| (handle.ok(), file_name))
-                .filter_map(|(handle, file_name)| Some((handle?, file_name)))
-                .map(|(handle, file_name)| (Box::new(handle) as Box<dyn Read>, file_name)),
+                .filter_map(|entry| {
+                    Some(Box::new(LocalFile::new(entry.path()).ok()?) as Box<dyn SourceFile>)
+                }),
         )
     }
 
-    fn dsc_files(&self) -> Box<dyn Iterator<Item = (Box<dyn std::io::Read>, String)>> {
+    fn dsc_files(&self) -> Box<dyn Iterator<Item = Box<dyn SourceFile>>> {
         let path = PathBuf::from("/private/var/db/uuidtext/dsc");
-        Box::new(
-            WalkDir::new(path)
-                .into_iter()
-                .filter_map(|entry| entry.ok())
-                .map(|entry| {
-                    (
-                        std::fs::File::open(entry.path()),
-                        entry
-                            .file_name()
-                            .to_os_string()
-                            .to_string_lossy()
-                            .into_owned(),
-                    )
-                })
-                .map(|(handle, file_name)| (handle.ok(), file_name))
-                .filter_map(|(handle, file_name)| Some((handle?, file_name)))
-                .map(|(handle, file_name)| (Box::new(handle) as Box<dyn Read>, file_name)),
-        )
+        Box::new(WalkDir::new(path).into_iter().filter_map(|entry| {
+            Some(Box::new(LocalFile::new(entry.ok()?.path()).ok()?) as Box<dyn SourceFile>)
+        }))
     }
 
-    fn timesync_files(&self) -> Box<dyn Iterator<Item = Box<dyn std::io::Read>>> {
+    fn timesync_files(&self) -> Box<dyn Iterator<Item = Box<dyn SourceFile>>> {
         let path = PathBuf::from("/private/var/db/diagnostics/timesync");
         Box::new(
             WalkDir::new(path)
@@ -130,7 +129,7 @@ impl FileProvider for LiveSystemProvider {
                 .filter_map(|entry| entry.ok())
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::Timesync))
                 .filter_map(|entry| {
-                    Some(Box::new(std::fs::File::open(entry.path()).ok()?) as Box<dyn Read>)
+                    Some(Box::new(LocalFile::new(entry.path()).ok()?) as Box<dyn SourceFile>)
                 }),
         )
     }
@@ -149,70 +148,50 @@ impl LogarchiveProvider {
 }
 
 impl FileProvider for LogarchiveProvider {
-    fn tracev3_files(&self) -> Box<dyn Iterator<Item = Box<dyn std::io::Read>>> {
+    fn tracev3_files(&self) -> Box<dyn Iterator<Item = Box<dyn SourceFile>>> {
         Box::new(
             WalkDir::new(&self.base)
                 .into_iter()
                 .filter_map(|entry| entry.ok())
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::TraceV3))
                 .filter_map(|entry| {
-                    Some(Box::new(std::fs::File::open(entry.path()).ok()?) as Box<dyn Read>)
+                    Some(Box::new(LocalFile::new(entry.path()).ok()?) as Box<dyn SourceFile>)
                 }),
         )
     }
 
-    fn uuidtext_files(&self) -> Box<dyn Iterator<Item = (Box<dyn std::io::Read>, String)>> {
+    fn uuidtext_files(&self) -> Box<dyn Iterator<Item = Box<dyn SourceFile>>> {
         Box::new(
             WalkDir::new(&self.base)
                 .into_iter()
                 .filter_map(|entry| entry.ok())
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::UUIDText))
-                .map(|entry| {
-                    (
-                        std::fs::File::open(entry.path()),
-                        entry
-                            .file_name()
-                            .to_os_string()
-                            .to_string_lossy()
-                            .into_owned(),
-                    )
+                .filter_map(|entry| {
+                    Some(Box::new(LocalFile::new(entry.path()).ok()?) as Box<dyn SourceFile>)
                 })
-                .map(|(handle, file_name)| (handle.ok(), file_name))
-                .filter_map(|(handle, file_name)| Some((handle?, file_name)))
-                .map(|(handle, file_name)| (Box::new(handle) as Box<dyn Read>, file_name)),
         )
     }
 
-    fn dsc_files(&self) -> Box<dyn Iterator<Item = (Box<dyn std::io::Read>, String)>> {
+    fn dsc_files(&self) -> Box<dyn Iterator<Item = Box<dyn SourceFile>>> {
         Box::new(
             WalkDir::new(&self.base)
                 .into_iter()
                 .filter_map(|entry| entry.ok())
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::Dsc))
-                .map(|entry| {
-                    (
-                        std::fs::File::open(entry.path()),
-                        entry
-                            .file_name()
-                            .to_os_string()
-                            .to_string_lossy()
-                            .into_owned(),
-                    )
+                .filter_map(|entry| {
+                    Some(Box::new(LocalFile::new(entry.path()).ok()?) as Box<dyn SourceFile>)
                 })
-                .map(|(handle, file_name)| (handle.ok(), file_name))
-                .filter_map(|(handle, file_name)| Some((handle?, file_name)))
-                .map(|(handle, file_name)| (Box::new(handle) as Box<dyn Read>, file_name)),
         )
     }
 
-    fn timesync_files(&self) -> Box<dyn Iterator<Item = Box<dyn std::io::Read>>> {
+    fn timesync_files(&self) -> Box<dyn Iterator<Item = Box<dyn SourceFile>>> {
         Box::new(
             WalkDir::new(&self.base)
                 .into_iter()
                 .filter_map(|entry| entry.ok())
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::Timesync))
                 .filter_map(|entry| {
-                    Some(Box::new(std::fs::File::open(entry.path()).ok()?) as Box<dyn Read>)
+                    Some(Box::new(LocalFile::new(entry.path()).ok()?) as Box<dyn SourceFile>)
                 }),
         )
     }

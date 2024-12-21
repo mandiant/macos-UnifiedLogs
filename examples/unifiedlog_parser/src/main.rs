@@ -122,8 +122,8 @@ fn parse_trace_file(
     let mut log_count = 0;
 
     // Loop through all tracev3 files in Persist directory
-    for handle in provider.tracev3_files() {
-        let log_data = match parse_log(handle) {
+    for mut source in provider.tracev3_files() {
+        let log_data = match parse_log(source.reader()) {
             Ok(data) => data,
             Err(e) => {
                 warn!("Failed to parse tracev3 file: {:?}", e);

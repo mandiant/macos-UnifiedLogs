@@ -14,6 +14,7 @@ use crate::traits::FileProvider;
 use crate::unified_log::{LogData, UnifiedLogData};
 use crate::uuidtext::UUIDText;
 use std::io::Read;
+use std::path::PathBuf;
 
 /// Parse a tracev3 file and return the deconstructed log data
 pub fn parse_log(mut reader: impl Read) -> Result<UnifiedLogData, ParserError> {
@@ -80,17 +81,18 @@ pub fn build_log(
 pub fn collect_strings(provider: &dyn FileProvider) -> Result<Vec<UUIDText>, ParserError> {
     let mut uuidtext_vec: Vec<UUIDText> = Vec::new();
     // Start process to read a directory containing subdirectories that contain the uuidtext files
-    for (mut reader, filename) in provider.uuidtext_files() {
+    for mut source in provider.uuidtext_files() {
         let mut buf = Vec::new();
-        if let Err(e) = reader.read_to_end(&mut buf) {
+        let path = source.source_path().to_owned();
+        if let Err(e) = source.reader().read_to_end(&mut buf) {
             error!(
                 "[macos-unifiedlogs] Failed to read uuidfile {}: {:?}",
-                filename, e
+                path, e
             );
             continue;
         };
 
-        info!("Read {} bytes for file {}", buf.len(), filename);
+        info!("Read {} bytes for file {}", buf.len(), path);
 
         let uuid_results = UUIDText::parse_uuidtext(&buf);
         let mut uuidtext_data = match uuid_results {
@@ -98,13 +100,17 @@ pub fn collect_strings(provider: &dyn FileProvider) -> Result<Vec<UUIDText>, Par
             Err(err) => {
                 error!(
                     "[macos-unifiedlogs] Failed to parse UUID file {}: {:?}",
-                    filename, err
+                    path, err
                 );
                 continue;
             }
         };
 
-        uuidtext_data.uuid = filename.to_owned();
+        uuidtext_data.uuid = PathBuf::from(path)
+            .file_name()
+            .map(|f| f.to_string_lossy())
+            .unwrap_or_default()
+            .to_string();
         uuidtext_vec.push(uuidtext_data)
     }
     Ok(uuidtext_vec)
@@ -116,16 +122,20 @@ pub fn collect_shared_strings(
 ) -> Result<Vec<SharedCacheStrings>, ParserError> {
     let mut shared_strings_vec: Vec<SharedCacheStrings> = Vec::new();
     // Start process to read and parse uuid files related to dsc
-    for (mut reader, filename) in provider.dsc_files() {
+    for mut source in provider.dsc_files() {
         let mut buf = Vec::new();
-        if let Err(e) = reader.read_to_end(&mut buf) {
+        if let Err(e) = source.reader().read_to_end(&mut buf) {
             error!("[macos-unifiedlogs] Failed to read dsc file: {:?}", e);
             continue;
         }
 
         match SharedCacheStrings::parse_dsc(&buf) {
             Ok((_, mut results)) => {
-                results.dsc_uuid = filename.to_owned();
+                results.dsc_uuid = PathBuf::from(source.source_path())
+                    .file_name()
+                    .map(|fname| fname.to_string_lossy())
+                    .unwrap_or_default()
+                    .to_string();
                 shared_strings_vec.push(results);
             }
             Err(err) => {
@@ -140,7 +150,7 @@ pub fn collect_shared_strings(
 pub fn collect_timesync(provider: &dyn FileProvider) -> Result<Vec<TimesyncBoot>, ParserError> {
     let mut timesync_data_vec: Vec<TimesyncBoot> = Vec::new();
     // Start process to read and parse all timesync files
-    for mut reader in provider.timesync_files() {
+    for mut source in provider.timesync_files() {
         let mut buffer = Vec::new();
         if let Err(e) = source.reader().read_to_end(&mut buffer) {
             error!("[macos-unifiedlogs] Failed to read timesync file: {:?}", e);

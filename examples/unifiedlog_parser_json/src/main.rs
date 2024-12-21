@@ -112,8 +112,8 @@ fn parse_trace_file(
     let mut missing_data: Vec<UnifiedLogData> = Vec::new();
     let mut log_count = 0;
 
-    for (i, reader) in provider.tracev3_files().enumerate() {
-        let log_data = parse_log(reader).unwrap();
+    for (i, mut source) in provider.tracev3_files().enumerate() {
+        let log_data = parse_log(source.reader()).unwrap();
 
         // Get all constructed logs and any log data that failed to get constrcuted (exclude_missing = true)
         let (results, missing_logs) = build_log(

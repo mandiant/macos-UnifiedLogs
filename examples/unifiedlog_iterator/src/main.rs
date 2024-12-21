@@ -145,9 +145,9 @@ fn parse_trace_file(
 
     // Loop through all tracev3 files in Persist directory
     let mut log_count = 0;
-    for reader in provider.tracev3_files() {
+    for mut source in provider.tracev3_files() {
         log_count += iterate_chunks(
-            reader,
+            source.reader(),
             &mut missing_data,
             string_results,
             shared_strings_results,
