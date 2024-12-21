@@ -5,18 +5,15 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-use std::path::PathBuf;
+use std::{fs::File, path::PathBuf};
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use macos_unifiedlogs::{
-    dsc::SharedCacheStrings,
-    parser::{build_log, collect_shared_strings, collect_strings, collect_timesync, parse_log},
-    timesync::TimesyncBoot,
-    unified_log::UnifiedLogData,
-    uuidtext::UUIDText,
+    dsc::SharedCacheStrings, filesystem::LogarchiveProvider, parser::{build_log, collect_shared_strings, collect_strings, collect_timesync, parse_log}, timesync::TimesyncBoot, unified_log::UnifiedLogData, uuidtext::UUIDText
 };
 fn monterey_parse_log(path: &str) {
-    let _ = parse_log(&path).unwrap();
+    let handle = File::open(PathBuf::from(path).as_path()).unwrap();
+    let _ = parse_log(handle).unwrap();
 }
 
 fn bench_build_log(
@@ -48,20 +45,17 @@ fn monterey_single_log_benchpress(c: &mut Criterion) {
 fn monterey_build_log_benchbress(c: &mut Criterion) {
     let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_path.push("tests/test_data/system_logs_monterey.logarchive");
-    let string_results = collect_strings(&test_path.display().to_string()).unwrap();
 
-    test_path.push("dsc");
-    let shared_strings_results = collect_shared_strings(&test_path.display().to_string()).unwrap();
-    test_path.pop();
-
-    test_path.push("timesync");
-    let timesync_data = collect_timesync(&test_path.display().to_string()).unwrap();
-    test_path.pop();
+    let provider = LogarchiveProvider::new(test_path.as_path());
+    let string_results = collect_strings(&provider).unwrap();
+    let shared_strings_results = collect_shared_strings(&provider).unwrap();
+    let timesync_data = collect_timesync(&provider).unwrap();
 
     test_path.push("Persist/0000000000000004.tracev3");
     let exclude_missing = false;
+    let handle = File::open(test_path.as_path()).unwrap();
 
-    let log_data = parse_log(&test_path.display().to_string()).unwrap();
+    let log_data = parse_log(handle).unwrap();
 
     c.bench_function("Benching Building One Monterey Log", |b| {
         b.iter(|| {
