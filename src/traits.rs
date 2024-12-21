@@ -4,7 +4,7 @@ use std::io::Read;
 /// arbitrary formats, as long as they are provided as an iterator of items that implement [Read].
 ///
 /// For help mapping files to the correct filetype, see the
-/// [LogFileType](crate::filesystem::LogFileType) enum's
+/// [`LogFileType`](crate::filesystem::LogFileType) enum's
 /// [From]<&[Path](std::path::Path)> implementation.
 pub trait FileProvider {
     /// Provides an iterator of `.tracev3` files from the
@@ -12,7 +12,7 @@ pub trait FileProvider {
     /// `livedata.LogData.tracev3` file if it was collected via `log collect`.
     fn tracev3_files(&self) -> Box<dyn Iterator<Item = Box<dyn Read>>>;
 
-    /// Provides an iterator of UUIDText string files from the `/var/db/uuidtext/XX/` directories,
+    /// Provides an iterator of `UUIDText` string files from the `/var/db/uuidtext/XX/` directories,
     /// where the `XX` is any two uppercase hex characters, along with the filename (i.e., the
     /// filename from the _source_ file. This should be a 30-character name containing only hex
     /// digits. This should be a 30-character name containing only hex digits. It is important that

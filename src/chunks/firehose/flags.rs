@@ -154,7 +154,7 @@ mod tests {
         let test_flags = 514;
         let (_, results) =
             FirehoseFormatters::firehose_formatter_flags(&test_data, &test_flags).unwrap();
-        assert_eq!(results.main_exe, true);
+        assert!(results.main_exe);
     }
 
     #[test]
@@ -167,7 +167,7 @@ mod tests {
         let test_flags = 516;
         let (_, results) =
             FirehoseFormatters::firehose_formatter_flags(&test_data, &test_flags).unwrap();
-        assert_eq!(results.shared_cache, true);
+        assert!(results.shared_cache);
     }
 
     #[test]
@@ -183,7 +183,7 @@ mod tests {
         let test_flags = 8;
         let (_, results) =
             FirehoseFormatters::firehose_formatter_flags(&test_data, &test_flags).unwrap();
-        assert_eq!(results.absolute, true);
+        assert!(results.absolute);
         assert_eq!(results.main_exe_alt_index, 65408);
     }
 

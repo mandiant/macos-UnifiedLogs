@@ -367,7 +367,7 @@ mod tests {
             firehose_preamble_continous_time,
             1,
         );
-        assert_eq!(results, 1642304803060378889.0);
+        assert_eq!(results, 1_642_304_803_060_379_000.0);
     }
 
     #[test]
@@ -408,6 +408,6 @@ mod tests {
             firehose_preamble_continous_time,
             0,
         );
-        assert_eq!(results, 1650767813342574583.0);
+        assert_eq!(results, 1_650_767_813_342_574_600.0);
     }
 }

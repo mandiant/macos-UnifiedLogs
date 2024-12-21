@@ -282,7 +282,7 @@ mod tests {
                             &firehose.firehose_activity,
                             &string_results,
                             &shared_strings_results,
-                            firehose.format_string_location as u64,
+                            u64::from(firehose.format_string_location),
                             &preamble.first_number_proc_id,
                             &preamble.second_number_proc_id,
                             &catalog_data.catalog,

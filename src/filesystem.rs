@@ -3,7 +3,7 @@ use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 use walkdir::WalkDir;
 
-/// Provides an implementation of [FileProvider] that enumerates the
+/// Provides an implementation of [`FileProvider`] that enumerates the
 /// required files at the correct paths on a live macOS system. These files are only present on
 /// macOS Sierra (10.12) and above. The implemented methods emit error log messages if any are
 /// encountered while enumerating files or creating readers, but are otherwise infallible.
@@ -45,7 +45,7 @@ impl From<&Path> for LogFileType {
             if filename_s.len() == 30
                 && only_hex_chars(filename_s)
                 && parent_s.len() == 2
-                && only_hex_chars(&parent_s)
+                && only_hex_chars(parent_s)
             {
                 return Self::UUIDText;
             }
@@ -72,7 +72,7 @@ impl FileProvider for LiveSystemProvider {
                 .filter_map(|entry| entry.ok())
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::TraceV3))
                 .filter_map(|entry| {
-                    Some(Box::new(std::fs::File::open(&entry.path()).ok()?) as Box<dyn Read>)
+                    Some(Box::new(std::fs::File::open(entry.path()).ok()?) as Box<dyn Read>)
                 }),
         )
     }
@@ -86,7 +86,7 @@ impl FileProvider for LiveSystemProvider {
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::UUIDText))
                 .map(|entry| {
                     (
-                        std::fs::File::open(&entry.path()),
+                        std::fs::File::open(entry.path()),
                         entry
                             .file_name()
                             .to_os_string()
@@ -94,7 +94,7 @@ impl FileProvider for LiveSystemProvider {
                             .into_owned(),
                     )
                 })
-                .filter_map(|(handle, file_name)| Some((handle.ok(), file_name)))
+                .map(|(handle, file_name)| (handle.ok(), file_name))
                 .filter_map(|(handle, file_name)| Some((handle?, file_name)))
                 .map(|(handle, file_name)| (Box::new(handle) as Box<dyn Read>, file_name)),
         )
@@ -108,7 +108,7 @@ impl FileProvider for LiveSystemProvider {
                 .filter_map(|entry| entry.ok())
                 .map(|entry| {
                     (
-                        std::fs::File::open(&entry.path()),
+                        std::fs::File::open(entry.path()),
                         entry
                             .file_name()
                             .to_os_string()
@@ -116,7 +116,7 @@ impl FileProvider for LiveSystemProvider {
                             .into_owned(),
                     )
                 })
-                .filter_map(|(handle, file_name)| Some((handle.ok(), file_name)))
+                .map(|(handle, file_name)| (handle.ok(), file_name))
                 .filter_map(|(handle, file_name)| Some((handle?, file_name)))
                 .map(|(handle, file_name)| (Box::new(handle) as Box<dyn Read>, file_name)),
         )
@@ -130,7 +130,7 @@ impl FileProvider for LiveSystemProvider {
                 .filter_map(|entry| entry.ok())
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::Timesync))
                 .filter_map(|entry| {
-                    Some(Box::new(std::fs::File::open(&entry.path()).ok()?) as Box<dyn Read>)
+                    Some(Box::new(std::fs::File::open(entry.path()).ok()?) as Box<dyn Read>)
                 }),
         )
     }
@@ -156,7 +156,7 @@ impl FileProvider for LogarchiveProvider {
                 .filter_map(|entry| entry.ok())
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::TraceV3))
                 .filter_map(|entry| {
-                    Some(Box::new(std::fs::File::open(&entry.path()).ok()?) as Box<dyn Read>)
+                    Some(Box::new(std::fs::File::open(entry.path()).ok()?) as Box<dyn Read>)
                 }),
         )
     }
@@ -169,7 +169,7 @@ impl FileProvider for LogarchiveProvider {
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::UUIDText))
                 .map(|entry| {
                     (
-                        std::fs::File::open(&entry.path()),
+                        std::fs::File::open(entry.path()),
                         entry
                             .file_name()
                             .to_os_string()
@@ -177,7 +177,7 @@ impl FileProvider for LogarchiveProvider {
                             .into_owned(),
                     )
                 })
-                .filter_map(|(handle, file_name)| Some((handle.ok(), file_name)))
+                .map(|(handle, file_name)| (handle.ok(), file_name))
                 .filter_map(|(handle, file_name)| Some((handle?, file_name)))
                 .map(|(handle, file_name)| (Box::new(handle) as Box<dyn Read>, file_name)),
         )
@@ -191,7 +191,7 @@ impl FileProvider for LogarchiveProvider {
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::Dsc))
                 .map(|entry| {
                     (
-                        std::fs::File::open(&entry.path()),
+                        std::fs::File::open(entry.path()),
                         entry
                             .file_name()
                             .to_os_string()
@@ -199,7 +199,7 @@ impl FileProvider for LogarchiveProvider {
                             .into_owned(),
                     )
                 })
-                .filter_map(|(handle, file_name)| Some((handle.ok(), file_name)))
+                .map(|(handle, file_name)| (handle.ok(), file_name))
                 .filter_map(|(handle, file_name)| Some((handle?, file_name)))
                 .map(|(handle, file_name)| (Box::new(handle) as Box<dyn Read>, file_name)),
         )
@@ -212,7 +212,7 @@ impl FileProvider for LogarchiveProvider {
                 .filter_map(|entry| entry.ok())
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::Timesync))
                 .filter_map(|entry| {
-                    Some(Box::new(std::fs::File::open(&entry.path()).ok()?) as Box<dyn Read>)
+                    Some(Box::new(std::fs::File::open(entry.path()).ok()?) as Box<dyn Read>)
                 }),
         )
     }

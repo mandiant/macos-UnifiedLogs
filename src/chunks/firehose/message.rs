@@ -1084,7 +1084,7 @@ mod tests {
 
         let test_uuid = "B736DF1625F538248E9527A8CEC4991E";
 
-        let (_, image_path) = MessageData::get_uuid_image_path(&test_uuid, &strings).unwrap();
+        let (_, image_path) = MessageData::get_uuid_image_path(test_uuid, &strings).unwrap();
 
         assert_eq!(image_path, "/usr/libexec/opendirectoryd");
     }

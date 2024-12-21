@@ -1007,7 +1007,7 @@ mod tests {
         assert_eq!(results.len(), 207366);
         assert_eq!(results[0].process, "/usr/libexec/lightsoutmanagementd");
         assert_eq!(results[0].subsystem, "com.apple.lom");
-        assert_eq!(results[0].time, 1642302326434850732.0);
+        assert_eq!(results[0].time, 1_642_302_326_434_850_800.0);
         assert_eq!(results[0].activity_id, 0);
         assert_eq!(results[0].library, "/usr/libexec/lightsoutmanagementd");
         assert_eq!(results[0].library_uuid, "6C3ADF991F033C1C96C4ADFAA12D8CED");

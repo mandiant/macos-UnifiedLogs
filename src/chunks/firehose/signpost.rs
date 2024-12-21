@@ -271,14 +271,14 @@ mod tests {
         assert_eq!(results.ttl_value, 0);
         assert_eq!(results.data_ref_value, 0);
 
-        assert_eq!(results.firehose_formatters.main_exe, true);
-        assert_eq!(results.firehose_formatters.shared_cache, false);
+        assert!(results.firehose_formatters.main_exe);
+        assert!(!results.firehose_formatters.shared_cache);
         assert_eq!(results.firehose_formatters.has_large_offset, 0);
         assert_eq!(results.firehose_formatters.large_shared_cache, 0);
-        assert_eq!(results.firehose_formatters.absolute, false);
+        assert!(!results.firehose_formatters.absolute);
         assert_eq!(results.firehose_formatters.uuid_relative, String::new());
-        assert_eq!(results.firehose_formatters.main_plugin, false);
-        assert_eq!(results.firehose_formatters.pc_style, false);
+        assert!(!results.firehose_formatters.main_plugin);
+        assert!(!results.firehose_formatters.pc_style);
         assert_eq!(results.firehose_formatters.main_exe_alt_index, 0);
     }
 
@@ -306,7 +306,7 @@ mod tests {
                             &firehose.firehose_signpost,
                             &string_results,
                             &shared_strings_results,
-                            firehose.format_string_location as u64,
+                            u64::from(firehose.format_string_location),
                             &preamble.first_number_proc_id,
                             &preamble.second_number_proc_id,
                             &catalog_data.catalog,

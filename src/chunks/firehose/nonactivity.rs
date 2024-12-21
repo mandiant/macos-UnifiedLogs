@@ -263,8 +263,8 @@ mod tests {
             nonactivity_results.firehose_formatters.uuid_relative,
             String::from("")
         );
-        assert_eq!(nonactivity_results.firehose_formatters.main_exe, false);
-        assert_eq!(nonactivity_results.firehose_formatters.absolute, false);
+        assert!(!nonactivity_results.firehose_formatters.main_exe);
+        assert!(!nonactivity_results.firehose_formatters.absolute);
         assert_eq!(nonactivity_results.subsystem_value, 41);
         assert_eq!(nonactivity_results.ttl_value, 0);
         assert_eq!(nonactivity_results.data_ref_value, 0);
@@ -301,7 +301,7 @@ mod tests {
                                 &firehose.firehose_non_activity,
                                 &string_results,
                                 &shared_strings_results,
-                                firehose.format_string_location as u64,
+                                u64::from(firehose.format_string_location),
                                 &preamble.first_number_proc_id,
                                 &preamble.second_number_proc_id,
                                 &catalog_data.catalog,
