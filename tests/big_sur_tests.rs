@@ -576,7 +576,10 @@ fn test_parse_all_logs_private_with_public_mix_big_sur() {
             user_not_found += 1;
         }
 
-        if logs.message.contains("refreshing: details, reason: expired, user: mobile <not found>") {
+        if logs
+            .message
+            .contains("refreshing: details, reason: expired, user: mobile <not found>")
+        {
             mobile_not_found += 1;
         }
 

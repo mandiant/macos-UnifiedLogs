@@ -163,7 +163,6 @@ fn test_parse_all_logs_monterey() {
     let mut pauses_tracker = 0;
     let mut dns_counts = 0;
 
-
     for logs in &log_data_vec {
         if logs.message.contains("Failed to get string message from ")
             || logs.message.contains("Unknown shared string message")
@@ -199,7 +198,10 @@ fn test_parse_all_logs_monterey() {
         if logs.message.contains("allowsMapCorrection") {
             location_tracker += 1;
         }
-        if logs.message.contains("\"pausesLocationUpdatesAutomatically\":1,") {
+        if logs
+            .message
+            .contains("\"pausesLocationUpdatesAutomatically\":1,")
+        {
             pauses_tracker += 1;
         }
         if logs.message.contains("Question Count: 1, Answer Record Count: 0, Authority Record Count: 0, Additional Record Count: 0") {
