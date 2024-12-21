@@ -3,5 +3,5 @@
 Cargo.lock
 *.DS_Store
 *.logarchive
-tests.zip
-tests/
+test*.zip
+tests/test_data
