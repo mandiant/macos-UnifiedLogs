@@ -90,17 +90,17 @@ fn get_dns_flags(input: &[u8]) -> IResult<(&[u8], usize), String> {
     const Z: usize = 3;
     const RCODE: usize = 4;
 
-    type RET<'a> = ((&'a [u8], usize), u8);
+    type Ret<'a> = ((&'a [u8], usize), u8);
     use nom::bits::complete::take as bits;
     // Have to work with bits instead of bytes for the DNS flags
-    let ((input, offset), query): RET<'_> = bits(QR)((input, 0))?;
-    let ((input, offset), opcode): RET<'_> = bits(OPCODE)((input, offset))?;
-    let ((input, offset), authoritative_flag): RET<'_> = bits(AA)((input, offset))?;
-    let ((input, offset), truncation_flag): RET<'_> = bits(TC)((input, offset))?;
-    let ((input, offset), recursion_desired): RET<'_> = bits(RD)((input, offset))?;
-    let ((input, offset), recursion_available): RET<'_> = bits(RA)((input, offset))?;
-    let ((input, offset), _reserved): RET<'_> = bits(Z)((input, offset))?;
-    let ((input, _), response_code): RET<'_> = bits(RCODE)((input, offset))?;
+    let ((input, offset), query): Ret<'_> = bits(QR)((input, 0))?;
+    let ((input, offset), opcode): Ret<'_> = bits(OPCODE)((input, offset))?;
+    let ((input, offset), authoritative_flag): Ret<'_> = bits(AA)((input, offset))?;
+    let ((input, offset), truncation_flag): Ret<'_> = bits(TC)((input, offset))?;
+    let ((input, offset), recursion_desired): Ret<'_> = bits(RD)((input, offset))?;
+    let ((input, offset), recursion_available): Ret<'_> = bits(RA)((input, offset))?;
+    let ((input, offset), _reserved): Ret<'_> = bits(Z)((input, offset))?;
+    let ((input, _), response_code): Ret<'_> = bits(RCODE)((input, offset))?;
 
     let opcode_message = match opcode {
         0 => "QUERY",
@@ -324,9 +324,9 @@ fn parse_dns_ip_addr(data: &[u8]) -> nom::IResult<&[u8], String> {
     const IPV4: u32 = 4;
     const IPV6: u32 = 6;
     if ip_version == IPV4 {
-        return get_ip_four(data);
+        get_ip_four(data).map(|(data, result)| (data, result.to_string()))
     } else if ip_version == IPV6 {
-        return get_ip_six(data);
+        get_ip_six(data).map(|(data, result)| (data, result.to_string()))
     } else {
         fail(data)
     }

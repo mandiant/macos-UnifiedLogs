@@ -23,9 +23,9 @@ pub enum DecoderError<'a> {
     },
 }
 
-impl<'a> std::error::Error for DecoderError<'a> {}
+impl std::error::Error for DecoderError<'_> {}
 
-impl<'a> std::fmt::Display for DecoderError<'a> {
+impl std::fmt::Display for DecoderError<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Parse { message, .. } => write!(f, "{message}"),
@@ -33,7 +33,7 @@ impl<'a> std::fmt::Display for DecoderError<'a> {
     }
 }
 
-impl<'a> std::fmt::Debug for DecoderError<'a> {
+impl std::fmt::Debug for DecoderError<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Parse {
