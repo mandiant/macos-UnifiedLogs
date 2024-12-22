@@ -132,7 +132,19 @@ fn parse_trace_file(
         // We will try parsing them again at the end once we have all Oversize entries
         missing_data.push(missing_logs);
         log_count += results.len();
-        output(&results, &format!("persist_{}", i)).unwrap();
+
+        let filepath = PathBuf::from(source.source_path());
+        output(
+            &results,
+            &format!(
+                "persist_{}",
+                filepath
+                    .file_stem()
+                    .map(|stem| stem.to_string_lossy())
+                    .unwrap_or_else(|| { format!("{}", i).into() })
+            ),
+        )
+        .unwrap();
     }
 
     // Include all log entries now, if any logs are missing data its because the data has rolled
