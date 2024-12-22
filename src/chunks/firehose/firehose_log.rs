@@ -2747,8 +2747,8 @@ mod tests {
         assert_eq!(firehose.base_continous_time, 4197166166425);
 
         let mut firehouse_result_count = firehose.public_data.len();
-        while data.len() != 0 {
-            let (test_data, firehose) = FirehosePreamble::parse_firehose_preamble(&data).unwrap();
+        while !data.is_empty() {
+            let (test_data, firehose) = FirehosePreamble::parse_firehose_preamble(data).unwrap();
             data = test_data;
             firehouse_result_count += firehose.public_data.len();
         }
@@ -2786,10 +2786,7 @@ mod tests {
         assert_eq!(firehose.firehose_non_activity.private_strings_offset, 0);
         assert_eq!(firehose.firehose_non_activity.private_strings_size, 0);
         assert_eq!(firehose.firehose_non_activity.unknown_message_string_ref, 0);
-        assert_eq!(
-            firehose.firehose_non_activity.firehose_formatters.main_exe,
-            false
-        );
+        assert!(!firehose.firehose_non_activity.firehose_formatters.main_exe);
 
         assert_eq!(firehose.firehose_non_activity.subsystem_value, 14);
         assert_eq!(firehose.firehose_non_activity.ttl_value, 0);
@@ -2979,19 +2976,17 @@ mod tests {
             14968
         );
 
-        assert_eq!(
+        assert!(
             firehose.public_data[0]
                 .firehose_non_activity
                 .firehose_formatters
-                .main_exe,
-            true
+                .main_exe
         );
-        assert_eq!(
-            firehose.public_data[0]
+        assert!(
+            !firehose.public_data[0]
                 .firehose_non_activity
                 .firehose_formatters
-                .shared_cache,
-            false
+                .shared_cache
         );
         assert_eq!(
             firehose.public_data[0]
@@ -3007,12 +3002,11 @@ mod tests {
                 .large_shared_cache,
             0
         );
-        assert_eq!(
-            firehose.public_data[0]
+        assert!(
+            !firehose.public_data[0]
                 .firehose_non_activity
                 .firehose_formatters
-                .absolute,
-            false
+                .absolute
         );
         assert_eq!(
             firehose.public_data[0]
@@ -3021,19 +3015,17 @@ mod tests {
                 .uuid_relative,
             String::new()
         );
-        assert_eq!(
-            firehose.public_data[0]
+        assert!(
+            !firehose.public_data[0]
                 .firehose_non_activity
                 .firehose_formatters
-                .main_plugin,
-            false
+                .main_plugin
         );
-        assert_eq!(
-            firehose.public_data[0]
+        assert!(
+            !firehose.public_data[0]
                 .firehose_non_activity
                 .firehose_formatters
-                .pc_style,
-            false
+                .pc_style
         );
         assert_eq!(
             firehose.public_data[0]
@@ -3396,8 +3388,8 @@ mod tests {
         assert_eq!(firehose.base_continous_time, 0);
 
         let mut firehouse_result_count = firehose.public_data.len();
-        while data.len() != 0 {
-            let (test_data, firehose) = FirehosePreamble::parse_firehose_preamble(&data).unwrap();
+        while !data.is_empty() {
+            let (test_data, firehose) = FirehosePreamble::parse_firehose_preamble(data).unwrap();
             data = test_data;
             firehouse_result_count += firehose.public_data.len();
         }

@@ -635,7 +635,7 @@ mod tests {
     fn test_get_service_binding() {
         let test_data =
             "AAEAAAEAAwJoMgAEAAhoEJRAaBCVQAAGACAmBkcAAAAAAAAAAABoEJRAJgZHAAAAAAAAAAAAaBCVQA==";
-        let result = get_service_binding(&test_data).unwrap();
+        let result = get_service_binding(test_data).unwrap();
         assert_eq!(result, "rdata: 1 . alpn=h2, ipv4 hint:104.16.148.64,104.16.149.64, ipv6 hint:2606:4700::6810:9440,2606:4700::6810:9540");
     }
 

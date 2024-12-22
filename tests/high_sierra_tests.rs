@@ -1,30 +1,24 @@
 // Copyright 2022 Mandiant, Inc. All Rights Reserved
-// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at
-// http://www.apache.org/licenses/LICENSE-2.0
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 // Unless required by applicable law or agreed to in writing, software distributed under the License
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-use std::{fs, path::PathBuf};
+use std::{fs::File, path::PathBuf};
 
 use macos_unifiedlogs::{
+    filesystem::LogarchiveProvider,
     parser::{build_log, collect_shared_strings, collect_strings, collect_timesync, parse_log},
-    unified_log::{LogData, UnifiedLogData},
+    traits::FileProvider,
+    unified_log::UnifiedLogData,
 };
 use regex::Regex;
 
-fn collect_logs(path: &str) -> Vec<UnifiedLogData> {
-    let paths = fs::read_dir(path).unwrap();
-
-    let mut log_data_vec: Vec<UnifiedLogData> = Vec::new();
-    for path in paths {
-        let data = path.unwrap();
-        let full_path = data.path().display().to_string();
-        let log_data = parse_log(&full_path).unwrap();
-        log_data_vec.push(log_data);
-    }
-
-    return log_data_vec;
+fn collect_logs(provider: &dyn FileProvider) -> Vec<UnifiedLogData> {
+    provider
+        .tracev3_files()
+        .map(|mut file| parse_log(file.reader()).unwrap())
+        .collect()
 }
 
 #[test]
@@ -33,7 +27,8 @@ fn test_parse_log_high_sierra() {
     test_path.push("tests/test_data/system_logs_high_sierra.logarchive");
 
     test_path.push("Persist/0000000000000001.tracev3");
-    let log_data = parse_log(&test_path.display().to_string()).unwrap();
+    let handle = File::open(test_path).unwrap();
+    let log_data = parse_log(handle).unwrap();
 
     assert_eq!(log_data.catalog_data[0].firehose.len(), 172);
     assert_eq!(log_data.catalog_data[0].simpledump.len(), 0);
@@ -52,19 +47,16 @@ fn test_parse_log_high_sierra() {
 fn test_build_log_high_sierra() {
     let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_path.push("tests/test_data/system_logs_high_sierra.logarchive");
-    let string_results = collect_strings(&test_path.display().to_string()).unwrap();
 
-    test_path.push("dsc");
-    let shared_strings_results = collect_shared_strings(&test_path.display().to_string()).unwrap();
-    test_path.pop();
-
-    test_path.push("timesync");
-    let timesync_data = collect_timesync(&test_path.display().to_string()).unwrap();
-    test_path.pop();
+    let provider = LogarchiveProvider::new(test_path.as_path());
+    let string_results = collect_strings(&provider).unwrap();
+    let shared_strings_results = collect_shared_strings(&provider).unwrap();
+    let timesync_data = collect_timesync(&provider).unwrap();
 
     test_path.push("Persist/0000000000000001.tracev3");
 
-    let log_data = parse_log(&test_path.display().to_string()).unwrap();
+    let handle = File::open(test_path.as_path()).unwrap();
+    let log_data = parse_log(handle).unwrap();
 
     let exclude_missing = false;
     let (results, _) = build_log(
@@ -103,19 +95,16 @@ fn test_build_log_high_sierra() {
 fn test_build_log_complex_format_high_sierra() {
     let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_path.push("tests/test_data/system_logs_high_sierra.logarchive");
-    let string_results = collect_strings(&test_path.display().to_string()).unwrap();
 
-    test_path.push("dsc");
-    let shared_strings_results = collect_shared_strings(&test_path.display().to_string()).unwrap();
-    test_path.pop();
-
-    test_path.push("timesync");
-    let timesync_data = collect_timesync(&test_path.display().to_string()).unwrap();
-    test_path.pop();
+    let provider = LogarchiveProvider::new(test_path.as_path());
+    let string_results = collect_strings(&provider).unwrap();
+    let shared_strings_results = collect_shared_strings(&provider).unwrap();
+    let timesync_data = collect_timesync(&provider).unwrap();
 
     test_path.push("Persist/0000000000000001.tracev3");
 
-    let log_data = parse_log(&test_path.display().to_string()).unwrap();
+    let handle = File::open(test_path.as_path()).unwrap();
+    let log_data = parse_log(handle).unwrap();
 
     let exclude_missing = false;
     let (results, _) = build_log(
@@ -159,19 +148,16 @@ fn test_build_log_complex_format_high_sierra() {
 fn test_build_log_negative_number_high_sierra() {
     let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_path.push("tests/test_data/system_logs_high_sierra.logarchive");
-    let string_results = collect_strings(&test_path.display().to_string()).unwrap();
 
-    test_path.push("dsc");
-    let shared_strings_results = collect_shared_strings(&test_path.display().to_string()).unwrap();
-    test_path.pop();
-
-    test_path.push("timesync");
-    let timesync_data = collect_timesync(&test_path.display().to_string()).unwrap();
-    test_path.pop();
+    let provider = LogarchiveProvider::new(test_path.as_path());
+    let string_results = collect_strings(&provider).unwrap();
+    let shared_strings_results = collect_shared_strings(&provider).unwrap();
+    let timesync_data = collect_timesync(&provider).unwrap();
 
     test_path.push("Special/0000000000000003.tracev3");
+    let handle = File::open(test_path.as_path()).unwrap();
 
-    let log_data = parse_log(&test_path.display().to_string()).unwrap();
+    let log_data = parse_log(handle).unwrap();
 
     let exclude_missing = false;
     let (results, _) = build_log(
@@ -201,37 +187,13 @@ fn test_build_log_negative_number_high_sierra() {
 fn test_parse_all_logs_high_sierra() {
     let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_path.push("tests/test_data/system_logs_high_sierra.logarchive");
-    let string_results = collect_strings(&test_path.display().to_string()).unwrap();
+    let provider = LogarchiveProvider::new(test_path.as_path());
+    let string_results = collect_strings(&provider).unwrap();
+    let shared_strings_results = collect_shared_strings(&provider).unwrap();
+    let timesync_data = collect_timesync(&provider).unwrap();
+    let log_data = collect_logs(&provider);
+    let mut log_data_vec = Vec::new();
 
-    test_path.push("dsc");
-    let shared_strings_results = collect_shared_strings(&test_path.display().to_string()).unwrap();
-    test_path.pop();
-
-    test_path.push("timesync");
-    let timesync_data = collect_timesync(&test_path.display().to_string()).unwrap();
-    test_path.pop();
-
-    test_path.push("Persist");
-
-    let mut log_data = collect_logs(&test_path.display().to_string());
-    test_path.pop();
-
-    test_path.push("HighVolume");
-    let mut results = collect_logs(&test_path.display().to_string());
-    log_data.append(&mut results);
-    test_path.pop();
-
-    test_path.push("Special");
-    let mut results = collect_logs(&test_path.display().to_string());
-    log_data.append(&mut results);
-    test_path.pop();
-
-    test_path.push("logdata.LiveData.tracev3");
-    let results = parse_log(&test_path.display().to_string()).unwrap();
-    log_data.push(results);
-    test_path.pop();
-
-    let mut log_data_vec: Vec<LogData> = Vec::new();
     let exclude_missing = false;
     for logs in &log_data {
         let (mut data, _) = build_log(
