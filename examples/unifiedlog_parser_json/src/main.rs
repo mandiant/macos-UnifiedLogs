@@ -173,7 +173,7 @@ fn parse_trace_file(
 }
 
 // Create JSON files in JSONL format
-fn output(results: &Vec<LogData>, output_name: &str) -> Result<(), Box<dyn Error>> {
+fn output(results: &[LogData], output_name: &str) -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
     let mut filepath = args.output.unwrap_or(PathBuf::from("."));
     filepath.push(output_name);
