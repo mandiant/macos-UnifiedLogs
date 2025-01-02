@@ -60,7 +60,7 @@ pub(crate) fn check_objects(
     } else if format_string.contains("bool") {
         Ok(lowercase_bool(&message_values[index].message_strings))
     } else if format_string.contains("uuid_t") {
-        Ok(parse_uuid(&message_values[index].message_strings))
+        parse_uuid(&message_values[index].message_strings)
     } else if format_string.contains("darwin.errno") {
         Ok(errno_codes(&message_values[index].message_strings))
     } else if format_string.contains("darwin.mode") {
@@ -92,13 +92,13 @@ pub(crate) fn check_objects(
     } else if format_string.contains("network:sockaddr") {
         sockaddr(&message_values[index].message_strings)
     } else if format_string.contains("time_t") {
-        Ok(parse_time(&message_values[index].message_strings))
+        parse_time(&message_values[index].message_strings)
     } else if format_string.contains("mdns:dnshdr") {
         parse_dns_header(&message_values[index].message_strings)
     } else if format_string.contains("mdns:rd.svcb") {
         get_service_binding(&message_values[index].message_strings)
     } else if format_string.contains("location:IOMessage") {
-        Ok(io_message(&message_values[index].message_strings))
+        io_message(&message_values[index].message_strings).map(ToString::to_string)
     } else if format_string.contains("mdnsresponder:domain_name") {
         get_domain_name(&message_values[index].message_strings)
     } else if format_string.contains("mdnsresponder:mac_addr") {
@@ -108,21 +108,21 @@ pub(crate) fn check_objects(
     } else if format_string.contains("mdns:addrmv") {
         Ok(dns_addrmv(&message_values[index].message_strings))
     } else if format_string.contains("mdns:rrtype") {
-        Ok(dns_records(&message_values[index].message_strings))
+        dns_records(&message_values[index].message_strings).map(ToString::to_string)
     } else if format_string.contains("mdns:nreason") {
-        Ok(dns_reason(&message_values[index].message_strings))
+        dns_reason(&message_values[index].message_strings).map(ToString::to_string)
     } else if format_string.contains("mdns:protocol") {
-        Ok(dns_protocol(&message_values[index].message_strings))
+        dns_protocol(&message_values[index].message_strings).map(ToString::to_string)
     } else if format_string.contains("mdns:dns.idflags") {
-        Ok(dns_idflags(&message_values[index].message_strings))
+        dns_idflags(&message_values[index].message_strings)
     } else if format_string.contains("mdns:dns.counts") {
-        Ok(dns_counts(&message_values[index].message_strings))
+        dns_counts(&message_values[index].message_strings).map(|x| x.to_string())
     } else if format_string.contains("mdns:yesno") {
         Ok(dns_yes_no(&message_values[index].message_strings))
     } else if format_string.contains("mdns:acceptable") {
         Ok(dns_acceptable(&message_values[index].message_strings))
     } else if format_string.contains("mdns:gaiopts") {
-        Ok(dns_getaddrinfo_opts(&message_values[index].message_strings))
+        dns_getaddrinfo_opts(&message_values[index].message_strings).map(ToString::to_string)
     } else {
         Ok(String::new())
     };
