@@ -419,7 +419,7 @@ fn location_tracker_object(tracker: &LocationTrackerState) -> String {
 }
 
 /// Parse location tracker state data
-pub(crate) fn io_message(data: &str) -> String {
+pub(crate) fn io_message(data: &str) -> Result<&'static str, DecoderError<'_>> {
     // Found in dyldcache
     let message = match data {
         "3758097008" => "CanSystemSleep",
@@ -447,11 +447,14 @@ pub(crate) fn io_message(data: &str) -> String {
         "3758096976" => "SystemWillPowerOff",
         "3758096981" => "SystemPagingOff",
         _ => {
-            warn!("[macos-unifiedlogs] Unknown IO Message: {}", data);
-            data
+            return Err(DecoderError::Parse {
+                input: data.as_bytes(),
+                parser_name: "io message",
+                message: "Unknown IO Message",
+            });
         }
     };
-    message.to_string()
+    Ok(message)
 }
 
 /// Parse and get the location Daemon tracker
@@ -640,8 +643,7 @@ mod tests {
     #[test]
     fn test_io_message() {
         let test_data = "3758096981";
-        let result = io_message(test_data);
-
+        let result = io_message(test_data).unwrap();
         assert_eq!(result, "SystemPagingOff")
     }
 

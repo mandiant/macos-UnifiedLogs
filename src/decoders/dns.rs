@@ -11,7 +11,7 @@ use super::{
 };
 use crate::util::{decode_standard, extract_string, extract_string_size};
 use byteorder::{BigEndian, WriteBytesExt};
-use log::{error, warn};
+use log::error;
 use nom::{
     bytes::complete::take,
     combinator::{fail, iterator, map, map_parser, verify},
@@ -341,7 +341,7 @@ pub(crate) fn dns_addrmv(data: &str) -> String {
 }
 
 /// Translate DNS records to string
-pub(crate) fn dns_records(data: &str) -> String {
+pub(crate) fn dns_records(data: &str) -> Result<&'static str, DecoderError<'_>> {
     // Found at https://en.wikipedia.org/wiki/List_of_DNS_record_types
     let message = match data {
         "1" => "A",
@@ -393,18 +393,18 @@ pub(crate) fn dns_records(data: &str) -> String {
         "32768" => "TA",
         "32769" => "DLV",
         _ => {
-            warn!(
-                "[macos-unifiedlogs] Unknown DNS Resource Record Type: {}",
-                data
-            );
-            data
+            return Err(DecoderError::Parse {
+                input: data.as_bytes(),
+                parser_name: "dns records",
+                message: "Unknown DNS Resource Record Type",
+            });
         }
     };
-    message.to_string()
+    Ok(message)
 }
 
 /// Translate DNS response/reason? to string
-pub(crate) fn dns_reason(data: &str) -> String {
+pub(crate) fn dns_reason(data: &str) -> Result<&'static str, DecoderError<'_>> {
     let message = match data {
         "1" => "no-data",
         "4" => "query-suppressed",
@@ -412,63 +412,59 @@ pub(crate) fn dns_reason(data: &str) -> String {
         "2" => "nxdomain",
         "5" => "server error",
         _ => {
-            warn!("[macos-unifiedlogs] Unknown DNS Reason: {}", data);
-            data
+            return Err(DecoderError::Parse {
+                input: data.as_bytes(),
+                parser_name: "dns reason",
+                message: "Unknown DNS Reason",
+            });
         }
     };
-    message.to_string()
+    Ok(message)
 }
 
 /// Translate the DNS protocol used
-pub(crate) fn dns_protocol(data: &str) -> String {
+pub(crate) fn dns_protocol(data: &str) -> Result<&'static str, DecoderError<'_>> {
     let message = match data {
         "1" => "UDP",
         "2" => "TCP",
         //"3" => "HTTP",??
         "4" => "HTTPS",
         _ => {
-            warn!("[macos-unifiedlogs] Unknown DNS Protocol: {}", data);
-            data
+            return Err(DecoderError::Parse {
+                input: data.as_bytes(),
+                parser_name: "dns protocol",
+                message: "Unknown DNS Protocol",
+            });
         }
     };
-    message.to_string()
+    Ok(message)
 }
 
 /// Get just the DNS flags associated with the DNS header
-pub(crate) fn dns_idflags(data: &str) -> String {
-    let flags_results = data.parse::<u32>();
-    let flags: u32 = match flags_results {
-        Ok(results) => results,
-        Err(err) => {
-            error!(
-                "[macos-unifiedlogs] Failed to convert ID Flags to int: {:?}",
-                err
-            );
-            return data.to_string();
-        }
-    };
+pub(crate) fn dns_idflags(input: &str) -> Result<String, DecoderError<'_>> {
+    let flags = input.parse::<u32>().map_err(|_| DecoderError::Parse {
+        input: input.as_bytes(),
+        parser_name: "dns id flags",
+        message: "Failed to convert ID Flags to int",
+    })?;
 
     let mut bytes = [0u8; size_of::<u32>()];
-    let result = bytes.as_mut().write_u32::<BigEndian>(flags);
-    match result {
-        Ok(_) => {}
-        Err(err) => {
-            error!(
-                "[macos-unifiedlogs] Failed to convert ID Flags to bytes: {:?}",
-                err
-            );
-            return data.to_string();
-        }
-    }
+    bytes
+        .as_mut()
+        .write_u32::<BigEndian>(flags)
+        .map_err(|_| DecoderError::Parse {
+            input: input.as_bytes(),
+            parser_name: "dns id flags",
+            message: "Failed to convert ID Flags to bytes",
+        })?;
 
-    let message_result = parse_idflags(&bytes);
-    match message_result {
-        Ok((_, result)) => result,
-        Err(err) => {
-            error!("[macos-unifiedlogs] Failed to get ID Flags: {:?}", err);
-            data.to_string()
-        }
-    }
+    let (_, result) = parse_idflags(&bytes).map_err(|_| DecoderError::Parse {
+        input: input.as_bytes(),
+        parser_name: "dns id flags",
+        message: "Failed to get ID Flags",
+    })?;
+
+    Ok(result)
 }
 
 /// Parse just the DNS flags associated with the DNS header
@@ -494,47 +490,34 @@ fn parse_idflags(data: &[u8]) -> nom::IResult<&[u8], String> {
 }
 
 /// Get just the DNS count data associated with the DNS header
-pub(crate) fn dns_counts(data: &str) -> String {
-    // todo: not sure error handling should be handled as strings
-    // todo: this function
-
-    let flags_results = data.parse::<u64>();
-    let flags: u64 = match flags_results {
-        Ok(results) => results,
-        Err(err) => {
-            error!(
-                "[macos-unifiedlogs] Failed to convert counts to int: {:?}",
-                err
-            );
-            return data.to_string();
-        }
-    };
+pub(crate) fn dns_counts(input: &str) -> Result<DnsCounts, DecoderError<'_>> {
+    let flags = input.parse::<u64>().map_err(|_| DecoderError::Parse {
+        input: input.as_bytes(),
+        parser_name: "dns counts",
+        message: "Failed to convert counts to int",
+    })?;
 
     let mut bytes = [0u8; size_of::<u64>()];
-    let result = bytes.as_mut().write_u64::<BigEndian>(flags);
-    match result {
-        Ok(_) => {}
-        Err(err) => {
-            error!(
-                "[macos-unifiedlogs] Failed to convert counts to bytes: {:?}",
-                err
-            );
-            return data.to_string();
-        }
-    }
+    bytes
+        .as_mut()
+        .write_u64::<BigEndian>(flags)
+        .map_err(|_| DecoderError::Parse {
+            input: input.as_bytes(),
+            parser_name: "dns counts",
+            message: "Failed to convert counts to bytes",
+        })?;
 
-    let message_result = parse_counts(&bytes);
-    match message_result {
-        Ok((_, result)) => result.to_string(),
-        Err(err) => {
-            error!("[macos-unifiedlogs] Failed to get counts: {:?}", err);
-            data.to_string()
-        }
-    }
+    let (_, counts) = parse_counts(&bytes).map_err(|_| DecoderError::Parse {
+        input: input.as_bytes(),
+        parser_name: "dns counts",
+        message: "Failed to get counts",
+    })?;
+
+    Ok(counts)
 }
 
 #[derive(Debug, PartialEq)]
-struct DnsCounts {
+pub(crate) struct DnsCounts {
     question: u16,
     answer: u16,
     authority: u16,
@@ -584,18 +567,21 @@ pub(crate) fn dns_acceptable(data: &str) -> String {
 }
 
 /// Translate DNS getaddrinfo log values
-pub(crate) fn dns_getaddrinfo_opts(data: &str) -> String {
+pub(crate) fn dns_getaddrinfo_opts(data: &str) -> Result<&'static str, DecoderError<'_>> {
     let message = match data {
         "0" => "0x0 {}",
         "8" => "0x8 {use-failover}",
         "12" => "0xC {in-app-browser, use-failover}",
         "24" => "0x18 {use-failover, prohibit-encrypted-dns}",
         _ => {
-            warn!("[macos-unifiedlogs] Unknown getaddrinfo options: {}", data);
-            data
+            return Err(DecoderError::Parse {
+                input: data.as_bytes(),
+                parser_name: "dns getaddrinfo opts",
+                message: "Unknown DNS getaddrinfo options",
+            });
         }
     };
-    message.to_string()
+    Ok(message)
 }
 
 #[cfg(test)]
@@ -734,7 +720,7 @@ mod tests {
     fn test_dns_records() {
         let test_data = "65";
 
-        let result = dns_records(test_data);
+        let result = dns_records(test_data).unwrap();
         assert_eq!(result, "HTTPS");
     }
 
@@ -742,7 +728,7 @@ mod tests {
     fn test_dns_reason() {
         let test_data = "1";
 
-        let result = dns_reason(test_data);
+        let result = dns_reason(test_data).unwrap();
         assert_eq!(result, "no-data");
     }
 
@@ -750,7 +736,7 @@ mod tests {
     fn test_dns_protocol() {
         let test_data = "1";
 
-        let result = dns_protocol(test_data);
+        let result = dns_protocol(test_data).unwrap();
         assert_eq!(result, "UDP");
     }
 
@@ -758,7 +744,7 @@ mod tests {
     fn test_dns_idflags() {
         let test_data = "2126119168";
 
-        let result = dns_idflags(test_data);
+        let result = dns_idflags(test_data).unwrap();
         assert_eq!(result, "id: 0x7EBA, flags: 0x100 Opcode: QUERY, \n    Query Type: 0,\n    Authoritative Answer Flag: 0, \n    Truncation Flag: 0, \n    Recursion Desired: 1, \n    Recursion Available: 0, \n    Response Code: No Error");
     }
 
@@ -774,8 +760,15 @@ mod tests {
     fn test_dns_counts() {
         let test_data = "281474976710656";
 
-        let result = dns_counts(test_data);
-        assert_eq!(result, "Question Count: 1, Answer Record Count: 0, Authority Record Count: 0, Additional Record Count: 0");
+        let result = dns_counts(test_data).unwrap();
+        let expected = DnsCounts {
+            question: 1,
+            answer: 0,
+            authority: 0,
+            additional: 0,
+        };
+
+        assert_eq!(result, expected);
     }
 
     #[test]
@@ -814,7 +807,7 @@ mod tests {
     fn test_dns_getaddrinfo_opts() {
         let test_data = "8";
 
-        let result = dns_getaddrinfo_opts(test_data);
+        let result = dns_getaddrinfo_opts(test_data).unwrap();
         assert_eq!(result, "0x8 {use-failover}");
     }
 }
