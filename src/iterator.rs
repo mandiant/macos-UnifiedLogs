@@ -2,7 +2,7 @@ use crate::{
     header::HeaderChunk,
     preamble::LogPreamble,
     unified_log::{LogData, UnifiedLogCatalogData, UnifiedLogData},
-    util::padding_size,
+    util::padding_size_8,
 };
 use log::{error, warn};
 use nom::bytes::complete::take;
@@ -79,7 +79,7 @@ impl Iterator for UnifiedLogIterator {
                 );
             }
 
-            let padding_size = padding_size(preamble.chunk_data_size);
+            let padding_size = padding_size_8(preamble.chunk_data_size);
             if self.data.len() < padding_size as usize {
                 self.data = Vec::new();
                 break;

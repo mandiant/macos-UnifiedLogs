@@ -10,7 +10,7 @@ use crate::chunks::firehose::loss::FirehoseLoss;
 use crate::chunks::firehose::nonactivity::FirehoseNonActivity;
 use crate::chunks::firehose::signpost::FirehoseSignpost;
 use crate::chunks::firehose::trace::FirehoseTrace;
-use crate::util::{encode_standard, extract_string_size, padding_size, padding_size_four};
+use crate::util::{encode_standard, extract_string_size, padding_size_8, padding_size_four};
 use log::{debug, error, warn};
 use nom::bytes::complete::take_while;
 use nom::combinator::map;
@@ -32,9 +32,12 @@ pub struct FirehosePreamble {
     pub second_number_proc_id: u32,
     pub ttl: u8,
     pub collapsed: u8,
-    pub unknown: Vec<u8>,                 // reserved?
-    pub public_data_size: u16, // Size includes the size itself and the 8 bytes below and the public data
-    pub private_data_virtual_offset: u16, // value is 0x1000 (4096) if there is NO private data
+    /// reserved?
+    pub unknown: Vec<u8>,
+    /// Size includes the size itself and the 8 bytes below and the public data      
+    pub public_data_size: u16,
+    /// value is 0x1000 (4096) if there is NO private data
+    pub private_data_virtual_offset: u16,
     pub unkonwn2: u16,
     pub unknown3: u16,
     pub base_continous_time: u64,
@@ -43,8 +46,10 @@ pub struct FirehosePreamble {
 
 #[derive(Debug, Clone, Default)]
 pub struct Firehose {
-    pub unknown_log_activity_type: u8, // 0x2 is Activity, 0x4 is non-activity, 0x6 is signpost, 0x3 trace
-    pub unknown_log_type: u8, // Unkonwn but possibly log type (Info/Activity, Debug, Error, Fault, Signpost, System, Default)
+    /// 0x2 is Activity, 0x4 is non-activity, 0x6 is signpost, 0x3 trace
+    pub unknown_log_activity_type: u8,
+    /// Unkonwn but possibly log type (Info/Activity, Debug, Error, Fault, Signpost, System, Default)
+    pub unknown_log_type: u8,
     pub flags: u16,
     pub format_string_location: u32,
     pub thread_id: u64,
@@ -58,7 +63,8 @@ pub struct Firehose {
     pub firehose_trace: FirehoseTrace,
     pub unknown_item: u8,
     pub number_items: u8,
-    pub message: FirehoseItemData, // Log values extracted
+    /// Log values extracted
+    pub message: FirehoseItemData,
 }
 
 #[derive(Debug, Default)]
@@ -78,17 +84,20 @@ pub struct FirehoseItemData {
 
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct FirehoseItemInfo {
-    pub message_strings: String, // The message entry.
-    pub item_type: u8,           // Type of item: strings, numbers, objects, precision
-    pub item_size: u16,          // Size of message in bytes
+    /// The message entry.
+    pub message_strings: String,
+    /// Type of item: strings, numbers, objects, precision
+    pub item_type: u8,
+    /// Size of message in bytes
+    pub item_size: u16,
 }
 
 impl FirehosePreamble {
-    // Now at the end of firehose item types.
-    // Remaining data (if any) contains strings for the string item types
+    /// Now at the end of firehose item types.
+    /// Remaining data (if any) contains strings for the string item types
     const STRING_ITEM: [u8; 8] = [0x20, 0x22, 0x40, 0x42, 0x30, 0x31, 0x32, 0xf2];
     const PRIVATE_NUMBER: u8 = 0x1;
-    // 0x81 and 0xf1 Added in macOS Sequioa
+    /// 0x81 and 0xf1 Added in macOS Sequioa
     const PRIVATE_STRINGS: [u8; 7] = [0x21, 0x25, 0x35, 0x31, 0x41, 0x81, 0xf1];
     const LOG_TYPES: [u8; 5] = [0x2, 0x6, 0x4, 0x7, 0x3];
     const REMNANT_DATA: u8 = 0x0;
@@ -413,7 +422,7 @@ impl FirehosePreamble {
         Ok((private_string_start, ()))
     }
 
-    // Parse all the different types of Firehose data (activity, non-activity, loss, trace, signpost)
+    /// Parse all the different types of Firehose data (activity, non-activity, loss, trace, signpost)
     fn parse_firehose(data: &[u8]) -> nom::IResult<&[u8], Firehose> {
         let mut firehose_results = Firehose::default();
 
@@ -510,7 +519,7 @@ impl FirehosePreamble {
         let (remaining_data, taken_data) = take_while(|b: u8| b == 0)(input)?;
 
         // Verify we did not nom into remnant/junk data
-        let padding_data = padding_size(data_size.into());
+        let padding_data = padding_size_8(data_size.into());
         let (mut input, _) = take(padding_data)(input)?;
         if (padding_data as usize) > taken_data.len() {
             input = remaining_data;
@@ -519,7 +528,7 @@ impl FirehosePreamble {
         Ok((input, firehose_results))
     }
 
-    // Parse Backtrace data for log entry (chunk). This only exists if has_context_data flag is set
+    /// Parse Backtrace data for log entry (chunk). This only exists if `has_context_data` flag is set
     fn get_backtrace_data(data: &[u8]) -> nom::IResult<&[u8], Vec<String>> {
         let (input, _unknown_data) = take(3usize)(data)?;
         let (input, uuid_count) = map(le_u8, usize::from)(input)?;
@@ -551,7 +560,7 @@ impl FirehosePreamble {
         Ok((input, backtrace_data))
     }
 
-    // Get the strings, precision, and private (sensitive) firehose message items
+    /// Get the strings, precision, and private (sensitive) firehose message items
     fn get_firehose_items(data: &[u8]) -> nom::IResult<&[u8], FirehoseItemType> {
         let (firehost_input, item_type) = le_u8(data)?;
         let (mut firehose_input, item_size) = le_u8(firehost_input)?;
@@ -600,7 +609,7 @@ impl FirehosePreamble {
         Ok((firehose_input, item))
     }
 
-    // Parse the item string
+    /// Parse the item string
     fn parse_item_string(
         data: &[u8],
         item_type: u8,
@@ -629,7 +638,7 @@ impl FirehosePreamble {
         Ok((input, message_string))
     }
 
-    // Parse the Firehose item number
+    /// Parse the Firehose item number
     fn parse_item_number(data: &[u8], item_size: u16) -> nom::IResult<&[u8], i64> {
         let input = data;
         Ok(match item_size {
