@@ -24,7 +24,7 @@ use crate::header::HeaderChunk;
 use crate::message::format_firehose_log_message;
 use crate::preamble::LogPreamble;
 use crate::timesync::TimesyncBoot;
-use crate::util::{extract_string, padding_size, unixepoch_to_iso};
+use crate::util::{extract_string, padding_size_8, unixepoch_to_iso};
 use crate::uuidtext::UUIDText;
 use log::{error, warn};
 use nom::bytes::complete::take;
@@ -35,7 +35,8 @@ use serde::Serialize;
 pub struct UnifiedLogData {
     pub header: Vec<HeaderChunk>,
     pub catalog_data: Vec<UnifiedLogCatalogData>,
-    pub oversize: Vec<Oversize>, // Keep a global cache of oversize string
+    /// Keep a global cache of oversize string
+    pub oversize: Vec<Oversize>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -116,7 +117,7 @@ impl<'a> LogIterator<'a> {
 impl Iterator for LogIterator<'_> {
     type Item = (Vec<LogData>, UnifiedLogData);
 
-    // catalog_data_index == 0
+    /// `catalog_data_index` == 0
     fn next(&mut self) -> Option<Self::Item> {
         let catalog_data = self
             .unified_log_data
@@ -151,10 +152,9 @@ impl Iterator for LogIterator<'_> {
                 let mut log_data = LogData {
                     subsystem: String::new(),
                     thread_id: firehose.thread_id,
-                    pid: CatalogChunk::get_pid(
-                        &preamble.first_number_proc_id,
-                        &preamble.second_number_proc_id,
-                        &catalog_data.catalog,
+                    pid: catalog_data.catalog.get_pid(
+                        preamble.first_number_proc_id,
+                        preamble.second_number_proc_id,
                     ),
                     library: String::new(),
                     activity_id: 0,
@@ -168,10 +168,9 @@ impl Iterator for LogIterator<'_> {
                     process: String::new(),
                     message: String::new(),
                     event_type: LogData::get_event_type(&firehose.unknown_log_activity_type),
-                    euid: CatalogChunk::get_euid(
-                        &preamble.first_number_proc_id,
-                        &preamble.second_number_proc_id,
-                        &catalog_data.catalog,
+                    euid: catalog_data.catalog.get_euid(
+                        preamble.first_number_proc_id,
+                        preamble.second_number_proc_id,
                     ),
                     boot_uuid: self.unified_log_data.header[0].boot_uuid.to_owned(),
                     timezone_name: self.unified_log_data.header[0]
@@ -267,11 +266,10 @@ impl Iterator for LogIterator<'_> {
                         }
 
                         if firehose.firehose_non_activity.subsystem_value != 0 {
-                            let results = CatalogChunk::get_subsystem(
-                                &firehose.firehose_non_activity.subsystem_value,
-                                &preamble.first_number_proc_id,
-                                &preamble.second_number_proc_id,
-                                &catalog_data.catalog,
+                            let results = catalog_data.catalog.get_subsystem(
+                                firehose.firehose_non_activity.subsystem_value,
+                                preamble.first_number_proc_id,
+                                preamble.second_number_proc_id,
                             );
                             match results {
                                 Ok((_, subsystem)) => {
@@ -420,11 +418,10 @@ impl Iterator for LogIterator<'_> {
                             }
                         }
                         if firehose.firehose_signpost.subsystem != 0 {
-                            let results = CatalogChunk::get_subsystem(
-                                &firehose.firehose_signpost.subsystem,
-                                &preamble.first_number_proc_id,
-                                &preamble.second_number_proc_id,
-                                &catalog_data.catalog,
+                            let results = catalog_data.catalog.get_subsystem(
+                                firehose.firehose_signpost.subsystem,
+                                preamble.first_number_proc_id,
+                                preamble.second_number_proc_id,
                             );
                             match results {
                                 Ok((_, subsystem)) => {
@@ -676,7 +673,7 @@ impl LogData {
                 );
             }
 
-            let padding_size = padding_size(preamble.chunk_data_size);
+            let padding_size = padding_size_8(preamble.chunk_data_size);
             if data.len() < padding_size as usize {
                 break;
             }

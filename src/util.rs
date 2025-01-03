@@ -15,18 +15,32 @@ use nom::{
 };
 use std::str::from_utf8;
 
+/// Returns the padding to consume in order to align to 8 bytes
+/// Actual total size is computed as `items_count` * `items_size`
+pub(crate) fn anticipated_padding_size_8(items_count: u64, items_size: u64) -> u64 {
+    anticipated_padding_size(items_count, items_size, 8)
+}
+
+/// Returns the padding to consume in order to align to 'alignment' bytes
+/// Actual total size is computed as `items_count` * `items_size`
+pub(crate) fn anticipated_padding_size(items_count: u64, items_size: u64, alignment: u64) -> u64 {
+    let total_size = items_count * items_size;
+    padding_size(total_size, alignment)
+}
+
 /// Calculate 8 byte padding
-pub(crate) fn padding_size(data: u64) -> u64 {
-    const ALIGNMENT: u64 = 8;
-    // Calculate padding to achieve 64-bit alignment
-    (ALIGNMENT - (data & (ALIGNMENT - 1))) & (ALIGNMENT - 1)
+pub(crate) fn padding_size_8(data_size: u64) -> u64 {
+    padding_size(data_size, 8_u64)
 }
 
 /// Calculate 4 byte padding
-pub(crate) fn padding_size_four(data: u64) -> u64 {
-    const ALIGNMENT: u64 = 4;
-    // Calculate padding to achieve 64-bit alignment
-    (ALIGNMENT - (data & (ALIGNMENT - 1))) & (ALIGNMENT - 1)
+pub(crate) fn padding_size_four(data_size: u64) -> u64 {
+    padding_size(data_size, 4_u64)
+}
+
+/// Calculate padding based on provided `alignment`
+pub(crate) fn padding_size(data_size: u64, alignment: u64) -> u64 {
+    (alignment - (data_size & (alignment - 1))) & (alignment - 1)
 }
 
 /// Extract a size based on provided string size from Firehose string item entries
@@ -154,19 +168,30 @@ pub(crate) fn unixepoch_to_iso(timestamp: &i64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use test_case::test_case;
 
-    #[test]
-    fn test_padding_size() {
-        let data = 8;
-        let results = padding_size(data);
-        assert_eq!(results, 0);
+    #[test_case(0, 8, 8 => 0)]
+    #[test_case(1, 8, 8 => 0)]
+    #[test_case(2, 16, 8 => 0)]
+    #[test_case(2, 5, 8 => 6)]
+    fn test_missing_padding(n: u64, size: u64, alignment: u64) -> u64 {
+        anticipated_padding_size(n, size, alignment)
     }
 
-    #[test]
-    fn test_padding_size_four() {
-        let data = 4;
-        let results = padding_size_four(data);
-        assert_eq!(results, 0);
+    #[test_case(0 => 0)]
+    #[test_case(7 => 1)]
+    #[test_case(8 => 0)]
+    #[test_case(16 => 0)]
+    fn test_padding_size_8(data_size: u64) -> u64 {
+        padding_size_8(data_size)
+    }
+
+    #[test_case(0 => 0)]
+    #[test_case(3 => 1)]
+    #[test_case(4 => 0)]
+    #[test_case(8 => 0)]
+    fn test_padding_size_4(data_size: u64) -> u64 {
+        padding_size_four(data_size)
     }
 
     #[test]
