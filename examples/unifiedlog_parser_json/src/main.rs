@@ -40,7 +40,7 @@ struct Args {
 }
 
 fn main() {
-    println!("Starting Unified Log parser...");
+    eprintln!("Starting Unified Log parser...");
     // Set logging level to warning
     SimpleLogger::init(LevelFilter::Warn, Config::default())
         .expect("Failed to initialize simple logger");
@@ -81,7 +81,7 @@ fn parse_log_archive(path: &str) {
         path,
     );
 
-    println!("\nFinished parsing Unified Log data. Saved results to json files");
+    eprintln!("\nFinished parsing Unified Log data. Saved results to json files");
 }
 
 // Parse a live macOS system
@@ -97,7 +97,7 @@ fn parse_live_system() {
         "/private/var/db/diagnostics",
     );
 
-    println!("\nFinished parsing Unified Log data. Saved results to json files");
+    eprintln!("\nFinished parsing Unified Log data. Saved results to json files");
 }
 
 // Use the provided strings, shared strings, timesync data to parse the Unified Log data at provided path.
@@ -133,12 +133,12 @@ fn parse_trace_file(
         for log_path in paths {
             let data = log_path.unwrap();
             let full_path = data.path().display().to_string();
-            println!("Parsing: {}", full_path);
+            eprintln!("Parsing: {}", full_path);
 
             let log_data = if data.path().exists() {
                 parse_log(&full_path).unwrap()
             } else {
-                println!("File {} no longer on disk", full_path);
+                eprintln!("File {} no longer on disk", full_path);
                 continue;
             };
 
@@ -177,12 +177,12 @@ fn parse_trace_file(
         for log_path in paths {
             let data = log_path.unwrap();
             let full_path = data.path().display().to_string();
-            println!("Parsing: {}", full_path);
+            eprintln!("Parsing: {}", full_path);
 
             let mut log_data = if data.path().exists() {
                 parse_log(&full_path).unwrap()
             } else {
-                println!("File {} no longer on disk", full_path);
+                eprintln!("File {} no longer on disk", full_path);
                 continue;
             };
             // Append all previously parsed Oversize entries from tracker to current parsed tracev3 file
@@ -221,12 +221,12 @@ fn parse_trace_file(
         for log_path in paths {
             let data = log_path.unwrap();
             let full_path = data.path().display().to_string();
-            println!("Parsing: {}", full_path);
+            eprintln!("Parsing: {}", full_path);
 
             let mut log_data = if data.path().exists() {
                 parse_log(&full_path).unwrap()
             } else {
-                println!("File {} no longer on disk", full_path);
+                eprintln!("File {} no longer on disk", full_path);
                 continue;
             };
 
@@ -263,12 +263,12 @@ fn parse_trace_file(
         for log_path in paths {
             let data = log_path.unwrap();
             let full_path = data.path().display().to_string();
-            println!("Parsing: {}", full_path);
+            eprintln!("Parsing: {}", full_path);
 
             let mut log_data = if data.path().exists() {
                 parse_log(&full_path).unwrap()
             } else {
-                println!("File {} no longer on disk", full_path);
+                eprintln!("File {} no longer on disk", full_path);
                 continue;
             };
 
@@ -301,7 +301,7 @@ fn parse_trace_file(
 
     // Check if livedata exists. We only have it if 'log collect' was used
     if archive_path.exists() {
-        println!("Parsing: logdata.LiveData.tracev3");
+        eprintln!("Parsing: logdata.LiveData.tracev3");
         let mut log_data = parse_log(&archive_path.display().to_string()).unwrap();
         log_data.oversize.append(&mut oversize_strings.oversize);
         let (results, missing_logs) = build_log(
@@ -341,7 +341,7 @@ fn parse_trace_file(
 
         output(&results, "dataFoundInMultipleLogFiles").unwrap();
     }
-    println!("Parsed {} log entries", log_count);
+    eprintln!("Parsed {} log entries", log_count);
 }
 
 // Create JSON files in JSONL format

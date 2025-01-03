@@ -311,9 +311,9 @@ fn parse_trace_file(
     }
 
     exclude_missing = false;
-    println!("Oversize cache size: {}", oversize_strings.oversize.len());
-    println!("Logs with missing oversize strings: {}", missing_data.len());
-    println!("Checking Oversize cache one more time...");
+    eprintln!("Oversize cache size: {}", oversize_strings.oversize.len());
+    eprintln!("Logs with missing oversize strings: {}", missing_data.len());
+    eprintln!("Checking Oversize cache one more time...");
 
     // Since we have all Oversize entries now. Go through any log entries that we were not able to build before
     for mut leftover_data in missing_data {

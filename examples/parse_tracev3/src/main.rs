@@ -20,7 +20,7 @@ use std::io::Write;
 use std::path::Path;
 
 fn main() {
-    println!("Starting Unified Log parser...");
+    eprintln!("Starting Unified Log parser...");
     // Set logging to Error only, since we are parsing only a tracev3, we wont have enough data to build the whole log
     SimpleLogger::init(LevelFilter::Error, Config::default())
         .expect("Failed to initialize simple logger");
@@ -30,7 +30,7 @@ fn main() {
         let archive_path = &args[1];
         parse_trace_file(archive_path);
     } else {
-        println!("Expected an argument for a tracev3 file")
+        eprintln!("Expected an argument for a tracev3 file")
     }
 }
 
@@ -53,7 +53,7 @@ fn parse_trace_file(path: &str) {
         exclude_missing,
     );
     output(&results, filename.file_name().unwrap().to_str().unwrap()).unwrap();
-    println!(
+    eprintln!(
         "\nParsed file: {} to {}.json",
         path,
         filename.file_name().unwrap().to_str().unwrap()
