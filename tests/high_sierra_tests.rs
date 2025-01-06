@@ -9,7 +9,7 @@ use std::{fs, path::PathBuf};
 
 use macos_unifiedlogs::{
     parser::{build_log, collect_shared_strings, collect_strings, collect_timesync, parse_log},
-    unified_log::{LogData, UnifiedLogData},
+    unified_log::{EventType, LogData, LogType, UnifiedLogData},
 };
 use regex::Regex;
 
@@ -87,8 +87,7 @@ fn test_build_log_high_sierra() {
     assert_eq!(results[0].pid, 59);
     assert_eq!(results[0].thread_id, 622);
     assert_eq!(results[0].category, "default");
-    assert_eq!(results[0].log_type, "Default");
-    assert_eq!(results[0].event_type, "Log");
+    assert_eq!(results[0].event_type, EventType::Log(LogType::Default));
     assert_eq!(results[0].euid, 0);
     assert_eq!(results[0].boot_uuid, "30774817CF1549B0920E1A8E17D47AB5");
     assert_eq!(results[0].timezone_name, "Pacific");
@@ -141,8 +140,7 @@ fn test_build_log_complex_format_high_sierra() {
             assert_eq!(result.pid, 580);
             assert_eq!(result.thread_id, 8759);
             assert_eq!(result.category, "persistentTimer.com.apple.CalendarNotification.EKTravelEngine.periodicRefreshTimer");
-            assert_eq!(result.log_type, "Default");
-            assert_eq!(result.event_type, "Log");
+            assert_eq!(result.event_type, EventType::Log(LogType::Default));
             assert_eq!(result.euid, 501);
             assert_eq!(result.boot_uuid, "30774817CF1549B0920E1A8E17D47AB5");
             assert_eq!(result.timezone_name, "Pacific");

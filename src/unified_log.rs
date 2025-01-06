@@ -31,7 +31,7 @@ use nom::bytes::complete::take;
 use regex::Regex;
 use serde::Serialize;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Hash)]
 pub enum LogType {
     Debug,
     Info,
@@ -42,7 +42,7 @@ pub enum LogType {
     Useraction,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Hash)]
 pub enum Signpost {
     Unknown,
     ProcessEvent,
@@ -56,11 +56,11 @@ pub enum Signpost {
     ThreadEnd,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Hash)]
 pub enum EventType {
     Unknown,
     Log(LogType),
-    Activity,
+    Activity(LogType),
     Trace,
     Signpost(Signpost),
     Simpledump,
@@ -825,7 +825,7 @@ impl LogData {
     fn get_event_type(event_type: u8, log_type: u8, activity_type: u8) -> EventType {
         match event_type {
             0x4 => EventType::Log(Self::get_log_type(log_type, activity_type)),
-            0x2 => EventType::Activity,
+            0x2 => EventType::Activity(Self::get_log_type(log_type, activity_type)),
             0x3 => EventType::Trace,
             0x6 => EventType::Signpost(Self::get_signpost(log_type)),
             0x7 => EventType::Loss,
