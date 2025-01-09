@@ -117,6 +117,12 @@ impl FileProvider for LiveSystemProvider {
     fn dsc_files(&self) -> Box<dyn Iterator<Item = Box<dyn SourceFile>>> {
         let path = PathBuf::from("/private/var/db/uuidtext/dsc");
         Box::new(WalkDir::new(path).into_iter().filter_map(|entry| {
+            if !matches!(
+                LogFileType::from(entry.as_ref().ok()?.path()),
+                LogFileType::Dsc
+            ) {
+                return None;
+            }
             Some(Box::new(LocalFile::new(entry.ok()?.path()).ok()?) as Box<dyn SourceFile>)
         }))
     }
