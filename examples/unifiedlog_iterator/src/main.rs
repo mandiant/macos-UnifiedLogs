@@ -11,7 +11,7 @@ use macos_unifiedlogs::dsc::SharedCacheStrings;
 use macos_unifiedlogs::filesystem::{LiveSystemProvider, LogarchiveProvider};
 use macos_unifiedlogs::iterator::UnifiedLogIterator;
 use macos_unifiedlogs::parser::{
-    build_log, collect_shared_strings, collect_strings, collect_timesync,
+    build_log, collect_shared_strings, collect_strings, collect_timesync, parse_log,
 };
 use macos_unifiedlogs::timesync::TimesyncBoot;
 use macos_unifiedlogs::traits::FileProvider;
@@ -19,21 +19,45 @@ use macos_unifiedlogs::unified_log::{LogData, UnifiedLogData};
 use macos_unifiedlogs::uuidtext::UUIDText;
 use simplelog::{Config, SimpleLogger};
 use std::error::Error;
+use std::fmt::Display;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
-use clap::Parser;
+use clap::{builder, Parser, ValueEnum};
 use csv::Writer;
+
+#[derive(Clone, Debug)]
+enum RuntimeError {
+    FileOpen { path: String, message: String },
+    FileParse { path: String, message: String },
+}
+
+impl Display for RuntimeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self {
+            RuntimeError::FileOpen { path, message } => {
+                f.write_str(&format!("Failed to open source file {}: {}", path, message))
+            }
+            RuntimeError::FileParse { path, message } => {
+                f.write_str(&format!("Failed to parse {}: {}", path, message))
+            }
+        }
+    }
+}
 
 #[derive(Parser, Debug)]
 #[clap(version, about, long_about = None)]
 struct Args {
-    /// Run on live system
+    /// Mode of operation
     #[clap(short, long)]
-    live: bool,
+    mode: Mode,
 
-    /// Path to logarchive formatted directory
+    #[clap(short, long)]
+    single_file: Option<PathBuf>,
+
+    /// Path to logarchive formatted directory (log-archive mode) or tracev3 file (single-file
+    /// mode)
     #[clap(short, long)]
     input: Option<PathBuf>,
 
@@ -41,14 +65,45 @@ struct Args {
     #[clap(short, long)]
     output: Option<PathBuf>,
 
-    /// Output format. Options: csv, jsonl. Default is autodetect.
-    #[clap(short, long, default_value = "auto")]
-    format: String,
+    /// Output format. Options: csv, jsonl. Default is jsonl.
+    #[clap(short, long, default_value = Format::Jsonl)]
+    format: Format,
 
     /// Append to output file
     /// If false, will overwrite output file
     #[clap(short, long, default_value = "false")]
     append: bool,
+}
+
+#[derive(Parser, Debug, Clone, ValueEnum)]
+enum Mode {
+    Live,
+    LogArchive,
+    SingleFile,
+}
+
+#[derive(Parser, Debug, Clone, ValueEnum)]
+enum Format {
+    Csv,
+    Jsonl,
+}
+
+impl From<Format> for builder::OsStr {
+    fn from(value: Format) -> Self {
+        match value {
+            Format::Csv => "csv".into(),
+            Format::Jsonl => "jsonl".into(),
+        }
+    }
+}
+
+impl From<Format> for &str {
+    fn from(value: Format) -> Self {
+        match value {
+            Format::Csv => "csv".into(),
+            Format::Jsonl => "jsonl".into(),
+        }
+    }
 }
 
 fn main() {
@@ -58,19 +113,14 @@ fn main() {
         .expect("Failed to initialize simple logger");
 
     let args = Args::parse();
-    let output_format = match args.format.as_str() {
-        "csv" => "csv",
-        "jsonl" => "jsonl",
-        "auto" => "auto",
-        _ => "auto",
-    }
-    .to_string();
+    let output_format = args.format;
 
     let handle: Box<dyn Write> = if let Some(path) = args.output {
         Box::new(
             fs::OpenOptions::new()
                 .write(true)
                 .append(true)
+                .create(true)
                 .open(path)
                 .unwrap(),
         )
@@ -78,12 +128,52 @@ fn main() {
         Box::new(std::io::stdout())
     };
 
-    let mut writer = OutputWriter::new(Box::new(handle), &output_format).unwrap();
+    let mut writer = OutputWriter::new(Box::new(handle), output_format.into()).unwrap();
 
-    if let Some(path) = args.input {
-        parse_log_archive(&path, &mut writer);
-    } else if args.live {
-        parse_live_system(&mut writer);
+    match (args.mode, args.input) {
+        (Mode::Live, None) => {
+            parse_live_system(&mut writer);
+        }
+        (Mode::LogArchive, Some(path)) => {
+            parse_log_archive(&path, &mut writer);
+        }
+        (Mode::SingleFile, Some(path)) => {
+            parse_single_file(&path, &mut writer);
+        }
+        _ => {
+            eprintln!("log-archive and single-file modes require an --input argument");
+        }
+    }
+}
+
+fn parse_single_file(path: &Path, writer: &mut OutputWriter) {
+    let results = match fs::File::open(path)
+        .map_err(|e| RuntimeError::FileOpen {
+            path: path.to_string_lossy().to_string(),
+            message: e.to_string(),
+        })
+        .and_then(|mut reader| {
+            Ok(
+                parse_log(&mut reader).map_err(|err| RuntimeError::FileParse {
+                    path: path.to_string_lossy().to_string(),
+                    message: format!("{}", err),
+                })?,
+            )
+        })
+        .and_then(|ref log| {
+            let (results, _) = build_log(log, &vec![], &vec![], &vec![], false);
+            Ok(results)
+        }) {
+        Ok(reader) => reader,
+        Err(e) => {
+            eprintln!("Failed to parse {:?}: {}", path, e);
+            return;
+        }
+    };
+    for row in results {
+        if let Err(e) = writer.write_record(&row) {
+            eprintln!("Error writing record: {}", e);
+        };
     }
 }
 
@@ -124,7 +214,6 @@ fn parse_live_system(writer: &mut OutputWriter) {
 }
 
 // Use the provided strings, shared strings, timesync data to parse the Unified Log data at provided path.
-// Currently, expect the path to follow macOS log collect structure
 fn parse_trace_file(
     string_results: &[UUIDText],
     shared_strings_results: &[SharedCacheStrings],
@@ -155,6 +244,7 @@ fn parse_trace_file(
             writer,
             &mut oversize_strings,
         );
+        println!("count: {}", log_count);
     }
     let include_missing = false;
     println!("Oversize cache size: {}", oversize_strings.oversize.len());
@@ -194,7 +284,7 @@ fn iterate_chunks(
 ) -> usize {
     let mut buf = Vec::new();
 
-    if let Err(e) = reader.read(&mut buf) {
+    if let Err(e) = reader.read_to_end(&mut buf) {
         log::error!("Failed to read tracev3 file: {:?}", e);
         return 0;
     }
@@ -239,7 +329,7 @@ pub struct OutputWriter {
 }
 
 enum OutputWriterEnum {
-    Csv(Box<Writer<Box<dyn Write>>>),
+    Csv(Writer<Box<dyn Write>>),
     Json(Box<dyn Write>),
 }
 
@@ -269,7 +359,7 @@ impl OutputWriter {
                     "System Timezone Name",
                 ])?;
                 csv_writer.flush()?;
-                OutputWriterEnum::Csv(Box::new(csv_writer))
+                OutputWriterEnum::Csv(csv_writer)
             }
             "jsonl" => OutputWriterEnum::Json(writer),
             _ => {
