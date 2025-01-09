@@ -27,7 +27,12 @@ pub trait FileProvider {
     fn timesync_files(&self) -> Box<dyn Iterator<Item = Box<dyn SourceFile>>>;
 }
 
+/// Defines an interface for providing a single unified log file. Parsing unified logs requires the
+/// name of the original file in order to reconstruct format strings.
 pub trait SourceFile {
+    /// A reader for the given source file.
     fn reader(&mut self) -> Box<&mut dyn std::io::Read>;
+    /// The source path of the file on the machine from which it was collected, distinct from any
+    /// secondary storage location where, for instance, a file backing the `reader` might exist.
     fn source_path(&self) -> &str;
 }
