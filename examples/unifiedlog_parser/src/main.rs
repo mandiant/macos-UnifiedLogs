@@ -53,9 +53,6 @@ struct Args {
     #[clap(short, long)]
     mode: Mode,
 
-    #[clap(short, long)]
-    single_file: Option<PathBuf>,
-
     /// Path to logarchive formatted directory (log-archive mode) or tracev3 file (single-file
     /// mode)
     #[clap(short, long)]
@@ -100,8 +97,8 @@ impl From<Format> for builder::OsStr {
 impl From<Format> for &str {
     fn from(value: Format) -> Self {
         match value {
-            Format::Csv => "csv".into(),
-            Format::Jsonl => "jsonl".into(),
+            Format::Csv => "csv",
+            Format::Jsonl => "jsonl",
         }
     }
 }
@@ -118,7 +115,6 @@ fn main() {
     let handle: Box<dyn Write> = if let Some(path) = args.output {
         Box::new(
             fs::OpenOptions::new()
-                .write(true)
                 .append(true)
                 .create(true)
                 .open(path)
@@ -153,15 +149,13 @@ fn parse_single_file(path: &Path, writer: &mut OutputWriter) {
             message: e.to_string(),
         })
         .and_then(|mut reader| {
-            Ok(
-                parse_log(&mut reader).map_err(|err| RuntimeError::FileParse {
-                    path: path.to_string_lossy().to_string(),
-                    message: format!("{}", err),
-                })?,
-            )
+            parse_log(&mut reader).map_err(|err| RuntimeError::FileParse {
+                path: path.to_string_lossy().to_string(),
+                message: format!("{}", err),
+            })
         })
         .and_then(|ref log| {
-            let (results, _) = build_log(log, &vec![], &vec![], &vec![], false);
+            let (results, _) = build_log(log, &[], &[], &[], false);
             Ok(results)
         }) {
         Ok(reader) => reader,
