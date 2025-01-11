@@ -238,12 +238,12 @@ fn parse_trace_file(
             writer,
             &mut oversize_strings,
         );
-        println!("count: {}", log_count);
+        eprintln!("count: {}", log_count);
     }
     let include_missing = false;
-    println!("Oversize cache size: {}", oversize_strings.oversize.len());
-    println!("Logs with missing Oversize strings: {}", missing_data.len());
-    println!("Checking Oversize cache one more time...");
+    eprintln!("Oversize cache size: {}", oversize_strings.oversize.len());
+    eprintln!("Logs with missing Oversize strings: {}", missing_data.len());
+    eprintln!("Checking Oversize cache one more time...");
 
     // Since we have all Oversize entries now. Go through any log entries that we were not able to build before
     for mut leftover_data in missing_data {
