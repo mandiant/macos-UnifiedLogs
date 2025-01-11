@@ -125,6 +125,7 @@ fn nom_bytes<'a>(data: &'a [u8], size: &u64) -> nom::IResult<&'a [u8], &'a [u8]>
 mod tests {
     use super::UnifiedLogIterator;
     use crate::{
+        filesystem::LogarchiveProvider,
         iterator::nom_bytes,
         parser::{build_log, collect_shared_strings, collect_strings, collect_timesync},
     };
@@ -170,16 +171,11 @@ mod tests {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         test_path.push("tests/test_data/system_logs_big_sur.logarchive");
 
-        let string_results = collect_strings(&test_path.display().to_string()).unwrap();
+        let provider = LogarchiveProvider::new(test_path.as_path());
 
-        test_path.push("dsc");
-        let shared_strings_results =
-            collect_shared_strings(&test_path.display().to_string()).unwrap();
-        test_path.pop();
-
-        test_path.push("timesync");
-        let timesync_data = collect_timesync(&test_path.display().to_string()).unwrap();
-        test_path.pop();
+        let string_results = collect_strings(&provider).unwrap();
+        let shared_strings_results = collect_shared_strings(&provider).unwrap();
+        let timesync_data = collect_timesync(&provider).unwrap();
 
         test_path.push("Persist/0000000000000002.tracev3");
         let buffer_results = fs::read(test_path.to_str().unwrap()).unwrap();

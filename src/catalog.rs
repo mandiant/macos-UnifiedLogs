@@ -634,7 +634,7 @@ mod tests {
         assert_eq!(subsystems.subsystem_offset, 0);
         assert_eq!(subsystems.category_offset, 19);
 
-        let (_, subsystems) = CatalogChunk::parse_process_info_subystem(&data).unwrap();
+        let (_, subsystems) = CatalogChunk::parse_process_info_subystem(data).unwrap();
         assert_eq!(subsystems.identifer, 78);
         assert_eq!(subsystems.subsystem_offset, 0);
         assert_eq!(subsystems.category_offset, 47);
@@ -667,7 +667,7 @@ mod tests {
         assert_eq!(subchunk.number_string_offsets, 3);
         assert_eq!(subchunk.string_offsets, [0, 19, 47]);
 
-        let (data, subchunk) = CatalogChunk::parse_catalog_subchunk(&data).unwrap();
+        let (data, subchunk) = CatalogChunk::parse_catalog_subchunk(data).unwrap();
         assert_eq!(subchunk.start, 820274802743600);
         assert_eq!(subchunk.end, 820313668399715);
         assert_eq!(subchunk.uncompressed_size, 61552);
@@ -677,7 +677,7 @@ mod tests {
         assert_eq!(subchunk.number_string_offsets, 3);
         assert_eq!(subchunk.string_offsets, [0, 19, 47]);
 
-        let (_, subchunk) = CatalogChunk::parse_catalog_subchunk(&data).unwrap();
+        let (_, subchunk) = CatalogChunk::parse_catalog_subchunk(data).unwrap();
         assert_eq!(subchunk.start, 820313685231257);
         assert_eq!(subchunk.end, 820374429029888);
         assert_eq!(subchunk.uncompressed_size, 65536);

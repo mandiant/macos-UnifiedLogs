@@ -10,45 +10,26 @@ use log::{error, info};
 use crate::dsc::SharedCacheStrings;
 use crate::error::ParserError;
 use crate::timesync::TimesyncBoot;
+use crate::traits::FileProvider;
 use crate::unified_log::{LogData, UnifiedLogData};
 use crate::uuidtext::UUIDText;
-use std::fs;
-
-/// Parse the UUID files on a live system
-pub fn collect_strings_system() -> Result<Vec<UUIDText>, ParserError> {
-    let uuidtext_path = String::from("/private/var/db/uuidtext");
-    collect_strings(&uuidtext_path)
-}
-
-/// Parse the dsc (shared cache strings) files on a live system
-pub fn collect_shared_strings_system() -> Result<Vec<SharedCacheStrings>, ParserError> {
-    let dsc_path = String::from("/private/var/db/uuidtext/dsc");
-    collect_shared_strings(&dsc_path)
-}
-
-/// Parse the timesync files on a live system
-pub fn collect_timesync_system() -> Result<Vec<TimesyncBoot>, ParserError> {
-    let timesync = String::from("/private/var/db/diagnostics/timesync");
-    collect_timesync(&timesync)
-}
+use std::io::Read;
+use std::path::PathBuf;
 
 /// Parse a tracev3 file and return the deconstructed log data
-pub fn parse_log(full_path: &str) -> Result<UnifiedLogData, ParserError> {
-    let buffer_results = fs::read(full_path);
+pub fn parse_log(mut reader: impl Read) -> Result<UnifiedLogData, ParserError> {
+    let mut buf = Vec::new();
+    if let Err(e) = reader.read_to_end(&mut buf) {
+        error!(
+            "[macos-unifiedlogs] Failed to read the tracev3 file: {:?}",
+            e
+        );
+        return Err(ParserError::Read);
+    }
 
-    let buffer = match buffer_results {
-        Ok(results) => results,
-        Err(err) => {
-            error!(
-                "[macos-unifiedlogs] Failed to read the tracev3 file {}: {:?}",
-                full_path, err
-            );
-            return Err(ParserError::Read);
-        }
-    };
-    info!("Read {} bytes for file {}", buffer.len(), full_path);
+    info!("Read {} bytes from tracev3 file", buf.len());
 
-    let log_data_results = LogData::parse_unified_log(&buffer);
+    let log_data_results = LogData::parse_unified_log(&buf);
     match log_data_results {
         Ok((_, log_data)) => Ok(log_data),
         Err(err) => {
@@ -97,255 +78,91 @@ pub fn build_log(
 }
 
 /// Parse all UUID files in provided directory. The directory should follow the same layout as the live system (ex: path/to/files/<two character UUID>/<remaining UUID name>)
-pub fn collect_strings(path: &str) -> Result<Vec<UUIDText>, ParserError> {
-    let paths = fs::read_dir(path).map_err(|err| {
-        error!("[macos-unifiedlogs] Failed to read directory path: {err:?}");
-        ParserError::Dir
-    })?;
-
-    let entries = paths
-        .flat_map(|path| {
-            path.map_err(
-                |err| error!("[macos-unifiedlogs] Failed to get directory entry: {err:?}",),
-            )
-            .ok()
-        })
-        .collect::<Vec<_>>();
-
-    let mut uuidtext_vec: Vec<UUIDText> = Vec::with_capacity(entries.len());
+pub fn collect_strings(provider: &dyn FileProvider) -> Result<Vec<UUIDText>, ParserError> {
+    let mut uuidtext_vec: Vec<UUIDText> = Vec::new();
     // Start process to read a directory containing subdirectories that contain the uuidtext files
-    for dir_entry in entries {
-        let type_results = dir_entry.file_type();
-        let entry_type = match type_results {
-            Ok(dir_type) => dir_type,
-            Err(err) => {
-                error!(
-                    "[macos-unifiedlogs] Failed to get directory entry type: {:?}",
-                    err
-                );
-                continue;
-            }
-        };
-
-        if entry_type.is_file() {
-            continue;
-        }
-
-        let directory_results = dir_entry.file_name().into_string();
-        let directory = match directory_results {
-            Ok(directory_path) => directory_path,
-            Err(err) => {
-                error!(
-                    "[macos-unifiedlogs] Failed to convert path {:?} to string",
-                    err
-                );
-                continue;
-            }
-        };
-
-        // Currently expect the subdirectories to be structured like a live system (or .logarchive)
-        // they should be /private/var/db/uuidtext/<2 char values>/<rest of uuid> (/private/var/db/uuidtext/1F/470CAE74D83AA1A6637FD0C5B1D365)
-        let first_two_uuid_chars = 2;
-        if directory.len() != first_two_uuid_chars {
-            continue;
-        }
-
-        let dir_path = dir_entry.path();
-        let uuidtext_path_results = fs::read_dir(dir_path);
-        let uuidtext_path = match uuidtext_path_results {
-            Ok(uuid_path) => uuid_path,
-            Err(err) => {
-                error!(
-                    "[macos-unifiedlogs] Failed to read directory path for UUID files: {:?}",
-                    err
-                );
-                continue;
-            }
-        };
-
-        // Read all uuidtext files in directory
-        for uuid_data in uuidtext_path {
-            let uuidtext_full_path = match uuid_data {
-                Ok(uuid_entry) => uuid_entry,
-                Err(err) => {
-                    error!(
-                        "[macos-unifiedlogs] Failed to get directory uuid entry: {:?}",
-                        err
-                    );
-                    continue;
-                }
-            };
-
-            let full_path = uuidtext_full_path.path();
-            let buffer_results = fs::read(&full_path);
-            let buffer = match buffer_results {
-                Ok(results) => results,
-                Err(err) => {
-                    error!("[macos-unifiedlogs] Failed to read UUID file: {:?}", err);
-                    continue;
-                }
-            };
-            info!(
-                "Read {} bytes for file {}",
-                buffer.len(),
-                full_path.display().to_string()
+    for mut source in provider.uuidtext_files() {
+        let mut buf = Vec::new();
+        let path = source.source_path().to_owned();
+        if let Err(e) = source.reader().read_to_end(&mut buf) {
+            error!(
+                "[macos-unifiedlogs] Failed to read uuidfile {}: {:?}",
+                path, e
             );
+            continue;
+        };
 
-            let uuid_results = UUIDText::parse_uuidtext(&buffer);
-            let mut uuidtext_data = match uuid_results {
-                Ok((_, results)) => results,
-                Err(err) => {
-                    error!(
-                        "[macos-unifiedlogs] Failed to parse UUID file {}: {:?}",
-                        full_path.display().to_string(),
-                        err
-                    );
-                    continue;
-                }
-            };
+        info!("Read {} bytes for file {}", buf.len(), path);
 
-            // Track the uuidtext filename, this will be referenced by log entries via the Catalog (or log entry)
-            let uuid_file_name = uuidtext_full_path.file_name().into_string();
-            match uuid_file_name {
-                // Only the last 14 characters of the UUID name are saved here. Limited chance of UUID collisions on a real system
-                Ok(uuid_file_string) => uuidtext_data.uuid = uuid_file_string,
-                Err(err) => {
-                    error!("[macos-unifiedlogs] Failed to convert UUID filename {:?} to string. Unable to do base format string lookups", err);
-                    continue;
-                }
+        let uuid_results = UUIDText::parse_uuidtext(&buf);
+        let mut uuidtext_data = match uuid_results {
+            Ok((_, results)) => results,
+            Err(err) => {
+                error!(
+                    "[macos-unifiedlogs] Failed to parse UUID file {}: {:?}",
+                    path, err
+                );
+                continue;
             }
+        };
 
-            uuidtext_vec.push(uuidtext_data)
-        }
+        uuidtext_data.uuid = PathBuf::from(path)
+            .file_name()
+            .map(|f| f.to_string_lossy())
+            .unwrap_or_default()
+            .to_string();
+        uuidtext_vec.push(uuidtext_data)
     }
     Ok(uuidtext_vec)
 }
 
 /// Parse all dsc uuid files in provided directory
-pub fn collect_shared_strings(path: &str) -> Result<Vec<SharedCacheStrings>, ParserError> {
-    let paths_results = fs::read_dir(path);
-
-    let paths = match paths_results {
-        Ok(results) => results,
-        Err(err) => {
-            error!(
-                "[macos-unifiedlogs] Failed to read dsc directory {}: {:?}",
-                path, err
-            );
-            return Err(ParserError::Path);
-        }
-    };
-
+pub fn collect_shared_strings(
+    provider: &dyn FileProvider,
+) -> Result<Vec<SharedCacheStrings>, ParserError> {
     let mut shared_strings_vec: Vec<SharedCacheStrings> = Vec::new();
     // Start process to read and parse uuid files related to dsc
-    for path in paths {
-        let data = match path {
-            Ok(path_results) => path_results,
-            Err(err) => {
-                error!(
-                    "[macos-unifiedlogs] Failed to get dsc directory entry: {:?}",
-                    err
-                );
-                continue;
-            }
-        };
-
-        let full_path = data.path();
-        let buffer_results = fs::read(&full_path);
-        let buffer = match buffer_results {
-            Ok(results) => results,
-            Err(err) => {
-                error!(
-                    "[macos-unifiedlogs] Failed to read dsc file {}: {:?}",
-                    full_path.display().to_string(),
-                    err
-                );
-                continue;
-            }
-        };
-
-        let shared_strings_data_results = SharedCacheStrings::parse_dsc(&buffer);
-        let mut shared_strings_data = match shared_strings_data_results {
-            Ok((_, results)) => results,
-            Err(err) => {
-                error!(
-                    "[macos-unifiedlogs] Failed to parse dsc file {}: {:?}",
-                    full_path.display().to_string(),
-                    err
-                );
-                continue;
-            }
-        };
-
-        // Track the uuid filename, this will be referenced by log entries via the Catalog (or log entry)
-        let dsc_filename = data.file_name().into_string();
-        match dsc_filename {
-            Ok(dsc_file_string) => shared_strings_data.dsc_uuid = dsc_file_string,
-            Err(err) => {
-                error!("[macos-unifiedlogs] Failed to convert dsc filename {:?} to string. Unable to do base format string lookups", err);
-                continue;
-            }
+    for mut source in provider.dsc_files() {
+        let mut buf = Vec::new();
+        if let Err(e) = source.reader().read_to_end(&mut buf) {
+            error!("[macos-unifiedlogs] Failed to read dsc file: {:?}", e);
+            continue;
         }
-        shared_strings_vec.push(shared_strings_data);
+
+        match SharedCacheStrings::parse_dsc(&buf) {
+            Ok((_, mut results)) => {
+                results.dsc_uuid = PathBuf::from(source.source_path())
+                    .file_name()
+                    .map(|fname| fname.to_string_lossy())
+                    .unwrap_or_default()
+                    .to_string();
+                shared_strings_vec.push(results);
+            }
+            Err(err) => {
+                error!("[macos-unifiedlogs] Failed to parse dsc file: {:?}", err);
+            }
+        };
     }
     Ok(shared_strings_vec)
 }
 
 /// Parse all timesync files in provided directory
-pub fn collect_timesync(path: &str) -> Result<Vec<TimesyncBoot>, ParserError> {
-    let paths_results = fs::read_dir(path);
-
-    let paths = match paths_results {
-        Ok(results) => results,
-        Err(err) => {
-            error!(
-                "[macos-unifiedlogs] Failed to read timesync directory {}: {:?}",
-                path, err
-            );
-            return Err(ParserError::Path);
-        }
-    };
-
+pub fn collect_timesync(provider: &dyn FileProvider) -> Result<Vec<TimesyncBoot>, ParserError> {
     let mut timesync_data_vec: Vec<TimesyncBoot> = Vec::new();
     // Start process to read and parse all timesync files
-    for path in paths {
-        let data = match path {
-            Ok(path_results) => path_results,
-            Err(err) => {
-                error!(
-                    "[macos-unifiedlogs] Failed to get timesync directory entry: {:?}",
-                    err
-                );
-                continue;
-            }
-        };
-
-        let full_path = data.path();
-        let buffer_results = fs::read(&full_path);
-        let buffer = match buffer_results {
-            Ok(results) => results,
-            Err(err) => {
-                error!(
-                    "[macos-unifiedlogs] Failed to read timesync file {}: {:?}",
-                    full_path.display().to_string(),
-                    err
-                );
-                continue;
-            }
-        };
-        info!(
-            "Read {} bytes from timesync file {}",
-            buffer.len(),
-            full_path.display().to_string()
-        );
+    for mut source in provider.timesync_files() {
+        let mut buffer = Vec::new();
+        if let Err(e) = source.reader().read_to_end(&mut buffer) {
+            error!("[macos-unifiedlogs] Failed to read timesync file: {:?}", e);
+            continue;
+        }
 
         let timesync_results = TimesyncBoot::parse_timesync_data(&buffer);
         match timesync_results {
             Ok((_, mut timesync)) => timesync_data_vec.append(&mut timesync),
             Err(err) => {
                 error!(
-                    "[macos-unifiedlogs] Failed to parse timesync file {}: {:?}",
-                    full_path.display().to_string(),
+                    "[macos-unifiedlogs] Failed to parse timesync file: {:?}",
                     err
                 );
                 continue;
@@ -357,26 +174,25 @@ pub fn collect_timesync(path: &str) -> Result<Vec<TimesyncBoot>, ParserError> {
 
 #[cfg(test)]
 mod tests {
+    use crate::filesystem::{LiveSystemProvider, LogarchiveProvider};
     use crate::parser::{
         build_log, collect_shared_strings, collect_strings, collect_timesync, parse_log,
-    };
-    #[cfg(target_os = "macos")]
-    use crate::parser::{
-        collect_shared_strings_system, collect_strings_system, collect_timesync_system,
     };
     use std::path::PathBuf;
 
     #[test]
     #[cfg(target_os = "macos")]
     fn test_collect_strings_system() {
-        let uuidtext_results = collect_strings_system().unwrap();
+        let system_provider = LiveSystemProvider::default();
+        let uuidtext_results = collect_strings(&system_provider).unwrap();
         assert!(uuidtext_results.len() > 100);
     }
 
     #[test]
     #[cfg(target_os = "macos")]
     fn test_collect_timesync_system() {
-        let timesync_results = collect_timesync_system().unwrap();
+        let system_provider = LiveSystemProvider::default();
+        let timesync_results = collect_timesync(&system_provider).unwrap();
         assert!(timesync_results.len() > 1);
     }
 
@@ -384,9 +200,12 @@ mod tests {
     #[cfg(target_os = "macos")]
     fn test_collect_timesync_archive() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        test_path.push("tests/test_data/system_logs_big_sur.logarchive/timesync");
 
-        let timesync_data = collect_timesync(&test_path.display().to_string()).unwrap();
+        test_path.push("tests/test_data/system_logs_big_sur.logarchive");
+
+        let provider = LogarchiveProvider::new(test_path.as_path());
+
+        let timesync_data = collect_timesync(&provider).unwrap();
         assert_eq!(timesync_data.len(), 5);
         assert_eq!(timesync_data[0].signature, 48048);
         assert_eq!(timesync_data[0].unknown, 0);
@@ -406,7 +225,8 @@ mod tests {
     #[test]
     #[cfg(target_os = "macos")]
     fn test_collect_shared_strings_system() {
-        let shared_strings_results = collect_shared_strings_system().unwrap();
+        let system_provider = LiveSystemProvider::default();
+        let shared_strings_results = collect_shared_strings(&system_provider).unwrap();
         assert!(shared_strings_results[0].ranges.len() > 1);
         assert!(shared_strings_results[0].uuids.len() > 1);
         assert!(shared_strings_results[0].number_ranges > 1);
@@ -416,9 +236,9 @@ mod tests {
     #[test]
     fn test_shared_strings_archive() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        test_path.push("tests/test_data/system_logs_big_sur.logarchive/dsc");
-        let shared_strings_results =
-            collect_shared_strings(&test_path.display().to_string()).unwrap();
+        test_path.push("tests/test_data/system_logs_big_sur.logarchive");
+        let provider = LogarchiveProvider::new(test_path.as_path());
+        let shared_strings_results = collect_shared_strings(&provider).unwrap();
         assert_eq!(shared_strings_results.len(), 2);
         assert_eq!(shared_strings_results[0].number_uuids, 1976);
         assert_eq!(shared_strings_results[0].number_ranges, 2993);
@@ -436,8 +256,9 @@ mod tests {
     fn test_collect_strings_archive() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         test_path.push("tests/test_data/system_logs_big_sur.logarchive");
+        let provider = LogarchiveProvider::new(test_path.as_path());
 
-        let mut strings_results = collect_strings(&test_path.display().to_string()).unwrap();
+        let mut strings_results = collect_strings(&provider).unwrap();
         assert_eq!(strings_results.len(), 536);
 
         strings_results.sort_by(|a, b| a.uuid.cmp(&b.uuid));
@@ -463,7 +284,8 @@ mod tests {
         test_path.push("tests/test_data/system_logs_big_sur.logarchive");
 
         test_path.push("Persist/0000000000000002.tracev3");
-        let log_data = parse_log(&test_path.display().to_string()).unwrap();
+        let handle = std::fs::File::open(test_path).unwrap();
+        let log_data = parse_log(handle).unwrap();
 
         assert_eq!(log_data.catalog_data[0].firehose.len(), 99);
         assert_eq!(log_data.catalog_data[0].simpledump.len(), 0);
@@ -482,19 +304,15 @@ mod tests {
     fn test_build_log() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         test_path.push("tests/test_data/system_logs_big_sur.logarchive");
-        let string_results = collect_strings(&test_path.display().to_string()).unwrap();
+        let provider = LogarchiveProvider::new(test_path.as_path());
 
-        test_path.push("dsc");
-        let shared_strings_results =
-            collect_shared_strings(&test_path.display().to_string()).unwrap();
-        test_path.pop();
-
-        test_path.push("timesync");
-        let timesync_data = collect_timesync(&test_path.display().to_string()).unwrap();
-        test_path.pop();
+        let string_results = collect_strings(&provider).unwrap();
+        let shared_strings_results = collect_shared_strings(&provider).unwrap();
+        let timesync_data = collect_timesync(&provider).unwrap();
 
         test_path.push("Persist/0000000000000002.tracev3");
-        let log_data = parse_log(&test_path.display().to_string()).unwrap();
+        let handle = std::fs::File::open(&test_path).unwrap();
+        let log_data = parse_log(handle).unwrap();
 
         let exclude_missing = false;
         let (results, _) = build_log(

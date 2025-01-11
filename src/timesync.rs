@@ -239,6 +239,7 @@ impl TimesyncBoot {
 
 #[cfg(test)]
 mod tests {
+    use crate::filesystem::LogarchiveProvider;
     use crate::parser::collect_timesync;
     use crate::timesync::TimesyncBoot;
     use std::fs::File;
@@ -352,9 +353,10 @@ mod tests {
     #[test]
     fn test_get_timestamp() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        test_path.push("tests/test_data/system_logs_big_sur.logarchive/timesync");
+        test_path.push("tests/test_data/system_logs_big_sur.logarchive");
+        let provider = LogarchiveProvider::new(test_path.as_path());
 
-        let timesync_data = collect_timesync(&test_path.display().to_string()).unwrap();
+        let timesync_data = collect_timesync(&provider).unwrap();
 
         let boot_uuid = "A2A9017676CF421C84DC9BBD6263FEE7";
         let firehose_preamble_continous_time = 2818326118;
@@ -365,15 +367,16 @@ mod tests {
             firehose_preamble_continous_time,
             1,
         );
-        assert_eq!(results, 1642304803060378889.0);
+        assert_eq!(results, 1_642_304_803_060_379_000.0);
     }
 
     #[test]
     fn test_get_arm_timestamp() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        test_path.push("tests/test_data/system_logs_monterey.logarchive/timesync");
+        test_path.push("tests/test_data/system_logs_monterey.logarchive");
+        let provider = LogarchiveProvider::new(test_path.as_path());
 
-        let timesync_data = collect_timesync(&test_path.display().to_string()).unwrap();
+        let timesync_data = collect_timesync(&provider).unwrap();
 
         let boot_uuid = "3E12B435814B4C62918CEBC0826F06B8";
         let firehose_preamble_continous_time = 2818326118;
@@ -392,7 +395,9 @@ mod tests {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         test_path.push("tests/test_data/system_logs_monterey.logarchive/timesync");
 
-        let timesync_data = collect_timesync(&test_path.display().to_string()).unwrap();
+        let provider = LogarchiveProvider::new(test_path.as_path());
+
+        let timesync_data = collect_timesync(&provider).unwrap();
 
         let boot_uuid = "3E12B435814B4C62918CEBC0826F06B8";
         let firehose_preamble_continous_time = 9898326118;
@@ -403,6 +408,6 @@ mod tests {
             firehose_preamble_continous_time,
             0,
         );
-        assert_eq!(results, 1650767813342574583.0);
+        assert_eq!(results, 1_650_767_813_342_574_600.0);
     }
 }

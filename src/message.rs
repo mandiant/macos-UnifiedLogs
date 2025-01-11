@@ -1366,7 +1366,7 @@ mod tests {
             test_format,
             test_width,
             test_precision,
-            &test_type,
+            test_type,
             plus_minus,
             hashtag,
         );
@@ -1385,7 +1385,7 @@ mod tests {
             test_format,
             test_width,
             test_precision,
-            &test_type,
+            test_type,
             plus_minus,
             hashtag,
         );
