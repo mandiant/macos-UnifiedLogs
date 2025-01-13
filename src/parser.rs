@@ -174,7 +174,7 @@ pub fn collect_timesync(provider: &dyn FileProvider) -> Result<Vec<TimesyncBoot>
 
 #[cfg(test)]
 mod tests {
-    use crate::filesystem::{LiveSystemProvider, LogarchiveProvider};
+    use crate::filesystem::LogarchiveProvider;
     use crate::parser::{
         build_log, collect_shared_strings, collect_strings, collect_timesync, parse_log,
     };
@@ -183,6 +183,7 @@ mod tests {
     #[test]
     #[cfg(target_os = "macos")]
     fn test_collect_strings_system() {
+        use crate::filesystem::LiveSystemProvider;
         let system_provider = LiveSystemProvider::default();
         let uuidtext_results = collect_strings(&system_provider).unwrap();
         assert!(uuidtext_results.len() > 100);
@@ -191,6 +192,7 @@ mod tests {
     #[test]
     #[cfg(target_os = "macos")]
     fn test_collect_timesync_system() {
+        use crate::filesystem::LiveSystemProvider;
         let system_provider = LiveSystemProvider::default();
         let timesync_results = collect_timesync(&system_provider).unwrap();
         assert!(timesync_results.len() > 1);
@@ -225,6 +227,7 @@ mod tests {
     #[test]
     #[cfg(target_os = "macos")]
     fn test_collect_shared_strings_system() {
+        use crate::filesystem::LiveSystemProvider;
         let system_provider = LiveSystemProvider::default();
         let shared_strings_results = collect_shared_strings(&system_provider).unwrap();
         assert!(shared_strings_results[0].ranges.len() > 1);
