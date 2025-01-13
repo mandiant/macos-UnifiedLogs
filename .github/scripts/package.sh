@@ -22,12 +22,12 @@ mkdir "$release_name"
 
 if [[ "$TARGET" =~ windows ]]; then
     bin="$NAME.exe"
-    cp "examples/target/$TARGET/release-action/$bin" "$release_name/"
+    cp "examples/target/release/$bin" "$release_name/"
     cp README.md LICENSE "$release_name/"
     7z a -tzip "$release_zip" "$release_name"
 else
     bin="$NAME"
-    cp "examples/target/$TARGET/release-action/$bin" "$release_name/"
+    cp "examples/target/release/$bin" "$release_name/"
     cp README.md LICENSE "$release_name/"
     tar czf "$release_tar" "$release_name"
 fi
