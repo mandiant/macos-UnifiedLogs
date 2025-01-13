@@ -1,2 +1,2 @@
 [workspace]
-members = ["unifiedlog_parser"]
+members = ["unifiedlog_iterator"]
