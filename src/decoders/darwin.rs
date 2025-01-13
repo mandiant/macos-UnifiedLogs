@@ -153,7 +153,7 @@ pub(crate) fn permission(permissions: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use crate::decoders::darwin::{errno_codes, permission};
+    use super::*;
 
     #[test]
     fn test_errno_codes() {

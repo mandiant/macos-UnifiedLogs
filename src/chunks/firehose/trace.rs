@@ -158,6 +158,7 @@ mod tests {
 
     use crate::{
         chunks::firehose::trace::FirehoseTrace,
+        filesystem::LogarchiveProvider,
         parser::{collect_strings, parse_log},
     };
 
@@ -204,10 +205,14 @@ mod tests {
     fn test_get_firehose_trace_strings() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         test_path.push("tests/test_data/system_logs_high_sierra.logarchive");
-        let string_results = collect_strings(&test_path.display().to_string()).unwrap();
+        let provider = LogarchiveProvider::new(test_path.as_path());
+
+        let string_results = collect_strings(&provider).unwrap();
 
         test_path.push("logdata.LiveData.tracev3");
-        let log_data = parse_log(&test_path.display().to_string()).unwrap();
+        let handle = std::fs::File::open(test_path).unwrap();
+
+        let log_data = parse_log(handle).unwrap();
 
         let activity_type = 0x3;
 
@@ -217,7 +222,7 @@ mod tests {
                     if firehose.unknown_log_activity_type == activity_type {
                         let (_, message_data) = FirehoseTrace::get_firehose_trace_strings(
                             &string_results,
-                            firehose.format_string_location as u64,
+                            u64::from(firehose.format_string_location),
                             &preamble.first_number_proc_id,
                             &preamble.second_number_proc_id,
                             &catalog_data.catalog,
