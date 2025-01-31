@@ -208,7 +208,6 @@ impl CatalogChunk {
                 log::warn!("[macos-unifiedlogs] Could not find main UUID in catalog");
                 String::new()
             });
-        dbg!(&main_uuid);
 
         let dsc_uuid = uuids
             .get(catalog_dsc_uuid_index as usize)
