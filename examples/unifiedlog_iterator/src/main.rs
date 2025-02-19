@@ -6,7 +6,7 @@
 // See the License for the specific language governing permissions and limitations under the License.
 
 use chrono::{SecondsFormat, TimeZone, Utc};
-use log::LevelFilter;
+use log::{LevelFilter, debug, info, error};
 use macos_unifiedlogs::dsc::SharedCacheStrings;
 use macos_unifiedlogs::filesystem::{LiveSystemProvider, LogarchiveProvider};
 use macos_unifiedlogs::iterator::UnifiedLogIterator;
@@ -17,7 +17,7 @@ use macos_unifiedlogs::timesync::TimesyncBoot;
 use macos_unifiedlogs::traits::FileProvider;
 use macos_unifiedlogs::unified_log::{LogData, UnifiedLogData};
 use macos_unifiedlogs::uuidtext::UUIDText;
-use simplelog::{Config, SimpleLogger};
+use simplelog::{ColorChoice, Config, TermLogger, TerminalMode};
 use std::error::Error;
 use std::fmt::Display;
 use std::fs;
@@ -104,10 +104,9 @@ impl From<Format> for &str {
 }
 
 fn main() {
-    eprintln!("Starting Unified Log parser...");
-    // Set logging level to warning
-    SimpleLogger::init(LevelFilter::Warn, Config::default())
+    TermLogger::init(LevelFilter::Warn, Config::default(), TerminalMode::Stderr, ColorChoice::Auto)
         .expect("Failed to initialize simple logger");
+    info!("Starting Unified Log parser...");
 
     let args = Args::parse();
     let output_format = args.format;
@@ -137,7 +136,7 @@ fn main() {
             parse_single_file(&path, &mut writer);
         }
         _ => {
-            eprintln!("log-archive and single-file modes require an --input argument");
+            error!("log-archive and single-file modes require an --input argument");
         }
     }
 }
@@ -160,13 +159,13 @@ fn parse_single_file(path: &Path, writer: &mut OutputWriter) {
         }) {
         Ok(reader) => reader,
         Err(e) => {
-            eprintln!("Failed to parse {:?}: {}", path, e);
+            error!("Failed to parse {:?}: {}", path, e);
             return;
         }
     };
     for row in results {
         if let Err(e) = writer.write_record(&row) {
-            eprintln!("Error writing record: {}", e);
+            error!("Error writing record: {}", e);
         };
     }
 }
@@ -192,7 +191,7 @@ fn parse_log_archive(path: &Path, writer: &mut OutputWriter) {
         writer,
     );
 
-    eprintln!("\nFinished parsing Unified Log data.");
+    info!("Finished parsing Unified Log data.");
 }
 
 // Parse a live macOS system
@@ -204,7 +203,7 @@ fn parse_live_system(writer: &mut OutputWriter) {
 
     parse_trace_file(&strings, &shared_strings, &timesync_data, &provider, writer);
 
-    eprintln!("\nFinished parsing Unified Log data.");
+    info!("Finished parsing Unified Log data.");
 }
 
 // Use the provided strings, shared strings, timesync data to parse the Unified Log data at provided path.
@@ -238,12 +237,12 @@ fn parse_trace_file(
             writer,
             &mut oversize_strings,
         );
-        eprintln!("count: {}", log_count);
+        debug!("count: {}", log_count);
     }
     let include_missing = false;
-    eprintln!("Oversize cache size: {}", oversize_strings.oversize.len());
-    eprintln!("Logs with missing Oversize strings: {}", missing_data.len());
-    eprintln!("Checking Oversize cache one more time...");
+    debug!("Oversize cache size: {}", oversize_strings.oversize.len());
+    debug!("Logs with missing Oversize strings: {}", missing_data.len());
+    debug!("Checking Oversize cache one more time...");
 
     // Since we have all Oversize entries now. Go through any log entries that we were not able to build before
     for mut leftover_data in missing_data {
@@ -264,7 +263,7 @@ fn parse_trace_file(
 
         output(&results, writer).unwrap();
     }
-    eprintln!("Parsed {} log entries", log_count);
+    info!("Parsed {} log entries", log_count);
 }
 
 fn iterate_chunks(
@@ -357,7 +356,7 @@ impl OutputWriter {
             }
             "jsonl" => OutputWriterEnum::Json(writer),
             _ => {
-                eprintln!("Unsupported output format: {}", output_format);
+                error!("Unsupported output format: {}", output_format);
                 std::process::exit(1);
             }
         };
