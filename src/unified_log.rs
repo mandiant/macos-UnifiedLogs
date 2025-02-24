@@ -54,32 +54,6 @@ pub enum LogType {
     Loss,
 }
 
-impl LogType {
-    pub fn is_signpost(&self) -> bool {
-        match self {
-            LogType::ProcessSignpostEvent
-            | LogType::ProcessSignpostStart
-            | LogType::ProcessSignpostEnd
-            | LogType::SystemSignpostEvent
-            | LogType::SystemSignpostStart
-            | LogType::SystemSignpostEnd
-            | LogType::ThreadSignpostEvent
-            | LogType::ThreadSignpostStart
-            | LogType::ThreadSignpostEnd => true,
-            LogType::Debug
-            | LogType::Info
-            | LogType::Default
-            | LogType::Error
-            | LogType::Fault
-            | LogType::Create
-            | LogType::Useraction
-            | LogType::Simpledump
-            | LogType::Statedump
-            | LogType::Loss => false,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum EventType {
     Unknown,

@@ -22,6 +22,30 @@ fn collect_logs(provider: &dyn FileProvider) -> Vec<UnifiedLogData> {
         .collect()
 }
 
+fn is_signpost(log_type: LogType) -> bool {
+    match log_type {
+        LogType::ProcessSignpostEvent
+        | LogType::ProcessSignpostStart
+        | LogType::ProcessSignpostEnd
+        | LogType::SystemSignpostEvent
+        | LogType::SystemSignpostStart
+        | LogType::SystemSignpostEnd
+        | LogType::ThreadSignpostEvent
+        | LogType::ThreadSignpostStart
+        | LogType::ThreadSignpostEnd => true,
+        LogType::Debug
+        | LogType::Info
+        | LogType::Default
+        | LogType::Error
+        | LogType::Fault
+        | LogType::Create
+        | LogType::Useraction
+        | LogType::Simpledump
+        | LogType::Statedump
+        | LogType::Loss => false,
+    }
+}
+
 #[test]
 fn test_parse_log_big_sur() {
     let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -357,7 +381,7 @@ fn test_parse_all_persist_logs_with_network_big_sur() {
                 // Console.app skips Simple and State dump event logs
                 state_simple_dump += 1;
                 continue;
-            } else if logs.log_type.is_signpost() {
+            } else if is_signpost(logs.log_type) {
                 // We are basing these counts on the Cosole.app tool
                 // Console.app skips Signpost event logs
                 signpost += 1;
