@@ -11,7 +11,7 @@ use macos_unifiedlogs::{
     filesystem::LogarchiveProvider,
     parser::{build_log, collect_shared_strings, collect_strings, collect_timesync, parse_log},
     traits::FileProvider,
-    unified_log::{LogData, UnifiedLogData},
+    unified_log::{EventType, LogData, LogType, UnifiedLogData},
 };
 use regex::Regex;
 
@@ -20,6 +20,30 @@ fn collect_logs(provider: &dyn FileProvider) -> Vec<UnifiedLogData> {
         .tracev3_files()
         .map(|mut file| parse_log(file.reader()).unwrap())
         .collect()
+}
+
+fn is_signpost(log_type: LogType) -> bool {
+    match log_type {
+        LogType::ProcessSignpostEvent
+        | LogType::ProcessSignpostStart
+        | LogType::ProcessSignpostEnd
+        | LogType::SystemSignpostEvent
+        | LogType::SystemSignpostStart
+        | LogType::SystemSignpostEnd
+        | LogType::ThreadSignpostEvent
+        | LogType::ThreadSignpostStart
+        | LogType::ThreadSignpostEnd => true,
+        LogType::Debug
+        | LogType::Info
+        | LogType::Default
+        | LogType::Error
+        | LogType::Fault
+        | LogType::Create
+        | LogType::Useraction
+        | LogType::Simpledump
+        | LogType::Statedump
+        | LogType::Loss => false,
+    }
 }
 
 #[test]
@@ -86,8 +110,8 @@ fn test_big_sur_livedata() {
             );
             assert_eq!(results.subsystem, String::new());
             assert_eq!(results.category, String::new());
-            assert_eq!(results.event_type, "Log");
-            assert_eq!(results.log_type, "Info");
+            assert_eq!(results.event_type, EventType::Log);
+            assert_eq!(results.log_type, LogType::Info);
             assert_eq!(results.process, "/kernel");
             assert_eq!(results.time, 1642304801596413351.0);
             assert_eq!(results.boot_uuid, "A2A9017676CF421C84DC9BBD6263FEE7");
@@ -133,8 +157,8 @@ fn test_build_log_big_sur() {
     assert_eq!(results[0].pid, 105);
     assert_eq!(results[0].thread_id, 670);
     assert_eq!(results[0].category, "default");
-    assert_eq!(results[0].log_type, "Default");
-    assert_eq!(results[0].event_type, "Log");
+    assert_eq!(results[0].log_type, LogType::Default);
+    assert_eq!(results[0].event_type, EventType::Log);
     assert_eq!(results[0].euid, 0);
     assert_eq!(results[0].boot_uuid, "AACFB573E87545CE98B893D132766A46");
     assert_eq!(results[0].timezone_name, "Pacific");
@@ -219,25 +243,25 @@ fn test_parse_all_logs_big_sur() {
             found_precision_string = true;
         }
 
-        if logs.event_type == "Statedump" {
+        if logs.event_type == EventType::Statedump {
             statedump_count += 1;
-        } else if logs.event_type == "Signpost" {
+        } else if logs.event_type == EventType::Signpost {
             signpost_count += 1;
-        } else if logs.log_type == "Default" {
+        } else if logs.log_type == LogType::Default {
             default_type += 1;
-        } else if logs.log_type == "Info" {
+        } else if logs.log_type == LogType::Info {
             info_type += 1;
-        } else if logs.log_type == "Error" {
+        } else if logs.log_type == LogType::Error {
             error_type += 1
-        } else if logs.log_type == "Create" {
+        } else if logs.log_type == LogType::Create {
             create_type += 1;
-        } else if logs.log_type == "Debug" {
+        } else if logs.log_type == LogType::Debug {
             debug_type += 1;
-        } else if logs.log_type == "Useraction" {
+        } else if logs.log_type == LogType::Useraction {
             useraction_type += 1;
-        } else if logs.log_type == "Fault" {
+        } else if logs.log_type == LogType::Fault {
             fault_type += 1;
-        } else if logs.event_type == "Loss" {
+        } else if logs.event_type == EventType::Loss {
             loss_type += 1;
         }
 
@@ -245,7 +269,10 @@ fn test_parse_all_logs_big_sur() {
             string_count += 1;
         }
 
-        if logs.raw_message.is_empty() && logs.message.is_empty() && logs.event_type != "Loss" {
+        if logs.raw_message.is_empty()
+            && logs.message.is_empty()
+            && logs.event_type != EventType::Loss
+        {
             empty_format_count += 1
         }
 
@@ -314,7 +341,7 @@ fn test_parse_all_persist_logs_with_network_big_sur() {
     // Check all logs that contain the word "network"
     for logs in &log_data_vec {
         if logs.message.to_lowercase().contains("network") {
-            if logs.log_type == "Default" {
+            if logs.log_type == LogType::Default {
                 default_type += 1;
                 if logs
                     .message
@@ -338,21 +365,23 @@ fn test_parse_all_persist_logs_with_network_big_sur() {
                      */
                     network_message_uuid = true;
                 }
-            } else if logs.log_type == "Info" {
+            } else if logs.log_type == LogType::Info {
                 info_type += 1;
-            } else if logs.log_type == "Error" {
+            } else if logs.log_type == LogType::Error {
                 error_type += 1
-            } else if logs.log_type == "Create" {
+            } else if logs.log_type == LogType::Create {
                 create_type += 1;
                 // We are basing these counts on the Cosole.app tool
                 // Console.app skips Activity event logs
                 continue;
-            } else if logs.log_type == String::new() {
+            } else if logs.event_type == EventType::Simpledump
+                || logs.event_type == EventType::Statedump
+            {
                 // We are basing these counts on the Cosole.app tool
                 // Console.app skips Simple and State dump event logs
                 state_simple_dump += 1;
                 continue;
-            } else if logs.log_type.contains("Signpost") {
+            } else if is_signpost(logs.log_type) {
                 // We are basing these counts on the Cosole.app tool
                 // Console.app skips Signpost event logs
                 signpost += 1;
@@ -572,15 +601,15 @@ fn test_parse_all_logs_private_with_public_mix_big_sur_special_file() {
     let mut error = 0;
 
     for result in results {
-        if result.event_type == "Statedump" {
+        if result.event_type == EventType::Statedump {
             statedump += 1;
-        } else if result.log_type == "Default" {
+        } else if result.log_type == LogType::Default {
             default += 1;
-        } else if result.log_type == "Fault" {
+        } else if result.log_type == LogType::Fault {
             fault += 1;
-        } else if result.log_type == "Info" {
+        } else if result.log_type == LogType::Info {
             info += 1;
-        } else if result.log_type == "Error" {
+        } else if result.log_type == LogType::Error {
             error += 1;
         }
     }

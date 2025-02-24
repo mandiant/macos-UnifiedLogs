@@ -11,7 +11,7 @@ use macos_unifiedlogs::{
     filesystem::LogarchiveProvider,
     parser::{build_log, collect_shared_strings, collect_strings, collect_timesync, parse_log},
     traits::FileProvider,
-    unified_log::{LogData, UnifiedLogData},
+    unified_log::{EventType, LogData, LogType, UnifiedLogData},
 };
 use regex::Regex;
 
@@ -85,8 +85,8 @@ fn test_build_log_monterey() {
     assert_eq!(results[0].pid, 0);
     assert_eq!(results[0].thread_id, 2241);
     assert_eq!(results[0].category, "");
-    assert_eq!(results[0].log_type, "Error");
-    assert_eq!(results[0].event_type, "Log");
+    assert_eq!(results[0].log_type, LogType::Error);
+    assert_eq!(results[0].event_type, EventType::Log);
     assert_eq!(results[0].euid, 0);
     assert_eq!(results[0].boot_uuid, "17AB576950394796B7F3CD2C157F4A2F");
     assert_eq!(results[0].timezone_name, "New_York");
@@ -161,7 +161,9 @@ fn test_parse_all_logs_monterey() {
             string_count += 1;
         }
 
-        if logs.message.contains("MTUtilities: WorldClockWidget:") && logs.log_type == "Default" {
+        if logs.message.contains("MTUtilities: WorldClockWidget:")
+            && logs.log_type == LogType::Default
+        {
             mutilities_worldclock += 1;
         }
         if logs.message.contains("MTUtilities: Returning widget") {
