@@ -9,7 +9,7 @@ use crate::decoders::location;
 use crate::util::{clean_uuid, encode_standard, extract_string};
 use log::{error, info};
 use nom::bytes::complete::take;
-use nom::number::complete::{le_u32, le_u64, le_u8};
+use nom::number::complete::{le_u8, le_u32, le_u64};
 use plist::Value;
 use std::mem::size_of;
 
@@ -1061,6 +1061,9 @@ mod tests {
             255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0,
         ];
         let result = Statedump::parse_statedump_object(&test_data, name);
-        assert_eq!(result, "{\"thermalLevel\": -1, \"reachability: \"kReachabilityLarge\", \"airplaneMode\": false, \"batteryData\":{\"wasConnected\": false, \"charged\": false, \"level\": -1, \"connected\": false, \"chargerType\": \"kChargerTypeUnknown\"}, \"restrictedMode\": false, \"batterySaverModeEnabled\": false, \"push_service\":false}");
+        assert_eq!(
+            result,
+            "{\"thermalLevel\": -1, \"reachability: \"kReachabilityLarge\", \"airplaneMode\": false, \"batteryData\":{\"wasConnected\": false, \"charged\": false, \"level\": -1, \"connected\": false, \"chargerType\": \"kChargerTypeUnknown\"}, \"restrictedMode\": false, \"batterySaverModeEnabled\": false, \"push_service\":false}"
+        );
     }
 }

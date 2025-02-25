@@ -9,9 +9,9 @@ use super::DecoderError;
 use crate::util::decode_standard;
 use log::warn;
 use nom::{
+    Parser,
     combinator::map,
-    number::complete::{be_u128, be_u16, be_u32, be_u8},
-    sequence::tuple,
+    number::complete::{be_u8, be_u16, be_u32, be_u128},
 };
 use std::net::{Ipv4Addr, Ipv6Addr};
 
@@ -72,7 +72,8 @@ pub(crate) fn sockaddr(input: &str) -> Result<String, DecoderError<'_>> {
 
 /// Get the sockaddr data
 fn get_sockaddr_data(input: &[u8]) -> nom::IResult<&[u8], String> {
-    let (input, (_total_length, family)) = tuple((be_u8, be_u8))(input)?;
+    let mut family_tup = (be_u8, be_u8);
+    let (input, (_total_length, family)) = family_tup.parse(input)?;
 
     // Family types seen so far (AF_INET should be used most often)
     match family {
@@ -87,8 +88,8 @@ fn get_sockaddr_data(input: &[u8]) -> nom::IResult<&[u8], String> {
             }
         }
         30 => {
-            let (input, (port, flow, ip_addr, scope)) =
-                tuple((be_u16, be_u32, get_ip_six, be_u32))(input)?;
+            let mut tup = (be_u16, be_u32, get_ip_six, be_u32);
+            let (input, (port, flow, ip_addr, scope)) = tup.parse(input)?;
 
             match port {
                 0 => Ok((
@@ -110,12 +111,12 @@ fn get_sockaddr_data(input: &[u8]) -> nom::IResult<&[u8], String> {
 
 /// Get the IPv4 data
 pub(crate) fn get_ip_four(input: &[u8]) -> nom::IResult<&[u8], Ipv4Addr> {
-    map(be_u32, Ipv4Addr::from)(input)
+    map(be_u32, Ipv4Addr::from).parse(input)
 }
 
 /// Get the IPv6 data
 pub(crate) fn get_ip_six(input: &[u8]) -> nom::IResult<&[u8], Ipv6Addr> {
-    map(be_u128, Ipv6Addr::from)(input)
+    map(be_u128, Ipv6Addr::from).parse(input)
 }
 
 #[cfg(test)]

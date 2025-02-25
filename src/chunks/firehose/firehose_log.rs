@@ -12,13 +12,14 @@ use crate::chunks::firehose::signpost::FirehoseSignpost;
 use crate::chunks::firehose::trace::FirehoseTrace;
 use crate::util::{encode_standard, extract_string_size, padding_size_8, padding_size_four};
 use log::{debug, error, warn};
+use nom::Parser;
 use nom::bytes::complete::take_while;
 use nom::combinator::map;
 use nom::multi::many_m_n;
-use nom::number::complete::{be_u128, le_i16, le_i32, le_i64, le_i8};
+use nom::number::complete::{be_u128, le_i8, le_i16, le_i32, le_i64};
 use nom::{
     bytes::complete::take,
-    number::complete::{le_u16, le_u32, le_u64, le_u8},
+    number::complete::{le_u8, le_u16, le_u32, le_u64},
 };
 use serde::Serialize;
 use std::mem::size_of;
@@ -531,15 +532,15 @@ impl FirehosePreamble {
     /// Parse Backtrace data for log entry (chunk). This only exists if `has_context_data` flag is set
     fn get_backtrace_data(data: &[u8]) -> nom::IResult<&[u8], Vec<String>> {
         let (input, _unknown_data) = take(3usize)(data)?;
-        let (input, uuid_count) = map(le_u8, usize::from)(input)?;
-        let (input, offset_count) = map(le_u16, usize::from)(input)?;
+        let (input, uuid_count) = map(le_u8, usize::from).parse(input)?;
+        let (input, offset_count) = map(le_u16, usize::from).parse(input)?;
 
-        let (input, uuid_vec) = many_m_n(uuid_count, uuid_count, be_u128)(input)?;
+        let (input, uuid_vec) = many_m_n(uuid_count, uuid_count, be_u128).parse(input)?;
 
-        let (input, offsets_vec) = many_m_n(offset_count, offset_count, le_u32)(input)?;
+        let (input, offsets_vec) = many_m_n(offset_count, offset_count, le_u32).parse(input)?;
 
         let (mut input, indexes) =
-            many_m_n(offset_count, offset_count, map(le_u8, usize::from))(input)?;
+            many_m_n(offset_count, offset_count, map(le_u8, usize::from)).parse(input)?;
 
         let backtrace_data = indexes
             .iter()
@@ -642,10 +643,10 @@ impl FirehosePreamble {
     fn parse_item_number(data: &[u8], item_size: u16) -> nom::IResult<&[u8], i64> {
         let input = data;
         Ok(match item_size {
-            4 => map(le_i32, i64::from)(input)?,
-            2 => map(le_i16, i64::from)(input)?,
+            4 => map(le_i32, i64::from).parse(input)?,
+            2 => map(le_i16, i64::from).parse(input)?,
             8 => le_i64(input)?,
-            1 => map(le_i8, i64::from)(input)?,
+            1 => map(le_i8, i64::from).parse(input)?,
             _ => {
                 warn!(
                     "[macos-unifiedlogs] Unknown number size support: {:?}",
@@ -3169,7 +3170,10 @@ mod tests {
         results.item_info.push(firehose_item);
         let (_, _) = FirehosePreamble::parse_private_data(&test_data, &mut results).unwrap();
 
-        assert_eq!(results.item_info[0].message_strings, "<SZExtractor<0x15780ee60> prepared:Y valid:Y pathEnding:com.apple.nsurlsessiond/CFNetworkDownload_yWh5k8.tmp error:(null)>: Supply bytes with length 65536 began")
+        assert_eq!(
+            results.item_info[0].message_strings,
+            "<SZExtractor<0x15780ee60> prepared:Y valid:Y pathEnding:com.apple.nsurlsessiond/CFNetworkDownload_yWh5k8.tmp error:(null)>: Supply bytes with length 65536 began"
+        )
     }
 
     #[test]

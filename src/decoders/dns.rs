@@ -6,19 +6,19 @@
 // See the License for the specific language governing permissions and limitations under the License.
 
 use super::{
-    network::{get_ip_four, get_ip_six},
     DecoderError,
+    network::{get_ip_four, get_ip_six},
 };
 use crate::util::{decode_standard, extract_string, extract_string_size};
 use byteorder::{BigEndian, WriteBytesExt};
 use log::error;
 use nom::{
+    IResult, Parser,
     bytes::complete::take,
-    combinator::{fail, iterator, map, map_parser, verify},
+    combinator::{iterator, map, map_parser, verify},
+    error::ErrorKind,
     multi::fold_many0,
-    number::complete::{be_u128, be_u16, be_u32, be_u8, le_u32},
-    sequence::tuple,
-    IResult,
+    number::complete::{be_u8, be_u16, be_u32, be_u128, le_u32},
 };
 use std::{
     fmt::Write,
@@ -205,7 +205,7 @@ fn parse_svcb(input: &[u8]) -> nom::IResult<&[u8], String> {
 
     // ALPN = Application Layer Protocol Negotation
     let (input, alpn_size) = be_u8(input)?;
-    let (input, alpn_message) = map_parser(take(alpn_size), parse_svcb_alpn)(input)?;
+    let (input, alpn_message) = map_parser(take(alpn_size), parse_svcb_alpn).parse(input)?;
     let (input, ip_message) = parse_svcb_ip(input)?;
 
     let message = format!("rdata: {} . {} {}", id, alpn_message, ip_message);
@@ -239,14 +239,14 @@ fn parse_svcb_ip(mut input: &[u8]) -> nom::IResult<&[u8], String> {
 
     // IPs can either be IPv4 or/and IPv6
     while !input.is_empty() {
-        let (i, ip_version) = verify(be_u16, |val| *val == IPV4 || *val == IPV6)(input)?;
+        let (i, ip_version) = verify(be_u16, |val| *val == IPV4 || *val == IPV6).parse(input)?;
         let (i, ip_size) = be_u16(i)?;
         let (i, ip_data) = take(ip_size)(i)?;
         input = i;
 
         if ip_version == IPV4 {
             let mut iter = iterator(ip_data, ipv4_parser());
-            for ip in iter.into_iter() {
+            for ip in iter.by_ref() {
                 if !ipv4s.is_empty() {
                     ipv4s.push(',');
                 }
@@ -255,7 +255,7 @@ fn parse_svcb_ip(mut input: &[u8]) -> nom::IResult<&[u8], String> {
             iter.finish()?;
         } else if ip_version == IPV6 {
             let mut iter = iterator(ip_data, ipv6_parser());
-            for ip in iter.into_iter() {
+            for ip in iter.by_ref() {
                 if !ipv6s.is_empty() {
                     ipv6s.push(',');
                 }
@@ -298,7 +298,8 @@ fn parse_mac_addr(input: &[u8]) -> nom::IResult<&[u8], String> {
             write!(&mut acc, "{:02X?}", item).ok(); // ignore errors on write in String
             acc
         },
-    )(input)
+    )
+    .parse(input)
 }
 
 /// Get IP Address info from log data
@@ -328,7 +329,10 @@ fn parse_dns_ip_addr(data: &[u8]) -> nom::IResult<&[u8], String> {
     } else if ip_version == IPV6 {
         get_ip_six(data).map(|(data, result)| (data, result.to_string()))
     } else {
-        fail(data)
+        Err(nom::Err::Error(nom::error::Error {
+            input: data,
+            code: ErrorKind::Fail,
+        }))
     }
 }
 
@@ -536,8 +540,8 @@ impl std::fmt::Display for DnsCounts {
 
 /// parse just the DNS count data associated with the DNS header
 fn parse_counts(data: &[u8]) -> nom::IResult<&[u8], DnsCounts> {
-    let (input, (question, answer, authority, additional)) =
-        tuple((be_u16, be_u16, be_u16, be_u16))(data)?;
+    let mut tup = (be_u16, be_u16, be_u16, be_u16);
+    let (input, (question, answer, authority, additional)) = tup.parse(data)?;
 
     Ok((
         input,
@@ -593,21 +597,30 @@ mod tests {
     fn test_parse_dns_header() {
         let test_data = "uXMBAAABAAAAAAAA";
         let result = parse_dns_header(test_data).unwrap();
-        assert_eq!(result, "Query ID: 0xB973, Flags: 0x100 Opcode: QUERY, \n    Query Type: 0,\n    Authoritative Answer Flag: 0, \n    Truncation Flag: 0, \n    Recursion Desired: 1, \n    Recursion Available: 0, \n    Response Code: No Error, Question Count: 1, Answer Record Count: 0, Authority Record Count: 0, Additional Record Count: 0");
+        assert_eq!(
+            result,
+            "Query ID: 0xB973, Flags: 0x100 Opcode: QUERY, \n    Query Type: 0,\n    Authoritative Answer Flag: 0, \n    Truncation Flag: 0, \n    Recursion Desired: 1, \n    Recursion Available: 0, \n    Response Code: No Error, Question Count: 1, Answer Record Count: 0, Authority Record Count: 0, Additional Record Count: 0"
+        );
     }
 
     #[test]
     fn test_get_dns_flags() {
         let test_data = [185, 115, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0];
         let (_, result) = get_dns_header(&test_data).unwrap();
-        assert_eq!(result, "Query ID: 0xB973, Flags: 0x100 Opcode: QUERY, \n    Query Type: 0,\n    Authoritative Answer Flag: 0, \n    Truncation Flag: 0, \n    Recursion Desired: 1, \n    Recursion Available: 0, \n    Response Code: No Error, Question Count: 1, Answer Record Count: 0, Authority Record Count: 0, Additional Record Count: 0");
+        assert_eq!(
+            result,
+            "Query ID: 0xB973, Flags: 0x100 Opcode: QUERY, \n    Query Type: 0,\n    Authoritative Answer Flag: 0, \n    Truncation Flag: 0, \n    Recursion Desired: 1, \n    Recursion Available: 0, \n    Response Code: No Error, Question Count: 1, Answer Record Count: 0, Authority Record Count: 0, Additional Record Count: 0"
+        );
     }
 
     #[test]
     fn test_get_dns_header() {
         let test_data = [1, 0];
         let (_, result) = get_dns_flags(&test_data).unwrap();
-        assert_eq!(result, "Opcode: QUERY, \n    Query Type: 0,\n    Authoritative Answer Flag: 0, \n    Truncation Flag: 0, \n    Recursion Desired: 1, \n    Recursion Available: 0, \n    Response Code: No Error");
+        assert_eq!(
+            result,
+            "Opcode: QUERY, \n    Query Type: 0,\n    Authoritative Answer Flag: 0, \n    Truncation Flag: 0, \n    Recursion Desired: 1, \n    Recursion Available: 0, \n    Response Code: No Error"
+        );
     }
 
     #[test]
@@ -622,7 +635,10 @@ mod tests {
         let test_data =
             "AAEAAAEAAwJoMgAEAAhoEJRAaBCVQAAGACAmBkcAAAAAAAAAAABoEJRAJgZHAAAAAAAAAAAAaBCVQA==";
         let result = get_service_binding(test_data).unwrap();
-        assert_eq!(result, "rdata: 1 . alpn=h2, ipv4 hint:104.16.148.64,104.16.149.64, ipv6 hint:2606:4700::6810:9440,2606:4700::6810:9540");
+        assert_eq!(
+            result,
+            "rdata: 1 . alpn=h2, ipv4 hint:104.16.148.64,104.16.149.64, ipv6 hint:2606:4700::6810:9440,2606:4700::6810:9540"
+        );
     }
 
     #[test]
@@ -632,7 +648,10 @@ mod tests {
         let decoded_data_result = decode_standard(test_data).unwrap();
 
         let (_, result) = parse_svcb(&decoded_data_result).unwrap();
-        assert_eq!(result, "rdata: 1 . alpn=h2, ipv4 hint:104.16.148.64,104.16.149.64, ipv6 hint:2606:4700::6810:9440,2606:4700::6810:9540");
+        assert_eq!(
+            result,
+            "rdata: 1 . alpn=h2, ipv4 hint:104.16.148.64,104.16.149.64, ipv6 hint:2606:4700::6810:9440,2606:4700::6810:9540"
+        );
     }
 
     #[test]
@@ -651,7 +670,10 @@ mod tests {
         ];
 
         let (_, result) = parse_svcb_ip(&test_data).unwrap();
-        assert_eq!(result, "ipv4 hint:104.16.148.64,104.16.149.64, ipv6 hint:2606:4700::6810:9440,2606:4700::6810:9540");
+        assert_eq!(
+            result,
+            "ipv4 hint:104.16.148.64,104.16.149.64, ipv6 hint:2606:4700::6810:9440,2606:4700::6810:9540"
+        );
     }
 
     #[test]
@@ -745,7 +767,10 @@ mod tests {
         let test_data = "2126119168";
 
         let result = dns_idflags(test_data).unwrap();
-        assert_eq!(result, "id: 0x7EBA, flags: 0x100 Opcode: QUERY, \n    Query Type: 0,\n    Authoritative Answer Flag: 0, \n    Truncation Flag: 0, \n    Recursion Desired: 1, \n    Recursion Available: 0, \n    Response Code: No Error");
+        assert_eq!(
+            result,
+            "id: 0x7EBA, flags: 0x100 Opcode: QUERY, \n    Query Type: 0,\n    Authoritative Answer Flag: 0, \n    Truncation Flag: 0, \n    Recursion Desired: 1, \n    Recursion Available: 0, \n    Response Code: No Error"
+        );
     }
 
     #[test]
@@ -753,7 +778,10 @@ mod tests {
         let test_data = vec![0x7e, 0xba, 0x1, 0];
 
         let (_, result) = parse_idflags(&test_data).unwrap();
-        assert_eq!(result, "id: 0x7EBA, flags: 0x100 Opcode: QUERY, \n    Query Type: 0,\n    Authoritative Answer Flag: 0, \n    Truncation Flag: 0, \n    Recursion Desired: 1, \n    Recursion Available: 0, \n    Response Code: No Error");
+        assert_eq!(
+            result,
+            "id: 0x7EBA, flags: 0x100 Opcode: QUERY, \n    Query Type: 0,\n    Authoritative Answer Flag: 0, \n    Truncation Flag: 0, \n    Recursion Desired: 1, \n    Recursion Available: 0, \n    Response Code: No Error"
+        );
     }
 
     #[test]

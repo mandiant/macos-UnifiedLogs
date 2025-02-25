@@ -10,6 +10,7 @@ use std::mem::size_of;
 use crate::chunks::firehose::firehose_log::FirehoseItemInfo;
 use crate::decoders::decoder;
 use log::{error, info, warn};
+use nom::Parser;
 use nom::branch::alt;
 use nom::bytes::complete::{is_a, is_not, take, take_until};
 use nom::character::complete::digit0;
@@ -215,7 +216,7 @@ pub fn format_firehose_log_message(
         }
 
         const PRECISION_ITEMS: [u8; 2] = [0x10, 0x12]; // dynamic precision item types?
-                                                       // If the item message was a precision type increment to actual value
+        // If the item message was a precision type increment to actual value
         if PRECISION_ITEMS.contains(&item_message[item_index].item_type) {
             item_index += 1;
         }
@@ -279,7 +280,10 @@ fn parse_formatter<'a>(
         index += 1;
 
         if index >= message_value.len() {
-            error!("[macos-unifiedlogs] Index now greater than messages array. This should not have happened. Index: {index}. Message Array len: {}", message_value.len());
+            error!(
+                "[macos-unifiedlogs] Index now greater than messages array. This should not have happened. Index: {index}. Message Array len: {}",
+                message_value.len()
+            );
             return Ok(("", String::from("Failed to format string due index length")));
         }
     }
@@ -347,7 +351,10 @@ fn parse_formatter<'a>(
             precision_value = message_value[index].item_size as usize;
             index += 1;
             if index >= message_value.len() {
-                error!("[macos-unifiedlogs] Index now greater than messages array. This should not have happened. Index: {index}. Message Array len: {}", message_value.len());
+                error!(
+                    "[macos-unifiedlogs] Index now greater than messages array. This should not have happened. Index: {index}. Message Array len: {}",
+                    message_value.len()
+                );
                 return Ok((
                     "",
                     String::from("Failed to format precision/dynamic string due index length"),
@@ -385,7 +392,7 @@ fn parse_formatter<'a>(
 
     // Get Length data if it exists or get the type format
     let (input, length_data) =
-        alt((is_a("hlwIztq"), is_a("cmCdiouxXeEfgGaAnpsSZP@")))(formatter_message)?;
+        alt((is_a("hlwIztq"), is_a("cmCdiouxXeEfgGaAnpsSZP@"))).parse(formatter_message)?;
     formatter_message = input;
 
     let mut type_data = length_data;

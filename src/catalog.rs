@@ -7,13 +7,12 @@
 
 use crate::{preamble::LogPreamble, util::*};
 use nom::{
+    IResult, Parser,
     bytes::complete::take,
     combinator::map,
-    error::{make_error, ErrorKind},
+    error::{ErrorKind, make_error},
     multi::many_m_n,
     number::complete::{be_u128, le_u16, le_u32, le_u64},
-    sequence::tuple,
-    IResult,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -113,7 +112,7 @@ impl CatalogChunk {
     /// Parse log Catalog data. The log Catalog contains metadata related to log entries such as Process info, Subsystem info, and the compressed log entries
     pub fn parse_catalog(input: &[u8]) -> IResult<&[u8], Self> {
         let (input, preamble) = LogPreamble::parse(input)?;
-
+        let mut tup = (le_u16, le_u16, le_u16, le_u16, le_u16);
         let (
             input,
             (
@@ -123,10 +122,10 @@ impl CatalogChunk {
                 catalog_offset_sub_chunks,
                 number_sub_chunks,
             ),
-        ) = tuple((le_u16, le_u16, le_u16, le_u16, le_u16))(input)?;
+        ) = tup.parse(input)?;
 
         const UNKNOWN_LENGTH: u8 = 6;
-        let (input, unknown) = map(take(UNKNOWN_LENGTH), |v: &[u8]| v.to_vec())(input)?;
+        let (input, unknown) = map(take(UNKNOWN_LENGTH), |v: &[u8]| v.to_vec()).parse(input)?;
         let (input, earliest_firehose_timestamp) = le_u64(input)?;
 
         const UUID_LENGTH: usize = 16;
@@ -136,7 +135,8 @@ impl CatalogChunk {
             number_catalog_uuids,
             number_catalog_uuids,
             map(be_u128, |x| format!("{x:032X}")),
-        )(input)?;
+        )
+        .parse(input)?;
 
         let subsystems_strings_length =
             catalog_process_info_entries_offset - catalog_subsystem_strings_offset;
@@ -147,13 +147,15 @@ impl CatalogChunk {
             number_process_information_entries as usize,
             number_process_information_entries as usize,
             |input| Self::parse_catalog_process_entry(input, &catalog_uuids),
-        )(input)?;
+        )
+        .parse(input)?;
 
         let (input, catalog_subchunks) = many_m_n(
             number_sub_chunks as usize,
             number_sub_chunks as usize,
             Self::parse_catalog_subchunk,
-        )(input)?;
+        )
+        .parse(input)?;
         Ok((
             input,
             CatalogChunk {
@@ -180,25 +182,31 @@ impl CatalogChunk {
         input: &'a [u8],
         uuids: &[String],
     ) -> IResult<&'a [u8], ProcessInfoEntry> {
-        let (input, (index, unknown)) = tuple((le_u16, le_u16))(input)?;
-        let (input, (catalog_main_uuid_index, catalog_dsc_uuid_index)) =
-            tuple((le_u16, le_u16))(input)?;
-        let (input, (first_number_proc_id, second_number_proc_id)) =
-            tuple((le_u64, le_u32))(input)?;
+        let mut catlog_tup = (le_u16, le_u16);
+        let (input, (index, unknown)) = catlog_tup.parse(input)?;
+        let (input, (catalog_main_uuid_index, catalog_dsc_uuid_index)) = catlog_tup.parse(input)?;
+        let mut proc_tup = (le_u64, le_u32);
+        let (input, (first_number_proc_id, second_number_proc_id)) = proc_tup.parse(input)?;
+
+        let mut id_tup = (le_u32, le_u32, le_u32, le_u32, le_u32);
         let (input, (pid, effective_user_id, unknown2, number_uuids_entries, unknown3)) =
-            tuple((le_u32, le_u32, le_u32, le_u32, le_u32))(input)?;
+            id_tup.parse(input)?;
 
         let (input, uuid_info_entries) =
             many_m_n(number_uuids_entries as _, number_uuids_entries as _, |s| {
                 Self::parse_process_info_uuid_entry(s, uuids)
-            })(input)?;
-        let (input, (number_subsystems, unknown4)) = tuple((le_u32, le_u32))(input)?;
+            })
+            .parse(input)?;
+
+        let mut sub_tup = (le_u32, le_u32);
+        let (input, (number_subsystems, unknown4)) = sub_tup.parse(input)?;
 
         let (input, subsystem_entries) = many_m_n(
             number_subsystems as _,
             number_subsystems as _,
             Self::parse_process_info_subystem,
-        )(input)?;
+        )
+        .parse(input)?;
 
         // Grab parsed UUIDs from Catalag array based on process entry uuid index
         let main_uuid = uuids
@@ -250,11 +258,12 @@ impl CatalogChunk {
         input: &'a [u8],
         uuids: &[String],
     ) -> IResult<&'a [u8], ProcessUUIDEntry> {
-        let (input, (size, unknown, catalog_uuid_index)) = tuple((le_u32, le_u32, le_u16))(input)?;
+        let mut tup = (le_u32, le_u32, le_u16);
+        let (input, (size, unknown, catalog_uuid_index)) = tup.parse(input)?;
 
         const LOAD_ADDRESS_SIZE: u8 = 6;
         let (input, mut load_address_vec) =
-            map(take(LOAD_ADDRESS_SIZE), |x: &[u8]| x.to_vec())(input)?;
+            map(take(LOAD_ADDRESS_SIZE), |x: &[u8]| x.to_vec()).parse(input)?;
         load_address_vec.push(0);
         load_address_vec.push(0);
         let load_address = match le_u64::<&[u8], ()>(&load_address_vec[..]) {
@@ -281,8 +290,8 @@ impl CatalogChunk {
 
     /// Parse the Catalog Subsystem metadata. This helps get the subsystem (App Bundle ID) and the log entry category
     fn parse_process_info_subystem(input: &[u8]) -> IResult<&[u8], ProcessInfoSubsystem> {
-        let (input, (identifer, subsystem_offset, category_offset)) =
-            tuple((le_u16, le_u16, le_u16))(input)?;
+        let mut tup = (le_u16, le_u16, le_u16);
+        let (input, (identifer, subsystem_offset, category_offset)) = tup.parse(input)?;
         Ok((
             input,
             ProcessInfoSubsystem {
@@ -295,15 +304,17 @@ impl CatalogChunk {
 
     /// Parse the Catalog Subchunk metadata. This metadata is related to the compressed (typically) Chunkset data
     fn parse_catalog_subchunk(input: &[u8]) -> IResult<&[u8], CatalogSubchunk> {
+        let mut tup = (le_u64, le_u64, le_u32, le_u32, le_u32);
         let (input, (start, end, uncompressed_size, compression_algorithmn, number_index)) =
-            tuple((le_u64, le_u64, le_u32, le_u32, le_u32))(input)?;
+            tup.parse(input)?;
 
         const LZ4_COMPRESSION: u32 = 256;
         if compression_algorithmn != LZ4_COMPRESSION {
             return Err(nom::Err::Error(make_error(input, ErrorKind::OneOf)));
         }
 
-        let (input, indexes) = many_m_n(number_index as _, number_index as _, le_u16)(input)?;
+        let (input, indexes) =
+            many_m_n(number_index as _, number_index as _, le_u16).parse(input)?;
 
         let (input, number_string_offsets) = le_u32(input)?;
 
@@ -311,7 +322,8 @@ impl CatalogChunk {
             number_string_offsets as _,
             number_string_offsets as _,
             le_u16,
-        )(input)?;
+        )
+        .parse(input)?;
 
         // calculate amount of padding needed based on number_string_offsets and number_index
         const OFFSET_SIZE: u64 = 2;

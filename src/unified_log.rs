@@ -296,7 +296,10 @@ impl Iterator for LogIterator<'_> {
                                 }
                             }
                             Err(err) => {
-                                warn!("[macos-unifiedlogs] Failed to get message string data for firehose non-activity log entry: {:?}", err);
+                                warn!(
+                                    "[macos-unifiedlogs] Failed to get message string data for firehose non-activity log entry: {:?}",
+                                    err
+                                );
                             }
                         }
 
@@ -372,7 +375,10 @@ impl Iterator for LogIterator<'_> {
                                 }
                             }
                             Err(err) => {
-                                warn!("[macos-unifiedlogs] Failed to get message string data for firehose activity log entry: {:?}", err);
+                                warn!(
+                                    "[macos-unifiedlogs] Failed to get message string data for firehose activity log entry: {:?}",
+                                    err
+                                );
                             }
                         }
                     }
@@ -450,7 +456,10 @@ impl Iterator for LogIterator<'_> {
                                 }
                             }
                             Err(err) => {
-                                warn!("[macos-unifiedlogs] Failed to get message string data for firehose signpost log entry: {:?}", err);
+                                warn!(
+                                    "[macos-unifiedlogs] Failed to get message string data for firehose signpost log entry: {:?}",
+                                    err
+                                );
                             }
                         }
                         if firehose.firehose_signpost.subsystem != 0 {
@@ -515,7 +524,10 @@ impl Iterator for LogIterator<'_> {
                                 }
                             }
                             Err(err) => {
-                                warn!("[macos-unifiedlogs] Failed to get message string data for firehose activity log entry: {:?}", err);
+                                warn!(
+                                    "[macos-unifiedlogs] Failed to get message string data for firehose activity log entry: {:?}",
+                                    err
+                                );
                             }
                         }
                     }
