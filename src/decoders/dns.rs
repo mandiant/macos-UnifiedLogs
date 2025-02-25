@@ -13,12 +13,12 @@ use crate::util::{decode_standard, extract_string, extract_string_size};
 use byteorder::{BigEndian, WriteBytesExt};
 use log::error;
 use nom::{
-    IResult,
+    IResult, Parser,
     bytes::complete::take,
-    combinator::{fail, iterator, map, map_parser, verify},
+    combinator::{iterator, map, map_parser, verify},
+    error::ErrorKind,
     multi::fold_many0,
     number::complete::{be_u8, be_u16, be_u32, be_u128, le_u32},
-    sequence::tuple,
 };
 use std::{
     fmt::Write,
@@ -205,7 +205,7 @@ fn parse_svcb(input: &[u8]) -> nom::IResult<&[u8], String> {
 
     // ALPN = Application Layer Protocol Negotation
     let (input, alpn_size) = be_u8(input)?;
-    let (input, alpn_message) = map_parser(take(alpn_size), parse_svcb_alpn)(input)?;
+    let (input, alpn_message) = map_parser(take(alpn_size), parse_svcb_alpn).parse(input)?;
     let (input, ip_message) = parse_svcb_ip(input)?;
 
     let message = format!("rdata: {} . {} {}", id, alpn_message, ip_message);
@@ -239,14 +239,14 @@ fn parse_svcb_ip(mut input: &[u8]) -> nom::IResult<&[u8], String> {
 
     // IPs can either be IPv4 or/and IPv6
     while !input.is_empty() {
-        let (i, ip_version) = verify(be_u16, |val| *val == IPV4 || *val == IPV6)(input)?;
+        let (i, ip_version) = verify(be_u16, |val| *val == IPV4 || *val == IPV6).parse(input)?;
         let (i, ip_size) = be_u16(i)?;
         let (i, ip_data) = take(ip_size)(i)?;
         input = i;
 
         if ip_version == IPV4 {
             let mut iter = iterator(ip_data, ipv4_parser());
-            for ip in iter.into_iter() {
+            for ip in iter.by_ref() {
                 if !ipv4s.is_empty() {
                     ipv4s.push(',');
                 }
@@ -255,7 +255,7 @@ fn parse_svcb_ip(mut input: &[u8]) -> nom::IResult<&[u8], String> {
             iter.finish()?;
         } else if ip_version == IPV6 {
             let mut iter = iterator(ip_data, ipv6_parser());
-            for ip in iter.into_iter() {
+            for ip in iter.by_ref() {
                 if !ipv6s.is_empty() {
                     ipv6s.push(',');
                 }
@@ -298,7 +298,8 @@ fn parse_mac_addr(input: &[u8]) -> nom::IResult<&[u8], String> {
             write!(&mut acc, "{:02X?}", item).ok(); // ignore errors on write in String
             acc
         },
-    )(input)
+    )
+    .parse(input)
 }
 
 /// Get IP Address info from log data
@@ -328,7 +329,10 @@ fn parse_dns_ip_addr(data: &[u8]) -> nom::IResult<&[u8], String> {
     } else if ip_version == IPV6 {
         get_ip_six(data).map(|(data, result)| (data, result.to_string()))
     } else {
-        fail(data)
+        Err(nom::Err::Error(nom::error::Error {
+            input: data,
+            code: ErrorKind::Fail,
+        }))
     }
 }
 
@@ -536,8 +540,8 @@ impl std::fmt::Display for DnsCounts {
 
 /// parse just the DNS count data associated with the DNS header
 fn parse_counts(data: &[u8]) -> nom::IResult<&[u8], DnsCounts> {
-    let (input, (question, answer, authority, additional)) =
-        tuple((be_u16, be_u16, be_u16, be_u16))(data)?;
+    let mut tup = (be_u16, be_u16, be_u16, be_u16);
+    let (input, (question, answer, authority, additional)) = tup.parse(data)?;
 
     Ok((
         input,

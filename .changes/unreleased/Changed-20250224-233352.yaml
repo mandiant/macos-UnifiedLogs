@@ -1,0 +1,3 @@
+kind: Changed
+body: Updated dependencies and migrated to Rust 2024 edition
+time: 2025-02-24T23:33:52.886755-05:00

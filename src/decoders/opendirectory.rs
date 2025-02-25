@@ -9,10 +9,10 @@ use super::DecoderError;
 use crate::util::{decode_standard, non_empty_cstring};
 use log::warn;
 use nom::{
+    Parser,
     bytes::complete::take,
     multi::fold_many0,
     number::complete::{le_i32, le_u8, le_u32},
-    sequence::tuple,
 };
 use std::fmt::Write;
 
@@ -207,7 +207,8 @@ fn get_sid_data(input: &[u8]) -> nom::IResult<&[u8], String> {
     let (input, _) = take(unknown_size)(input)?;
 
     let (input, authority) = le_u8(input)?;
-    let (input, (subauthority, _)) = tuple((le_u8, take(3_usize)))(input)?;
+    let mut tup = (le_u8, take(3_usize));
+    let (input, (subauthority, _)) = tup.parse(input)?;
 
     let (input, message) = fold_many0(
         le_u32,
@@ -216,7 +217,8 @@ fn get_sid_data(input: &[u8]) -> nom::IResult<&[u8], String> {
             write!(&mut acc, "-{additional_subauthority}").ok(); // ignored Write error
             acc
         },
-    )(input)?;
+    )
+    .parse(input)?;
 
     Ok((input, message))
 }

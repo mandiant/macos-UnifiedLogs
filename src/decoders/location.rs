@@ -13,10 +13,9 @@ use super::{
 };
 use log::warn;
 use nom::{
-    IResult,
+    IResult, Parser,
     bytes::complete::take,
     number::complete::{le_f64, le_i32, le_i64, le_u8, le_u32},
-    sequence::tuple,
 };
 
 #[derive(Debug, Default)]
@@ -203,7 +202,8 @@ pub(crate) fn client_manager_state_tracker_state(input: &str) -> Result<String, 
 
 /// Get the tracker data
 pub(crate) fn get_state_tracker_data(input: &[u8]) -> IResult<&[u8], String> {
-    let (input, (location_enabled, location_restricted)) = tuple((le_u32, le_u32))(input)?;
+    let mut tup = (le_u32, le_u32);
+    let (input, (location_enabled, location_restricted)) = tup.parse(input)?;
     Ok((
         input,
         format!(
@@ -243,6 +243,7 @@ pub(crate) fn get_location_tracker_state(input: &[u8]) -> nom::IResult<&[u8], St
     // padding? Reserved?
     const UNKONWN_DATA_LENGTH2: usize = 7;
 
+    let mut accuracy_tup = (le_f64, le_f64, le_u8, le_u8, le_u8, le_u8, le_u8);
     let (
         input,
         (
@@ -254,8 +255,9 @@ pub(crate) fn get_location_tracker_state(input: &[u8]) -> nom::IResult<&[u8], St
             updating_ranging,
             updating_heading,
         ),
-    ) = tuple((le_f64, le_f64, le_u8, le_u8, le_u8, le_u8, le_u8))(input)?;
+    ) = accuracy_tup.parse(input)?;
 
+    let mut dynamic_tup = (take(UNKNOWN_DATA_LENGTH), le_f64, le_u8, le_u8, le_u8);
     let (
         input,
         (
@@ -265,8 +267,16 @@ pub(crate) fn get_location_tracker_state(input: &[u8]) -> nom::IResult<&[u8], St
             allows_altered_locations,
             dynamic_accuracy,
         ),
-    ) = tuple((take(UNKNOWN_DATA_LENGTH), le_f64, le_u8, le_u8, le_u8))(input)?;
+    ) = dynamic_tup.parse(input)?;
 
+    let mut track_tup = (
+        le_u8,
+        le_i32,
+        le_u8,
+        take(UNKONWN_DATA_LENGTH2),
+        le_i64,
+        le_i32,
+    );
     let (
         input,
         (
@@ -277,19 +287,13 @@ pub(crate) fn get_location_tracker_state(input: &[u8]) -> nom::IResult<&[u8], St
             activity_type,
             pauses_location_updates,
         ),
-    ) = tuple((
-        le_u8,
-        le_i32,
-        le_u8,
-        take(UNKONWN_DATA_LENGTH2),
-        le_i64,
-        le_i32,
-    ))(input)?;
+    ) = track_tup.parse(input)?;
 
+    let mut back_tup = (le_u8, le_u8, le_u8, le_u8);
     let (
         input,
         (paused, allows_background_updates, shows_background_location, allows_map_correction),
-    ) = tuple((le_u8, le_u8, le_u8, le_u8))(input)?;
+    ) = back_tup.parse(input)?;
 
     let location_data = input;
 
@@ -325,6 +329,7 @@ pub(crate) fn get_location_tracker_state(input: &[u8]) -> nom::IResult<&[u8], St
         return Ok((location_data, location_tracker_object(&tracker)));
     }
 
+    let mut location_tup = (le_u8, le_u8, le_u8, le_u8, le_u8, le_u8, le_u8, le_u8);
     let (
         input,
         (
@@ -337,7 +342,7 @@ pub(crate) fn get_location_tracker_state(input: &[u8]) -> nom::IResult<&[u8], St
             courtesy_prompt,
             is_authorized_for_widgets,
         ),
-    ) = tuple((le_u8, le_u8, le_u8, le_u8, le_u8, le_u8, le_u8, le_u8))(input)?;
+    ) = location_tup.parse(input)?;
 
     let tracker = LocationTrackerState {
         batching_location,
@@ -462,6 +467,20 @@ pub(crate) fn get_daemon_status_tracker(input: &[u8]) -> nom::IResult<&[u8], Str
     // https://gist.github.com/razvand/578f94748b624f4d47c1533f5a02b095
     const RESERVED_SIZE: usize = 9;
 
+    let mut tup = (
+        le_f64,
+        le_u8,
+        le_u8,
+        le_u32,
+        le_u8,
+        take(RESERVED_SIZE),
+        le_u32,
+        le_i32,
+        le_u8,
+        le_u8,
+        le_u8,
+        le_u8,
+    );
     let (
         location_data,
         (
@@ -478,20 +497,7 @@ pub(crate) fn get_daemon_status_tracker(input: &[u8]) -> nom::IResult<&[u8], Str
             push_service,
             restricted,
         ),
-    ) = tuple((
-        le_f64,
-        le_u8,
-        le_u8,
-        le_u32,
-        le_u8,
-        take(RESERVED_SIZE),
-        le_u32,
-        le_i32,
-        le_u8,
-        le_u8,
-        le_u8,
-        le_u8,
-    ))(input)?;
+    ) = tup.parse(input)?;
 
     let reachability_str = match reachability {
         2 => "kReachabilityLarge",

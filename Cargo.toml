@@ -10,10 +10,10 @@ keywords = ["forensics", "macOS", "unifiedlog"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-nom = "7.1.3"
-serde_json = "1.0.138"
-serde = { version = "1.0.217", features = ["derive"] }
-log = "0.4.25"
+nom = "8.0.0"
+serde_json = "1.0.139"
+serde = { version = "1.0.218", features = ["derive"] }
+log = "0.4.26"
 lz4_flex = "0.11.3"
 byteorder = "1.5.0"
 plist = "1.7.0"
@@ -27,7 +27,7 @@ simplelog = "0.12.2"
 csv = "1.3.1"
 chrono = "0.4.39"
 criterion = "0.5.1"
-anyhow = "1.0.95"
+anyhow = "1.0.96"
 test-case = "3.3"
 
 [[bench]]

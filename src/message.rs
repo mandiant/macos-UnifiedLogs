@@ -10,6 +10,7 @@ use std::mem::size_of;
 use crate::chunks::firehose::firehose_log::FirehoseItemInfo;
 use crate::decoders::decoder;
 use log::{error, info, warn};
+use nom::Parser;
 use nom::branch::alt;
 use nom::bytes::complete::{is_a, is_not, take, take_until};
 use nom::character::complete::digit0;
@@ -391,7 +392,7 @@ fn parse_formatter<'a>(
 
     // Get Length data if it exists or get the type format
     let (input, length_data) =
-        alt((is_a("hlwIztq"), is_a("cmCdiouxXeEfgGaAnpsSZP@")))(formatter_message)?;
+        alt((is_a("hlwIztq"), is_a("cmCdiouxXeEfgGaAnpsSZP@"))).parse(formatter_message)?;
     formatter_message = input;
 
     let mut type_data = length_data;

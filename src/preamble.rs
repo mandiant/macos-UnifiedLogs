@@ -6,9 +6,8 @@
 // See the License for the specific language governing permissions and limitations under the License.
 
 use nom::{
-    IResult,
+    IResult, Parser,
     number::complete::{le_u32, le_u64},
-    sequence::tuple,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -29,8 +28,8 @@ impl LogPreamble {
     /// Get the preamble (first 16 bytes of all Unified Log entries (chunks)) to detect the log (chunk) type. Ex: Firehose, Statedump, Simpledump, Catalog, etc
     /// And consume the input
     pub fn parse(input: &[u8]) -> IResult<&[u8], Self> {
-        let (input, (chunk_tag, chunk_sub_tag, chunk_data_size)) =
-            tuple((le_u32, le_u32, le_u64))(input)?;
+        let mut tup = (le_u32, le_u32, le_u64);
+        let (input, (chunk_tag, chunk_sub_tag, chunk_data_size)) = tup.parse(input)?;
         Ok((
             input,
             LogPreamble {
