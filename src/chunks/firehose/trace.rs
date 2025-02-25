@@ -7,7 +7,7 @@
 
 use log::{error, warn};
 use nom::bytes::complete::take;
-use nom::number::complete::{be_u16, be_u32, be_u64, be_u8, le_u32, le_u8};
+use nom::number::complete::{be_u8, be_u16, be_u32, be_u64, le_u8, le_u32};
 use std::mem::size_of;
 
 use crate::catalog::CatalogChunk;
@@ -118,7 +118,9 @@ impl FirehoseTrace {
                     item_info.message_strings = format!("{value}")
                 }
                 _ => {
-                    warn!("[macos-unifiedlogs] Unhandled size of trace data: {entry_size}. Defaulting to size of one");
+                    warn!(
+                        "[macos-unifiedlogs] Unhandled size of trace data: {entry_size}. Defaulting to size of one"
+                    );
                     let (_, unknown_size) = le_u8(message_data)?;
                     item_info.message_strings = format!("{unknown_size}")
                 }

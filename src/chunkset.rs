@@ -10,9 +10,9 @@ use std::mem::size_of;
 use log::{error, warn};
 use lz4_flex::decompress;
 use nom::{
+    Needed,
     bytes::complete::{take, take_while},
     number::complete::{le_u32, le_u64},
-    Needed,
 };
 
 use crate::chunks::firehose::firehose_log::FirehosePreamble;

@@ -10,7 +10,7 @@ use crate::util::decode_standard;
 use log::warn;
 use nom::{
     combinator::map,
-    number::complete::{be_u128, be_u16, be_u32, be_u8},
+    number::complete::{be_u8, be_u16, be_u32, be_u128},
     sequence::tuple,
 };
 use std::net::{Ipv4Addr, Ipv6Addr};

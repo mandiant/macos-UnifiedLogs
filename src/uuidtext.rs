@@ -6,9 +6,9 @@
 // See the License for the specific language governing permissions and limitations under the License.
 
 use log::error;
+use nom::Needed;
 use nom::bytes::complete::take;
 use nom::number::complete::le_u32;
-use nom::Needed;
 use serde::{Deserialize, Serialize};
 use std::mem::size_of;
 

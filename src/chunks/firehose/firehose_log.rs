@@ -15,10 +15,10 @@ use log::{debug, error, warn};
 use nom::bytes::complete::take_while;
 use nom::combinator::map;
 use nom::multi::many_m_n;
-use nom::number::complete::{be_u128, le_i16, le_i32, le_i64, le_i8};
+use nom::number::complete::{be_u128, le_i8, le_i16, le_i32, le_i64};
 use nom::{
     bytes::complete::take,
-    number::complete::{le_u16, le_u32, le_u64, le_u8},
+    number::complete::{le_u8, le_u16, le_u32, le_u64},
 };
 use serde::Serialize;
 use std::mem::size_of;
@@ -3169,7 +3169,10 @@ mod tests {
         results.item_info.push(firehose_item);
         let (_, _) = FirehosePreamble::parse_private_data(&test_data, &mut results).unwrap();
 
-        assert_eq!(results.item_info[0].message_strings, "<SZExtractor<0x15780ee60> prepared:Y valid:Y pathEnding:com.apple.nsurlsessiond/CFNetworkDownload_yWh5k8.tmp error:(null)>: Supply bytes with length 65536 began")
+        assert_eq!(
+            results.item_info[0].message_strings,
+            "<SZExtractor<0x15780ee60> prepared:Y valid:Y pathEnding:com.apple.nsurlsessiond/CFNetworkDownload_yWh5k8.tmp error:(null)>: Supply bytes with length 65536 began"
+        )
     }
 
     #[test]

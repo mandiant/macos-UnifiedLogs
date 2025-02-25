@@ -7,7 +7,7 @@
 
 use std::{fs::File, path::PathBuf};
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use macos_unifiedlogs::{
     dsc::SharedCacheStrings,
     filesystem::LogarchiveProvider,

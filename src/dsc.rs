@@ -7,9 +7,9 @@
 
 use crate::util::extract_string;
 use log::error;
+use nom::Needed;
 use nom::bytes::complete::take;
 use nom::number::complete::{be_u128, le_u16, le_u32, le_u64};
-use nom::Needed;
 use serde::{Deserialize, Serialize};
 use std::mem::size_of;
 

@@ -6,9 +6,9 @@
 // See the License for the specific language governing permissions and limitations under the License.
 
 use nom::{
+    IResult,
     number::complete::{le_u32, le_u64},
     sequence::tuple,
-    IResult,
 };
 
 #[derive(Debug, Clone, Copy)]

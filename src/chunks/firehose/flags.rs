@@ -6,9 +6,9 @@
 // See the License for the specific language governing permissions and limitations under the License.
 
 use log::{debug, error};
+use nom::Needed;
 use nom::bytes::complete::take;
 use nom::number::complete::{be_u128, le_u16};
-use nom::Needed;
 use std::mem::size_of;
 
 #[derive(Debug, Clone, Default)]
@@ -55,7 +55,9 @@ impl FirehoseFormatters {
                 formatter_flags.has_large_offset = firehose_large_offset;
                 input = firehose_input;
                 if (firehose_flags & large_shared_cache) != 0 {
-                    debug!("[macos-unifiedlogs] Firehose flag: large_shared_cache and has_large_offset");
+                    debug!(
+                        "[macos-unifiedlogs] Firehose flag: large_shared_cache and has_large_offset"
+                    );
                     let (firehose_input, large_shared_cache) =
                         take(size_of::<u16>())(firehose_input)?;
                     let (_, firehose_large_shared_cache) = le_u16(large_shared_cache)?;

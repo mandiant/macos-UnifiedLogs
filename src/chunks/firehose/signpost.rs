@@ -11,9 +11,9 @@ use crate::chunks::firehose::message::MessageData;
 use crate::dsc::SharedCacheStrings;
 use crate::uuidtext::UUIDText;
 use log::{debug, error};
-use nom::bytes::complete::take;
-use nom::number::complete::{le_u16, le_u32, le_u64, le_u8};
 use nom::Needed;
+use nom::bytes::complete::take;
+use nom::number::complete::{le_u8, le_u16, le_u32, le_u64};
 use std::mem::size_of;
 
 #[derive(Debug, Clone, Default)]
@@ -55,7 +55,7 @@ impl FirehoseSignpost {
         }
 
         let private_string_range: u16 = 0x100; // has_private_data flag
-                                               // Entry has private string data. The private data is found after parsing all the public data first
+        // Entry has private string data. The private data is found after parsing all the public data first
         if (firehose_flags & private_string_range) != 0 {
             debug!("[macos-unifiedlogs] Signpost Firehose has has_private_data flag");
             let (firehose_input, private_strings_offset) = take(size_of::<u16>())(input)?;
@@ -220,7 +220,10 @@ impl FirehoseSignpost {
                     }
                     Err(err) => {
                         // We should not get errors since we are combining two numbers to create the offset
-                        error!("Failed to get absolute offset to format string for signpost firehose entry: {:?}", err);
+                        error!(
+                            "Failed to get absolute offset to format string for signpost firehose entry: {:?}",
+                            err
+                        );
                         return Err(nom::Err::Incomplete(Needed::Unknown));
                     }
                 }

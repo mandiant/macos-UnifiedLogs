@@ -192,7 +192,10 @@ impl FirehoseActivity {
                     }
                     Err(err) => {
                         // We should not get errors since we are combining two numbers to create the offset
-                        error!("Failed to get absolute offset to format string for activity firehose entry: {:?}", err);
+                        error!(
+                            "Failed to get absolute offset to format string for activity firehose entry: {:?}",
+                            err
+                        );
                         return Err(nom::Err::Incomplete(Needed::Unknown));
                     }
                 }

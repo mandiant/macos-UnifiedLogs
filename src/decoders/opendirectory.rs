@@ -11,7 +11,7 @@ use log::warn;
 use nom::{
     bytes::complete::take,
     multi::fold_many0,
-    number::complete::{le_i32, le_u32, le_u8},
+    number::complete::{le_i32, le_u8, le_u32},
     sequence::tuple,
 };
 use std::fmt::Write;

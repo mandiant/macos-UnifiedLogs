@@ -117,19 +117,30 @@ fn test_build_log_complex_format_high_sierra() {
     assert_eq!(results.len(), 162402);
 
     for result in &results {
-        if result.message == "<PCPersistentTimer: 0x7f8b72c722f0> Calculated minimum fire date [2021-06-19 19:47:59 -0700] (75%) with fire date [2021-06-19 21:51:14 -0700], start date [2021-06-19 13:38:14 -0700], minimum early fire proportion 0.75, power state detection supported: no, in high power state: no, early fire constant interval 0" {
-            assert_eq!(result.process, "/System/Library/PrivateFrameworks/CalendarNotification.framework/Versions/A/XPCServices/CalNCService.xpc/Contents/MacOS/CalNCService");
+        if result.message
+            == "<PCPersistentTimer: 0x7f8b72c722f0> Calculated minimum fire date [2021-06-19 19:47:59 -0700] (75%) with fire date [2021-06-19 21:51:14 -0700], start date [2021-06-19 13:38:14 -0700], minimum early fire proportion 0.75, power state detection supported: no, in high power state: no, early fire constant interval 0"
+        {
+            assert_eq!(
+                result.process,
+                "/System/Library/PrivateFrameworks/CalendarNotification.framework/Versions/A/XPCServices/CalNCService.xpc/Contents/MacOS/CalNCService"
+            );
             assert_eq!(result.subsystem, "com.apple.PersistentConnection");
-            assert_eq!(result.time,1624135094694359040.0);
+            assert_eq!(result.time, 1624135094694359040.0);
             assert_eq!(result.activity_id, 0);
-            assert_eq!(result.library, "/System/Library/PrivateFrameworks/PersistentConnection.framework/Versions/A/PersistentConnection");
+            assert_eq!(
+                result.library,
+                "/System/Library/PrivateFrameworks/PersistentConnection.framework/Versions/A/PersistentConnection"
+            );
             assert_eq!(
                 result.message,
                 "<PCPersistentTimer: 0x7f8b72c722f0> Calculated minimum fire date [2021-06-19 19:47:59 -0700] (75%) with fire date [2021-06-19 21:51:14 -0700], start date [2021-06-19 13:38:14 -0700], minimum early fire proportion 0.75, power state detection supported: no, in high power state: no, early fire constant interval 0"
             );
             assert_eq!(result.pid, 580);
             assert_eq!(result.thread_id, 8759);
-            assert_eq!(result.category, "persistentTimer.com.apple.CalendarNotification.EKTravelEngine.periodicRefreshTimer");
+            assert_eq!(
+                result.category,
+                "persistentTimer.com.apple.CalendarNotification.EKTravelEngine.periodicRefreshTimer"
+            );
             assert_eq!(result.log_type, LogType::Default);
             assert_eq!(result.event_type, EventType::Log);
             assert_eq!(result.euid, 501);
@@ -137,8 +148,11 @@ fn test_build_log_complex_format_high_sierra() {
             assert_eq!(result.timezone_name, "Pacific");
             assert_eq!(result.process_uuid, "3E78A65047873F8AAFB10EA606B84B5D");
             assert_eq!(result.library_uuid, "761AF71A7FBE3374A4A48A38E0D59B6B");
-            assert_eq!(result.raw_message, "%{public}@ Calculated minimum fire date [%{public}@] (%g%%) with fire date [%{public}@], start date [%{public}@], minimum early fire proportion %g, power state detection supported: %{public}s, in high power state: %{public}s, early fire constant interval %f");
-            return
+            assert_eq!(
+                result.raw_message,
+                "%{public}@ Calculated minimum fire date [%{public}@] (%g%%) with fire date [%{public}@], start date [%{public}@], minimum early fire proportion %g, power state detection supported: %{public}s, in high power state: %{public}s, early fire constant interval %f"
+            );
+            return;
         }
     }
     panic!("Did not find message match")
@@ -222,9 +236,13 @@ fn test_parse_all_logs_high_sierra() {
         if logs.message == "" {
             empty_counter += 1;
 
-            if logs.process == "/System/Library/PrivateFrameworks/TelephonyUtilities.framework/callservicesd" {
+            if logs.process
+                == "/System/Library/PrivateFrameworks/TelephonyUtilities.framework/callservicesd"
+            {
                 empty_callservicesd += 1;
-            } else if logs.process == "/System/Library/PrivateFrameworks/IDS.framework/identityservicesd.app/Contents/MacOS/identityservicesd" {
+            } else if logs.process
+                == "/System/Library/PrivateFrameworks/IDS.framework/identityservicesd.app/Contents/MacOS/identityservicesd"
+            {
                 empty_identityservicesd += 1;
             } else if logs.process == "/usr/libexec/configd" {
                 empty_configd += 1;

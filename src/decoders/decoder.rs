@@ -8,6 +8,7 @@
 use crate::{
     chunks::firehose::firehose_log::FirehoseItemInfo,
     decoders::{
+        DecoderError,
         bool::{lowercase_bool, uppercase_bool},
         darwin::{errno_codes, permission},
         dns::{
@@ -24,7 +25,6 @@ use crate::{
         opendirectory::{errors, member_details, member_id_type, sid_details},
         time::parse_time,
         uuid::parse_uuid,
-        DecoderError,
     },
 };
 
@@ -42,7 +42,11 @@ pub(crate) fn check_objects(
     if item_type == PRECISION_ITEM {
         index += 1;
         if index > message_values.len() {
-            return format!("Index out of bounds for FirehoseItemInfo Vec. Got adjusted index {}, Vec size is {}. This should not have happened", index, message_values.len());
+            return format!(
+                "Index out of bounds for FirehoseItemInfo Vec. Got adjusted index {}, Vec size is {}. This should not have happened",
+                index,
+                message_values.len()
+            );
         }
     }
 

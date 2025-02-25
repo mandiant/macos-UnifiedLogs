@@ -215,7 +215,7 @@ pub fn format_firehose_log_message(
         }
 
         const PRECISION_ITEMS: [u8; 2] = [0x10, 0x12]; // dynamic precision item types?
-                                                       // If the item message was a precision type increment to actual value
+        // If the item message was a precision type increment to actual value
         if PRECISION_ITEMS.contains(&item_message[item_index].item_type) {
             item_index += 1;
         }
@@ -279,7 +279,10 @@ fn parse_formatter<'a>(
         index += 1;
 
         if index >= message_value.len() {
-            error!("[macos-unifiedlogs] Index now greater than messages array. This should not have happened. Index: {index}. Message Array len: {}", message_value.len());
+            error!(
+                "[macos-unifiedlogs] Index now greater than messages array. This should not have happened. Index: {index}. Message Array len: {}",
+                message_value.len()
+            );
             return Ok(("", String::from("Failed to format string due index length")));
         }
     }
@@ -347,7 +350,10 @@ fn parse_formatter<'a>(
             precision_value = message_value[index].item_size as usize;
             index += 1;
             if index >= message_value.len() {
-                error!("[macos-unifiedlogs] Index now greater than messages array. This should not have happened. Index: {index}. Message Array len: {}", message_value.len());
+                error!(
+                    "[macos-unifiedlogs] Index now greater than messages array. This should not have happened. Index: {index}. Message Array len: {}",
+                    message_value.len()
+                );
                 return Ok((
                     "",
                     String::from("Failed to format precision/dynamic string due index length"),

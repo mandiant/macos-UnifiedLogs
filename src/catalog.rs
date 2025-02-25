@@ -7,13 +7,13 @@
 
 use crate::{preamble::LogPreamble, util::*};
 use nom::{
+    IResult,
     bytes::complete::take,
     combinator::map,
-    error::{make_error, ErrorKind},
+    error::{ErrorKind, make_error},
     multi::many_m_n,
     number::complete::{be_u128, le_u16, le_u32, le_u64},
     sequence::tuple,
-    IResult,
 };
 
 #[derive(Debug, Clone, Default)]

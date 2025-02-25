@@ -289,7 +289,9 @@ impl MessageData {
         catalogs: &CatalogChunk,
         original_offset: u64,
     ) -> nom::IResult<&'a [u8], MessageData> {
-        debug!("[macos-unifiedlogs] Extracting format string from UUID file for log entry with Absolute flag");
+        debug!(
+            "[macos-unifiedlogs] Extracting format string from UUID file for log entry with Absolute flag"
+        );
         let mut uuid = String::new();
         // Go through Catalog associated with log entry and find UUID entry associated with log message (first_proc_id@second_proc_id)
         for process_info in &catalogs.catalog_process_info_entries {
@@ -834,10 +836,16 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(results.process, "/System/Library/PrivateFrameworks/SystemAdministration.framework/Versions/A/Resources/UpdateSettingsTool");
+        assert_eq!(
+            results.process,
+            "/System/Library/PrivateFrameworks/SystemAdministration.framework/Versions/A/Resources/UpdateSettingsTool"
+        );
         assert_eq!(results.process_uuid, "6F2A273A77993A719F649607CADC090B");
 
-        assert_eq!(results.library, "/System/Library/PrivateFrameworks/SystemAdministration.framework/Versions/A/Resources/UpdateSettingsTool");
+        assert_eq!(
+            results.library,
+            "/System/Library/PrivateFrameworks/SystemAdministration.framework/Versions/A/Resources/UpdateSettingsTool"
+        );
         assert_eq!(results.library_uuid, "6F2A273A77993A719F649607CADC090B");
 
         assert_eq!(results.format_string, "%s")
@@ -868,7 +876,10 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(results.process, "/System/Library/PrivateFrameworks/SystemAdministration.framework/Versions/A/Resources/UpdateSettingsTool");
+        assert_eq!(
+            results.process,
+            "/System/Library/PrivateFrameworks/SystemAdministration.framework/Versions/A/Resources/UpdateSettingsTool"
+        );
         assert_eq!(
             results.format_string,
             "Error: Invalid offset 55 for UUID 6F2A273A77993A719F649607CADC090B"
