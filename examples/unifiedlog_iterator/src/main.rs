@@ -373,8 +373,8 @@ impl OutputWriter {
                 let date_time = Utc.timestamp_nanos(record.time as i64);
                 csv_writer.write_record(&[
                     date_time.to_rfc3339_opts(SecondsFormat::Millis, true),
-                    record.event_type.to_owned(),
-                    record.log_type.to_owned(),
+                    format!("{:?}", record.event_type),
+                    format!("{:?}", record.log_type),
                     record.subsystem.to_owned(),
                     record.thread_id.to_string(),
                     record.pid.to_string(),

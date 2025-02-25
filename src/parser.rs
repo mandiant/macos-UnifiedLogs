@@ -178,6 +178,7 @@ mod tests {
     use crate::parser::{
         build_log, collect_shared_strings, collect_strings, collect_timesync, parse_log,
     };
+    use crate::unified_log::{EventType, LogType};
     use std::path::PathBuf;
 
     #[test]
@@ -338,8 +339,8 @@ mod tests {
         assert_eq!(results[10].pid, 45);
         assert_eq!(results[10].thread_id, 588);
         assert_eq!(results[10].category, "device");
-        assert_eq!(results[10].log_type, "Default");
-        assert_eq!(results[10].event_type, "Log");
+        assert_eq!(results[10].log_type, LogType::Default);
+        assert_eq!(results[10].event_type, EventType::Log);
         assert_eq!(results[10].euid, 0);
         assert_eq!(results[10].boot_uuid, "80D194AF56A34C54867449D2130D41BB");
         assert_eq!(results[10].timezone_name, "Pacific");
