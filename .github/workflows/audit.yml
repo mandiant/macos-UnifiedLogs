@@ -20,6 +20,7 @@ jobs:
     runs-on: ${{ matrix.info.os }}
     steps:
       - uses: actions/checkout@v4
+      - run: rustup update
       - name: Generate Cargo.lock
         run: cargo generate-lockfile
       - name: Run audit action to view any security issues
