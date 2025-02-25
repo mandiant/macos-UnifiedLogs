@@ -20,6 +20,8 @@ jobs:
     runs-on: ${{ matrix.info.os }}
     steps:
       - uses: actions/checkout@v4
+      - name: Generate Cargo.lock
+        run: cargo generate-lockfile
       - name: Run audit action to view any security issues
         uses: rustsec/audit-check@v2
         with:
