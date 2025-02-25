@@ -297,7 +297,11 @@ fn test_parse_all_logs_high_sierra() {
         if logs.message.contains("Unsupported Statedump object") {
             statedump_custom_objects += 1;
         }
-        if logs.message.contains("Statedump Protocol Buffer") {
+        if logs.message.contains("Failed to parse StateDump protobuf")
+            || logs
+                .message
+                .contains("Failed to serialize Protobuf HashMap")
+        {
             statedump_protocol_buffer += 1;
         }
     }
@@ -305,5 +309,5 @@ fn test_parse_all_logs_high_sierra() {
     assert_eq!(invalid_offsets, 3);
     assert_eq!(invalid_shared_string_offsets, 0);
     assert_eq!(statedump_custom_objects, 2);
-    assert_eq!(statedump_protocol_buffer, 1);
+    assert_eq!(statedump_protocol_buffer, 0);
 }

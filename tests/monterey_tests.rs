@@ -153,7 +153,11 @@ fn test_parse_all_logs_monterey() {
         if logs.message.contains("Unsupported Statedump object") {
             statedump_custom_objects += 1;
         }
-        if logs.message.contains("Statedump Protocol Buffer") {
+        if logs.message.contains("Failed to parse StateDump protobuf")
+            || logs
+                .message
+                .contains("Failed to serialize Protobuf HashMap")
+        {
             statedump_protocol_buffer += 1;
         }
 
@@ -186,7 +190,7 @@ fn test_parse_all_logs_monterey() {
     assert_eq!(invalid_offsets, 60);
     assert_eq!(invalid_shared_string_offsets, 309);
     assert_eq!(statedump_custom_objects, 2);
-    assert_eq!(statedump_protocol_buffer, 9);
+    assert_eq!(statedump_protocol_buffer, 0);
     assert_eq!(string_count, 28196); // Accurate count based on log raw-dump -a <monterey.logarchive> | grep "format:\s*%s$" | sort | uniq -c | sort -n
     assert_eq!(mutilities_worldclock, 57);
     assert_eq!(mutililties_return, 71);
