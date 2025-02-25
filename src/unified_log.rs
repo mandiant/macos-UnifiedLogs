@@ -24,12 +24,13 @@ use crate::header::HeaderChunk;
 use crate::message::format_firehose_log_message;
 use crate::preamble::LogPreamble;
 use crate::timesync::TimesyncBoot;
-use crate::util::{extract_string, padding_size_8, unixepoch_to_iso};
+use crate::util::{encode_standard, extract_string, padding_size_8, unixepoch_to_iso};
 use crate::uuidtext::UUIDText;
 use log::{error, warn};
 use nom::bytes::complete::take;
 use regex::Regex;
 use serde::Serialize;
+use sunlight::light::extract_protobuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum LogType {
@@ -582,7 +583,14 @@ impl Iterator for LogIterator<'_> {
 
             let data_string = match statedump.unknown_data_type {
                 0x1 => Statedump::parse_statedump_plist(&statedump.statedump_data),
-                0x2 => String::from("Statedump Protocol Buffer"),
+                0x2 => match extract_protobuf(&statedump.statedump_data) {
+                    Ok(map) => serde_json::to_string(&map)
+                        .unwrap_or(String::from("Failed to serialize Protobuf HashMap")),
+                    Err(_err) => format!(
+                        "Failed to parse StateDump protobuf: {}",
+                        encode_standard(&statedump.statedump_data)
+                    ),
+                },
                 0x3 => Statedump::parse_statedump_object(
                     &statedump.statedump_data,
                     &statedump.title_name,

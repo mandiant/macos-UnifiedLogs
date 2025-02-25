@@ -235,7 +235,11 @@ fn test_parse_all_logs_big_sur() {
             invalid_shared_string_offsets += 1;
         } else if logs.message.contains("Unsupported Statedump object") {
             statedump_custom_objects += 1;
-        } else if logs.message.contains("Statedump Protocol Buffer") {
+        } else if logs.message.contains("Failed to parse StateDump protobuf")
+            || logs
+                .message
+                .contains("Failed to serialize Protobuf HashMap")
+        {
             statedump_protocol_buffer += 1;
         } else if logs.message
             == r##"#32EC4B64 [AssetCacheLocatorService.queue] sending POST [327]{"locator-tag":"#32ec4b64","local-addresses":["192.168.101.144"],"ranked-results":true,"locator-software":[{"build":"20G224","type":"system","name":"macOS","version":"11.6.1"},{"id":"com.apple.AssetCacheLocatorService","executable":"AssetCacheLocatorService","type":"bundle","name":"AssetCacheLocatorService","version":"118"}]} to https://lcdn-locator.apple.com/lcdn/locate"##
@@ -285,7 +289,7 @@ fn test_parse_all_logs_big_sur() {
     assert_eq!(invalid_offsets, 54);
     assert_eq!(invalid_shared_string_offsets, 0);
     assert_eq!(statedump_custom_objects, 2);
-    assert_eq!(statedump_protocol_buffer, 3);
+    assert_eq!(statedump_protocol_buffer, 0);
     assert_eq!(found_precision_string, true);
 
     assert_eq!(statedump_count, 322);
