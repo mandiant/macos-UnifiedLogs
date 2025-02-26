@@ -1177,11 +1177,19 @@ mod tests {
         );
         assert_eq!(data.catalog.catalog_process_info_entries.len(), 1);
         assert_eq!(
-            data.catalog.catalog_process_info_entries[0].main_uuid,
+            data.catalog
+                .catalog_process_info_entries
+                .get("158_311")
+                .unwrap()
+                .main_uuid,
             "2BEFD20C18EC3838814F2B4E5AF3BCEC"
         );
         assert_eq!(
-            data.catalog.catalog_process_info_entries[0].dsc_uuid,
+            data.catalog
+                .catalog_process_info_entries
+                .get("158_311")
+                .unwrap()
+                .dsc_uuid,
             "3D05845F3F65358F9EBF2236E772AC01"
         );
 

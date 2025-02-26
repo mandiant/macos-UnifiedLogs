@@ -439,7 +439,6 @@ fn test_parse_all_logs_private_big_sur() {
             empty_counter += 1;
         }
         if logs.message.contains("<not found>") {
-            println!("{}", logs.message);
             not_found += 1;
         }
         if logs.message.contains("group: staff@/Local/Default") {

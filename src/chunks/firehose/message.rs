@@ -293,31 +293,27 @@ impl MessageData {
             "[macos-unifiedlogs] Extracting format string from UUID file for log entry with Absolute flag"
         );
         let mut uuid = String::new();
-        // Go through Catalog associated with log entry and find UUID entry associated with log message (first_proc_id@second_proc_id)
-        for process_info in &catalogs.catalog_process_info_entries {
-            if first_proc_id == &process_info.first_number_proc_id
-                && second_proc_id == &process_info.second_number_proc_id
-            {
-                // In addition to first_proc_id and second_proc_id, we need to go through UUID entries in the catalog
-                // Entries with the Absolute flag have the UUID stored in an Vec of UUIDs and offsets/load_address
-                // The correct UUID entry is the one where the absolute_offset value falls in between load_address and load_address size (uuids.load_address + uuids.size)
-                for uuids in &process_info.uuid_info_entries {
-                    if absolute_offset >= uuids.load_address
-                        && absolute_offset <= (uuids.load_address + u64::from(uuids.size))
-                    {
-                        debug!(
-                            "[macos-unifiedlogs] Absolute uuid file is: {:?}",
-                            uuids.uuid
-                        );
-                        uuids.uuid.clone_into(&mut uuid);
-                        break;
-                    }
+        if let Some(entry) = catalogs
+            .catalog_process_info_entries
+            .get(&format!("{first_proc_id}_{second_proc_id}"))
+        {
+            // In addition to first_proc_id and second_proc_id, we need to go through UUID entries in the catalog
+            // Entries with the Absolute flag have the UUID stored in an Vec of UUIDs and offsets/load_address
+            // The correct UUID entry is the one where the absolute_offset value falls in between load_address and load_address size (uuids.load_address + uuids.size)
+            for uuids in &entry.uuid_info_entries {
+                if absolute_offset >= uuids.load_address
+                    && absolute_offset <= (uuids.load_address + u64::from(uuids.size))
+                {
+                    debug!(
+                        "[macos-unifiedlogs] Absolute uuid file is: {:?}",
+                        uuids.uuid
+                    );
+                    uuids.uuid.clone_into(&mut uuid);
+                    break;
                 }
             }
-            if !uuid.is_empty() {
-                break;
-            }
         }
+
         // The UUID for log entries with absolute flag dont use the dsc uuid files
         let (_, main_uuid) = MessageData::get_catalog_dsc(catalogs, first_proc_id, second_proc_id);
 
@@ -605,14 +601,12 @@ impl MessageData {
         let mut dsc_uuid = String::new();
         let mut main_uuid = String::new();
 
-        for process_info in &catalogs.catalog_process_info_entries {
-            if first_proc_id == &process_info.first_number_proc_id
-                && second_proc_id == &process_info.second_number_proc_id
-            {
-                process_info.dsc_uuid.clone_into(&mut dsc_uuid);
-                process_info.main_uuid.clone_into(&mut main_uuid);
-                break;
-            }
+        if let Some(entry) = catalogs
+            .catalog_process_info_entries
+            .get(&format!("{first_proc_id}_{second_proc_id}"))
+        {
+            entry.dsc_uuid.clone_into(&mut dsc_uuid);
+            entry.main_uuid.clone_into(&mut main_uuid);
         }
         (dsc_uuid, main_uuid)
     }

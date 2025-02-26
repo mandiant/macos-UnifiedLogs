@@ -202,6 +202,7 @@ mod tests {
     use super::ChunksetChunk;
     use crate::catalog::CatalogChunk;
     use crate::unified_log::UnifiedLogCatalogData;
+    use std::collections::HashMap;
     use std::fs;
     use std::path::PathBuf;
 
@@ -2219,7 +2220,7 @@ mod tests {
                 earliest_firehose_timestamp: 0,
                 catalog_uuids: Vec::new(),
                 catalog_subsystem_strings: Vec::new(),
-                catalog_process_info_entries: Vec::new(),
+                catalog_process_info_entries: HashMap::new(),
                 catalog_subchunks: Vec::new(),
             },
             firehose: Vec::new(),
@@ -2266,7 +2267,7 @@ mod tests {
                 earliest_firehose_timestamp: 0,
                 catalog_uuids: Vec::new(),
                 catalog_subsystem_strings: Vec::new(),
-                catalog_process_info_entries: Vec::new(),
+                catalog_process_info_entries: HashMap::new(),
                 catalog_subchunks: Vec::new(),
             },
             firehose: Vec::new(),

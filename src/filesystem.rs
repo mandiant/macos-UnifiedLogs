@@ -232,7 +232,6 @@ mod tests {
 
         for case in valid_cases {
             let path = PathBuf::from(case);
-            println!("{:?}", path.components());
             let file_type = LogFileType::from(path.as_path());
             assert_eq!(file_type, LogFileType::Dsc);
         }

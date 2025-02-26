@@ -42,6 +42,7 @@ pub fn parse_log(mut reader: impl Read) -> Result<UnifiedLogData, ParserError> {
     }
 }
 
+/// Returns an iterator that parses through the log entries
 pub fn iter_log<'a>(
     unified_log_data: &'a UnifiedLogData,
     strings_data: &'a [UUIDText],
