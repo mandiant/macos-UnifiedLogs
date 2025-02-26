@@ -13,6 +13,7 @@ use std::mem::size_of;
 use crate::catalog::CatalogChunk;
 use crate::chunks::firehose::firehose_log::{FirehoseItemData, FirehoseItemInfo};
 use crate::chunks::firehose::message::MessageData;
+use crate::traits::FileProvider;
 use crate::uuidtext::UUIDText;
 
 #[derive(Debug, Clone, Default)]
@@ -145,6 +146,25 @@ impl FirehoseTrace {
         // Only main_exe flag has been seen for format strings
         MessageData::extract_format_strings(
             strings_data,
+            string_offset,
+            first_proc_id,
+            second_proc_id,
+            catalogs,
+            0,
+        )
+    }
+
+    /// Get base log message string formatter from shared cache strings (dsc) or UUID text file for firehose trace log entries (chunks)
+    pub fn get_firehose_trace_stringsv2<'a>(
+        provider: &'a mut dyn FileProvider,
+        string_offset: u64,
+        first_proc_id: &u64,
+        second_proc_id: &u32,
+        catalogs: &CatalogChunk,
+    ) -> nom::IResult<&'a [u8], MessageData> {
+        // Only main_exe flag has been seen for format strings
+        MessageData::cache_extract_format_strings(
+            provider,
             string_offset,
             first_proc_id,
             second_proc_id,

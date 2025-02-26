@@ -78,6 +78,18 @@ pub fn build_log(
     )
 }
 
+/// Reconstruct Unified Log entries using the strings data, cached strings data, timesync data, and unified log. Provide bool to ignore log entries that are not able to be recontructed (additional tracev3 files needed)
+/// Return a reconstructed log entries and any leftover Unified Log entries that could not be reconstructed (data may be stored in other tracev3 files)
+// Log entries with Oversize string entries may have the data in a different tracev3 file.
+pub fn build_logv2(
+    unified_data: &UnifiedLogData,
+    provider: &mut dyn FileProvider,
+    timesync_data: &[TimesyncBoot],
+    exclude_missing: bool,
+) -> (Vec<LogData>, UnifiedLogData) {
+    LogData::build_logv2(unified_data, provider, timesync_data, exclude_missing)
+}
+
 /// Parse all UUID files in provided directory. The directory should follow the same layout as the live system (ex: path/to/files/<two character UUID>/<remaining UUID name>)
 pub fn collect_strings(provider: &dyn FileProvider) -> Result<Vec<UUIDText>, ParserError> {
     let mut uuidtext_vec: Vec<UUIDText> = Vec::new();
@@ -85,7 +97,6 @@ pub fn collect_strings(provider: &dyn FileProvider) -> Result<Vec<UUIDText>, Par
     for mut source in provider.uuidtext_files() {
         let mut buf = Vec::new();
         let path = source.source_path().to_owned();
-        println!("{path}");
         if let Err(e) = source.reader().read_to_end(&mut buf) {
             error!(
                 "[macos-unifiedlogs] Failed to read uuidfile {}: {:?}",

@@ -2,6 +2,7 @@ use crate::dsc::SharedCacheStrings;
 use crate::traits::{FileProvider, SourceFile};
 use crate::uuidtext::UUIDText;
 use log::error;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Error, ErrorKind};
 use std::path::{Component, Path, PathBuf};
@@ -35,8 +36,20 @@ impl SourceFile for LocalFile {
 /// required files at the correct paths on a live macOS system. These files are only present on
 /// macOS Sierra (10.12) and above. The implemented methods emit error log messages if any are
 /// encountered while enumerating files or creating readers, but are otherwise infallible.
-#[derive(Default, Clone, Debug)]
-pub struct LiveSystemProvider {}
+#[derive(Default, Debug)]
+pub struct LiveSystemProvider {
+    pub(crate) uuidtext_cache: HashMap<String, UUIDText>,
+    pub(crate) dsc_cache: HashMap<String, SharedCacheStrings>,
+}
+
+impl LiveSystemProvider {
+    pub fn new() -> Self {
+        Self {
+            uuidtext_cache: HashMap::new(),
+            dsc_cache: HashMap::new(),
+        }
+    }
+}
 
 static TRACE_FOLDERS: &[&str] = &["HighVolume", "Special", "Signpost", "Persist"];
 
@@ -120,12 +133,17 @@ impl FileProvider for LiveSystemProvider {
 
     fn read_uuidtext(&self, uuid: &str) -> Result<UUIDText, Error> {
         let uuid_len = 32;
-        if uuid.len() != uuid_len {
+        let uuid = if uuid.len() == uuid_len - 1 {
+            // UUID starts with 0 which was not included in the string
+            &format!("0{uuid}")
+        } else if uuid.len() == uuid_len {
+            uuid
+        } else {
             return Err(Error::new(
                 ErrorKind::NotFound,
                 format!("uuid length not correct: {uuid}"),
             ));
-        }
+        };
 
         let dir_name = format!("{}{}", &uuid[0..1], &uuid[1..2]);
         let filename = &uuid[2..];
@@ -135,7 +153,6 @@ impl FileProvider for LiveSystemProvider {
         path.push(dir_name);
         path.push(filename);
 
-        println!("{:?}", path);
         let mut buf = Vec::new();
         let mut file = LocalFile::new(&path)?;
         file.reader().read_to_end(&mut buf)?;
@@ -158,20 +175,71 @@ impl FileProvider for LiveSystemProvider {
         Ok(uuid_text)
     }
 
+    fn cached_uuidtext(&self, uuid: &str) -> Option<&UUIDText> {
+        self.uuidtext_cache.get(uuid)
+    }
+
+    fn update_uuid(&mut self, uuid: &str, uuid2: &str) {
+        let status = match self.read_uuidtext(uuid) {
+            Ok(result) => result,
+            Err(_err) => return,
+        };
+        if self.uuidtext_cache.len() > 30 {
+            for key in self
+                .uuidtext_cache
+                .keys()
+                .take(5)
+                .cloned()
+                .collect::<Vec<String>>()
+            {
+                if key == uuid || key == uuid2 {
+                    continue;
+                }
+                let key = key.clone();
+                self.uuidtext_cache.remove(&key);
+            }
+        }
+        self.uuidtext_cache.insert(uuid.to_string(), status);
+    }
+
+    fn update_dsc(&mut self, uuid: &str, uuid2: &str) {
+        let status = match self.read_dsc_uuid(uuid) {
+            Ok(result) => result,
+            Err(_err) => return,
+        };
+        while self.dsc_cache.len() > 2 {
+            if let Some(key) = self.dsc_cache.keys().next() {
+                if key == uuid || key == uuid2 {
+                    continue;
+                }
+                let key = key.clone();
+                self.dsc_cache.remove(&key);
+            }
+        }
+        self.dsc_cache.insert(uuid.to_string(), status);
+    }
+
+    fn cached_dsc(&self, uuid: &str) -> Option<&SharedCacheStrings> {
+        self.dsc_cache.get(uuid)
+    }
+
     fn read_dsc_uuid(&self, uuid: &str) -> Result<SharedCacheStrings, Error> {
         let uuid_len = 32;
-        if uuid.len() != uuid_len {
+        let uuid = if uuid.len() == uuid_len - 1 {
+            // UUID starts with 0 which was not included in the string
+            &format!("0{uuid}")
+        } else if uuid.len() == uuid_len {
+            uuid
+        } else {
             return Err(Error::new(
                 ErrorKind::NotFound,
                 format!("uuid length not correct: {uuid}"),
             ));
-        }
+        };
 
-        let mut path = PathBuf::from("/private/var/db/uuidtext");
-        path.push("dsc");
+        let mut path = PathBuf::from("/private/var/db/uuidtext/dsc");
         path.push(uuid);
 
-        println!("{:?}", path);
         let mut buf = Vec::new();
         let mut file = LocalFile::new(&path)?;
         file.reader().read_to_end(&mut buf)?;
@@ -223,12 +291,16 @@ impl FileProvider for LiveSystemProvider {
 
 pub struct LogarchiveProvider {
     base: PathBuf,
+    pub(crate) uuidtext_cache: HashMap<String, UUIDText>,
+    pub(crate) dsc_cache: HashMap<String, SharedCacheStrings>,
 }
 
 impl LogarchiveProvider {
     pub fn new(path: &Path) -> Self {
         Self {
             base: path.to_path_buf(),
+            uuidtext_cache: HashMap::new(),
+            dsc_cache: HashMap::new(),
         }
     }
 }
@@ -260,12 +332,17 @@ impl FileProvider for LogarchiveProvider {
 
     fn read_uuidtext(&self, uuid: &str) -> Result<UUIDText, Error> {
         let uuid_len = 32;
-        if uuid.len() != uuid_len {
+        let uuid = if uuid.len() == uuid_len - 1 {
+            // UUID starts with 0 which was not included in the string
+            &format!("0{uuid}")
+        } else if uuid.len() == uuid_len {
+            uuid
+        } else {
             return Err(Error::new(
                 ErrorKind::NotFound,
                 format!("uuid length not correct: {uuid}"),
             ));
-        }
+        };
 
         let dir_name = format!("{}{}", &uuid[0..1], &uuid[1..2]);
         let filename = &uuid[2..];
@@ -274,7 +351,6 @@ impl FileProvider for LogarchiveProvider {
         base.push(dir_name);
         base.push(filename);
 
-        println!("{:?}", base);
         let mut buf = Vec::new();
         let mut file = LocalFile::new(&base)?;
         file.reader().read_to_end(&mut buf)?;
@@ -299,18 +375,22 @@ impl FileProvider for LogarchiveProvider {
 
     fn read_dsc_uuid(&self, uuid: &str) -> Result<SharedCacheStrings, Error> {
         let uuid_len = 32;
-        if uuid.len() != uuid_len {
+        let uuid = if uuid.len() == uuid_len - 1 {
+            // UUID starts with 0 which was not included in the string
+            &format!("0{uuid}")
+        } else if uuid.len() == uuid_len {
+            uuid
+        } else {
             return Err(Error::new(
                 ErrorKind::NotFound,
                 format!("uuid length not correct: {uuid}"),
             ));
-        }
+        };
 
         let mut base = self.base.clone();
         base.push("dsc");
         base.push(uuid);
 
-        println!("{:?}", base);
         let mut buf = Vec::new();
         let mut file = LocalFile::new(&base)?;
         file.reader().read_to_end(&mut buf)?;
@@ -333,6 +413,14 @@ impl FileProvider for LogarchiveProvider {
         Ok(uuid_text)
     }
 
+    fn cached_uuidtext(&self, uuid: &str) -> Option<&UUIDText> {
+        self.uuidtext_cache.get(uuid)
+    }
+
+    fn cached_dsc(&self, uuid: &str) -> Option<&SharedCacheStrings> {
+        self.dsc_cache.get(uuid)
+    }
+
     fn dsc_files(&self) -> Box<dyn Iterator<Item = Box<dyn SourceFile>>> {
         Box::new(
             WalkDir::new(&self.base)
@@ -343,6 +431,22 @@ impl FileProvider for LogarchiveProvider {
                     Some(Box::new(LocalFile::new(entry.path()).ok()?) as Box<dyn SourceFile>)
                 }),
         )
+    }
+
+    fn update_uuid(&mut self, uuid: &str, uuid2: &str) {
+        let status = match self.read_uuidtext(uuid) {
+            Ok(result) => result,
+            Err(_err) => return,
+        };
+        self.uuidtext_cache.insert(uuid.to_string(), status);
+    }
+
+    fn update_dsc(&mut self, uuid: &str, uuid2: &str) {
+        let status = match self.read_dsc_uuid(uuid) {
+            Ok(result) => result,
+            Err(_err) => return,
+        };
+        self.dsc_cache.insert(uuid.to_string(), status);
     }
 
     fn timesync_files(&self) -> Box<dyn Iterator<Item = Box<dyn SourceFile>>> {
