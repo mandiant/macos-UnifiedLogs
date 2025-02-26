@@ -1,5 +1,9 @@
+use crate::dsc::SharedCacheStrings;
 use crate::traits::{FileProvider, SourceFile};
+use crate::uuidtext::UUIDText;
+use log::error;
 use std::fs::File;
+use std::io::{Error, ErrorKind};
 use std::path::{Component, Path, PathBuf};
 use walkdir::WalkDir;
 
@@ -114,6 +118,82 @@ impl FileProvider for LiveSystemProvider {
         )
     }
 
+    fn read_uuidtext(&self, uuid: &str) -> Result<UUIDText, Error> {
+        let uuid_len = 32;
+        if uuid.len() != uuid_len {
+            return Err(Error::new(
+                ErrorKind::NotFound,
+                format!("uuid length not correct: {uuid}"),
+            ));
+        }
+
+        let dir_name = format!("{}{}", &uuid[0..1], &uuid[1..2]);
+        let filename = &uuid[2..];
+
+        let mut path = PathBuf::from("/private/var/db/uuidtext");
+
+        path.push(dir_name);
+        path.push(filename);
+
+        println!("{:?}", path);
+        let mut buf = Vec::new();
+        let mut file = LocalFile::new(&path)?;
+        file.reader().read_to_end(&mut buf)?;
+
+        let uuid_text = match UUIDText::parse_uuidtext(&buf) {
+            Ok((_, results)) => results,
+            Err(err) => {
+                error!(
+                    "[macos-unifiedlogs] Failed to parse UUID file {}: {:?}",
+                    path.to_str().unwrap_or_default(),
+                    err
+                );
+                return Err(Error::new(
+                    ErrorKind::InvalidData,
+                    format!("failed to read: {uuid}"),
+                ));
+            }
+        };
+
+        Ok(uuid_text)
+    }
+
+    fn read_dsc_uuid(&self, uuid: &str) -> Result<SharedCacheStrings, Error> {
+        let uuid_len = 32;
+        if uuid.len() != uuid_len {
+            return Err(Error::new(
+                ErrorKind::NotFound,
+                format!("uuid length not correct: {uuid}"),
+            ));
+        }
+
+        let mut path = PathBuf::from("/private/var/db/uuidtext");
+        path.push("dsc");
+        path.push(uuid);
+
+        println!("{:?}", path);
+        let mut buf = Vec::new();
+        let mut file = LocalFile::new(&path)?;
+        file.reader().read_to_end(&mut buf)?;
+
+        let uuid_text = match SharedCacheStrings::parse_dsc(&buf) {
+            Ok((_, results)) => results,
+            Err(err) => {
+                error!(
+                    "[macos-unifiedlogs] Failed to parse dsc UUID file {}: {:?}",
+                    path.to_str().unwrap_or_default(),
+                    err
+                );
+                return Err(Error::new(
+                    ErrorKind::InvalidData,
+                    format!("failed to read: {uuid}"),
+                ));
+            }
+        };
+
+        Ok(uuid_text)
+    }
+
     fn dsc_files(&self) -> Box<dyn Iterator<Item = Box<dyn SourceFile>>> {
         let path = PathBuf::from("/private/var/db/uuidtext/dsc");
         Box::new(WalkDir::new(path).into_iter().filter_map(|entry| {
@@ -178,6 +258,81 @@ impl FileProvider for LogarchiveProvider {
         )
     }
 
+    fn read_uuidtext(&self, uuid: &str) -> Result<UUIDText, Error> {
+        let uuid_len = 32;
+        if uuid.len() != uuid_len {
+            return Err(Error::new(
+                ErrorKind::NotFound,
+                format!("uuid length not correct: {uuid}"),
+            ));
+        }
+
+        let dir_name = format!("{}{}", &uuid[0..1], &uuid[1..2]);
+        let filename = &uuid[2..];
+
+        let mut base = self.base.clone();
+        base.push(dir_name);
+        base.push(filename);
+
+        println!("{:?}", base);
+        let mut buf = Vec::new();
+        let mut file = LocalFile::new(&base)?;
+        file.reader().read_to_end(&mut buf)?;
+
+        let uuid_text = match UUIDText::parse_uuidtext(&buf) {
+            Ok((_, results)) => results,
+            Err(err) => {
+                error!(
+                    "[macos-unifiedlogs] Failed to parse UUID file {}: {:?}",
+                    base.to_str().unwrap_or_default(),
+                    err
+                );
+                return Err(Error::new(
+                    ErrorKind::InvalidData,
+                    format!("failed to read: {uuid}"),
+                ));
+            }
+        };
+
+        Ok(uuid_text)
+    }
+
+    fn read_dsc_uuid(&self, uuid: &str) -> Result<SharedCacheStrings, Error> {
+        let uuid_len = 32;
+        if uuid.len() != uuid_len {
+            return Err(Error::new(
+                ErrorKind::NotFound,
+                format!("uuid length not correct: {uuid}"),
+            ));
+        }
+
+        let mut base = self.base.clone();
+        base.push("dsc");
+        base.push(uuid);
+
+        println!("{:?}", base);
+        let mut buf = Vec::new();
+        let mut file = LocalFile::new(&base)?;
+        file.reader().read_to_end(&mut buf)?;
+
+        let uuid_text = match SharedCacheStrings::parse_dsc(&buf) {
+            Ok((_, results)) => results,
+            Err(err) => {
+                error!(
+                    "[macos-unifiedlogs] Failed to parse dsc UUID file {}: {:?}",
+                    base.to_str().unwrap_or_default(),
+                    err
+                );
+                return Err(Error::new(
+                    ErrorKind::InvalidData,
+                    format!("failed to read: {uuid}"),
+                ));
+            }
+        };
+
+        Ok(uuid_text)
+    }
+
     fn dsc_files(&self) -> Box<dyn Iterator<Item = Box<dyn SourceFile>>> {
         Box::new(
             WalkDir::new(&self.base)
@@ -205,7 +360,8 @@ impl FileProvider for LogarchiveProvider {
 
 #[cfg(test)]
 mod tests {
-    use super::LogFileType;
+    use super::{LogFileType, LogarchiveProvider};
+    use crate::traits::FileProvider;
     use std::path::PathBuf;
 
     #[test]
@@ -235,6 +391,41 @@ mod tests {
             let file_type = LogFileType::from(path.as_path());
             assert_eq!(file_type, LogFileType::Dsc);
         }
+    }
+
+    #[test]
+    fn test_read_uuidtext() {
+        let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        test_path.push("tests/test_data/system_logs_big_sur.logarchive");
+        let provider = LogarchiveProvider::new(test_path.as_path());
+        let uuid = provider
+            .read_uuidtext("25A8CFC3A9C035F19DBDC16F994EA948")
+            .unwrap();
+        assert_eq!(uuid.entry_descriptors.len(), 2);
+        assert_eq!(uuid.uuid, "");
+        assert_eq!(uuid.footer_data.len(), 76544);
+        assert_eq!(uuid.signature, 1719109785);
+        assert_eq!(uuid.unknown_major_version, 2);
+        assert_eq!(uuid.unknown_minor_version, 1);
+        assert_eq!(uuid.number_entries, 2);
+    }
+
+    #[test]
+    fn test_read_dsc_uuid() {
+        let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        test_path.push("tests/test_data/system_logs_big_sur.logarchive");
+        let provider = LogarchiveProvider::new(test_path.as_path());
+        let uuid = provider
+            .read_dsc_uuid("80896B329EB13A10A7C5449B15305DE2")
+            .unwrap();
+        assert_eq!(uuid.dsc_uuid, "");
+        assert_eq!(uuid.major_version, 1);
+        assert_eq!(uuid.minor_version, 0);
+        assert_eq!(uuid.number_ranges, 2993);
+        assert_eq!(uuid.number_uuids, 1976);
+        assert_eq!(uuid.ranges.len(), 2993);
+        assert_eq!(uuid.uuids.len(), 1976);
+        assert_eq!(uuid.signature, 1685283688);
     }
 
     #[test]

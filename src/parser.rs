@@ -85,6 +85,7 @@ pub fn collect_strings(provider: &dyn FileProvider) -> Result<Vec<UUIDText>, Par
     for mut source in provider.uuidtext_files() {
         let mut buf = Vec::new();
         let path = source.source_path().to_owned();
+        println!("{path}");
         if let Err(e) = source.reader().read_to_end(&mut buf) {
             error!(
                 "[macos-unifiedlogs] Failed to read uuidfile {}: {:?}",
