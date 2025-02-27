@@ -9,6 +9,8 @@
 //!
 //! Provides a simple library to parse the macOS Unified Log format.
 
+use std::collections::HashMap;
+
 use crate::catalog::CatalogChunk;
 use crate::chunks::firehose::activity::FirehoseActivity;
 use crate::chunks::firehose::firehose_log::{Firehose, FirehoseItemInfo, FirehosePreamble};
@@ -86,7 +88,7 @@ pub struct UnifiedLogCatalogData {
 struct LogIterator<'a> {
     unified_log_data: &'a UnifiedLogData,
     provider: &'a mut dyn FileProvider,
-    timesync_data: &'a [TimesyncBoot],
+    timesync_data: &'a HashMap<String, TimesyncBoot>,
     exclude_missing: bool,
     message_re: Regex,
     catalog_data_iterator_index: usize,
@@ -95,7 +97,7 @@ impl<'a> LogIterator<'a> {
     fn new(
         unified_log_data: &'a UnifiedLogData,
         provider: &'a mut dyn FileProvider,
-        timesync_data: &'a [TimesyncBoot],
+        timesync_data: &'a HashMap<String, TimesyncBoot>,
         exclude_missing: bool,
     ) -> Result<Self, regex::Error> {
         /*
@@ -751,7 +753,7 @@ impl LogData {
     pub fn build_log(
         unified_log_data: &UnifiedLogData,
         provider: &mut dyn FileProvider,
-        timesync_data: &[TimesyncBoot],
+        timesync_data: &HashMap<String, TimesyncBoot>,
         exclude_missing: bool,
     ) -> (Vec<LogData>, UnifiedLogData) {
         let mut log_data_vec: Vec<LogData> = Vec::new();

@@ -13,6 +13,7 @@ use crate::timesync::TimesyncBoot;
 use crate::traits::FileProvider;
 use crate::unified_log::{LogData, UnifiedLogData};
 use crate::uuidtext::UUIDText;
+use std::collections::HashMap;
 use std::io::Read;
 use std::path::PathBuf;
 
@@ -48,7 +49,7 @@ pub fn parse_log(mut reader: impl Read) -> Result<UnifiedLogData, ParserError> {
 pub fn build_log(
     unified_data: &UnifiedLogData,
     provider: &mut dyn FileProvider,
-    timesync_data: &[TimesyncBoot],
+    timesync_data: &HashMap<String, TimesyncBoot>,
     exclude_missing: bool,
 ) -> (Vec<LogData>, UnifiedLogData) {
     LogData::build_log(unified_data, provider, timesync_data, exclude_missing)
@@ -124,8 +125,10 @@ pub fn collect_shared_strings(
 }
 
 /// Parse all timesync files in provided directory
-pub fn collect_timesync(provider: &dyn FileProvider) -> Result<Vec<TimesyncBoot>, ParserError> {
-    let mut timesync_data_vec: Vec<TimesyncBoot> = Vec::new();
+pub fn collect_timesync(
+    provider: &dyn FileProvider,
+) -> Result<HashMap<String, TimesyncBoot>, ParserError> {
+    let mut timesync_data: HashMap<String, TimesyncBoot> = HashMap::new();
     // Start process to read and parse all timesync files
     for mut source in provider.timesync_files() {
         let mut buffer = Vec::new();
@@ -134,9 +137,8 @@ pub fn collect_timesync(provider: &dyn FileProvider) -> Result<Vec<TimesyncBoot>
             continue;
         }
 
-        let timesync_results = TimesyncBoot::parse_timesync_data(&buffer);
-        match timesync_results {
-            Ok((_, mut timesync)) => timesync_data_vec.append(&mut timesync),
+        let timesync_map = match TimesyncBoot::parse_timesync_data(&buffer) {
+            Ok((_, result)) => result,
             Err(err) => {
                 error!(
                     "[macos-unifiedlogs] Failed to parse timesync file: {:?}",
@@ -144,9 +146,21 @@ pub fn collect_timesync(provider: &dyn FileProvider) -> Result<Vec<TimesyncBoot>
                 );
                 continue;
             }
+        };
+
+        /*
+         * If a macOS system has been online for a long time. macOS will create a new timesync file with the same boot UUID
+         * So we check if we already have an existing UUID and if we do, we just add the data to the existing data we have
+         */
+        for (key, mut value) in timesync_map {
+            if let Some(exiting_boot) = timesync_data.get_mut(&key) {
+                exiting_boot.timesync.append(&mut value.timesync);
+                continue;
+            }
+            timesync_data.insert(key, value);
         }
     }
-    Ok(timesync_data_vec)
+    Ok(timesync_data)
 }
 
 #[cfg(test)]
@@ -187,19 +201,77 @@ mod tests {
 
         let timesync_data = collect_timesync(&provider).unwrap();
         assert_eq!(timesync_data.len(), 5);
-        assert_eq!(timesync_data[0].signature, 48048);
-        assert_eq!(timesync_data[0].unknown, 0);
         assert_eq!(
-            timesync_data[0].boot_uuid,
+            timesync_data
+                .get("9A6A3124274A44B29ABF2BC9E4599B3B")
+                .unwrap()
+                .signature,
+            48048
+        );
+        assert_eq!(
+            timesync_data
+                .get("9A6A3124274A44B29ABF2BC9E4599B3B")
+                .unwrap()
+                .unknown,
+            0
+        );
+        assert_eq!(
+            timesync_data
+                .get("9A6A3124274A44B29ABF2BC9E4599B3B")
+                .unwrap()
+                .boot_uuid,
             "9A6A3124274A44B29ABF2BC9E4599B3B"
         );
-        assert_eq!(timesync_data[0].timesync.len(), 5);
-        assert_eq!(timesync_data[0].daylight_savings, 0);
-        assert_eq!(timesync_data[0].boot_time, 1642302206000000000);
-        assert_eq!(timesync_data[0].header_size, 48);
-        assert_eq!(timesync_data[0].timebase_denominator, 1);
-        assert_eq!(timesync_data[0].timebase_numerator, 1);
-        assert_eq!(timesync_data[0].timezone_offset_mins, 0);
+        assert_eq!(
+            timesync_data
+                .get("9A6A3124274A44B29ABF2BC9E4599B3B")
+                .unwrap()
+                .timesync
+                .len(),
+            5
+        );
+        assert_eq!(
+            timesync_data
+                .get("9A6A3124274A44B29ABF2BC9E4599B3B")
+                .unwrap()
+                .daylight_savings,
+            0
+        );
+        assert_eq!(
+            timesync_data
+                .get("9A6A3124274A44B29ABF2BC9E4599B3B")
+                .unwrap()
+                .boot_time,
+            1642302206000000000
+        );
+        assert_eq!(
+            timesync_data
+                .get("9A6A3124274A44B29ABF2BC9E4599B3B")
+                .unwrap()
+                .header_size,
+            48
+        );
+        assert_eq!(
+            timesync_data
+                .get("9A6A3124274A44B29ABF2BC9E4599B3B")
+                .unwrap()
+                .timebase_denominator,
+            1
+        );
+        assert_eq!(
+            timesync_data
+                .get("9A6A3124274A44B29ABF2BC9E4599B3B")
+                .unwrap()
+                .timebase_numerator,
+            1
+        );
+        assert_eq!(
+            timesync_data
+                .get("9A6A3124274A44B29ABF2BC9E4599B3B")
+                .unwrap()
+                .timezone_offset_mins,
+            0
+        );
     }
 
     #[test]

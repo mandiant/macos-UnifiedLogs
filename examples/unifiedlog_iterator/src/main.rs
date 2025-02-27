@@ -16,6 +16,7 @@ use macos_unifiedlogs::timesync::TimesyncBoot;
 use macos_unifiedlogs::traits::FileProvider;
 use macos_unifiedlogs::unified_log::{LogData, UnifiedLogData};
 use simplelog::{ColorChoice, Config, TermLogger, TerminalMode};
+use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::Display;
 use std::fs;
@@ -152,9 +153,9 @@ fn parse_single_file(path: &Path, writer: &mut OutputWriter) {
                 message: format!("{}", err),
             })
         })
-        .and_then(|ref log| {
-            let (results, _) = build_log(log, &mut provider, &[], false);
-            Ok(results)
+        .map(|ref log| {
+            let (results, _) = build_log(log, &mut provider, &HashMap::new(), false);
+            results
         }) {
         Ok(reader) => reader,
         Err(e) => {
@@ -199,7 +200,7 @@ fn parse_live_system(writer: &mut OutputWriter) {
 
 // Use the provided strings, shared strings, timesync data to parse the Unified Log data at provided path.
 fn parse_trace_file(
-    timesync_data: &[TimesyncBoot],
+    timesync_data: &HashMap<String, TimesyncBoot>,
     provider: &mut dyn FileProvider,
     writer: &mut OutputWriter,
 ) {
@@ -217,6 +218,7 @@ fn parse_trace_file(
     // Loop through all tracev3 files in Persist directory
     let mut log_count = 0;
     for mut source in provider.tracev3_files() {
+        //println!("Parsing: {}", source.source_path());
         log_count += iterate_chunks(
             source.reader(),
             &mut missing_data,
@@ -257,7 +259,7 @@ fn iterate_chunks(
     mut reader: impl Read,
     missing: &mut Vec<UnifiedLogData>,
     provider: &mut dyn FileProvider,
-    timesync_data: &[TimesyncBoot],
+    timesync_data: &HashMap<String, TimesyncBoot>,
     writer: &mut OutputWriter,
     oversize_strings: &mut UnifiedLogData,
 ) -> usize {

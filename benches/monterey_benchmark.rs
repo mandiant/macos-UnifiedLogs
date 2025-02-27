@@ -13,7 +13,7 @@ use macos_unifiedlogs::{
     traits::FileProvider,
     unified_log::UnifiedLogData,
 };
-use std::{fs::File, path::PathBuf};
+use std::{collections::HashMap, fs::File, path::PathBuf};
 fn monterey_parse_log(path: &str) {
     let handle = File::open(PathBuf::from(path).as_path()).unwrap();
     let _ = parse_log(handle).unwrap();
@@ -22,7 +22,7 @@ fn monterey_parse_log(path: &str) {
 fn bench_build_log(
     log_data: &UnifiedLogData,
     provider: &mut dyn FileProvider,
-    timesync_data: &Vec<TimesyncBoot>,
+    timesync_data: &HashMap<String, TimesyncBoot>,
     exclude_missing: bool,
 ) {
     let (_, _) = build_log(&log_data, provider, &timesync_data, exclude_missing);
