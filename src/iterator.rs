@@ -127,7 +127,7 @@ mod tests {
     use crate::{
         filesystem::LogarchiveProvider,
         iterator::nom_bytes,
-        parser::{build_log, collect_shared_strings, collect_strings, collect_timesync},
+        parser::{build_log, collect_timesync},
         unified_log::{EventType, LogType},
     };
     use std::{fs, path::PathBuf};
@@ -172,10 +172,7 @@ mod tests {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         test_path.push("tests/test_data/system_logs_big_sur.logarchive");
 
-        let provider = LogarchiveProvider::new(test_path.as_path());
-
-        let string_results = collect_strings(&provider).unwrap();
-        let shared_strings_results = collect_shared_strings(&provider).unwrap();
+        let mut provider = LogarchiveProvider::new(test_path.as_path());
         let timesync_data = collect_timesync(&provider).unwrap();
 
         test_path.push("Persist/0000000000000002.tracev3");
@@ -189,13 +186,7 @@ mod tests {
         let mut total = 0;
         for chunk in log_iterator {
             let exclude_missing = false;
-            let (results, _) = build_log(
-                &chunk,
-                &string_results,
-                &shared_strings_results,
-                &timesync_data,
-                exclude_missing,
-            );
+            let (results, _) = build_log(&chunk, &mut provider, &timesync_data, exclude_missing);
 
             if results[10].time == 1642302327364384800.0 {
                 assert_eq!(results.len(), 3805);

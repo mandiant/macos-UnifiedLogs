@@ -5,15 +5,14 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-use std::{fs::File, path::PathBuf};
-
 use macos_unifiedlogs::{
     filesystem::LogarchiveProvider,
-    parser::{build_log, collect_shared_strings, collect_strings, collect_timesync, parse_log},
+    parser::{build_log, collect_timesync, parse_log},
     traits::FileProvider,
     unified_log::{EventType, LogData, LogType, UnifiedLogData},
 };
 use regex::Regex;
+use std::{fs::File, path::PathBuf};
 
 fn collect_logs(provider: &dyn FileProvider) -> Vec<UnifiedLogData> {
     provider
@@ -73,9 +72,8 @@ fn test_big_sur_livedata() {
     let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_path.push("tests/test_data/system_logs_big_sur.logarchive");
 
-    let provider = LogarchiveProvider::new(test_path.as_path());
-    let string_results = collect_strings(&provider).unwrap();
-    let shared_strings_results = collect_shared_strings(&provider).unwrap();
+    let mut provider = LogarchiveProvider::new(test_path.as_path());
+
     let timesync_data = collect_timesync(&provider).unwrap();
 
     test_path.push("logdata.LiveData.tracev3");
@@ -84,13 +82,7 @@ fn test_big_sur_livedata() {
     test_path.pop();
 
     let exclude_missing = false;
-    let (data, _) = build_log(
-        &results,
-        &string_results,
-        &shared_strings_results,
-        &timesync_data,
-        exclude_missing,
-    );
+    let (data, _) = build_log(&results, &mut provider, &timesync_data, exclude_missing);
     assert_eq!(data.len(), 101566);
 
     for results in data {
@@ -125,9 +117,8 @@ fn test_build_log_big_sur() {
     let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_path.push("tests/test_data/system_logs_big_sur.logarchive");
 
-    let provider = LogarchiveProvider::new(test_path.as_path());
-    let string_results = collect_strings(&provider).unwrap();
-    let shared_strings_results = collect_shared_strings(&provider).unwrap();
+    let mut provider = LogarchiveProvider::new(test_path.as_path());
+
     let timesync_data = collect_timesync(&provider).unwrap();
 
     test_path.push("Persist/0000000000000004.tracev3");
@@ -137,13 +128,7 @@ fn test_build_log_big_sur() {
     let log_data = parse_log(handle).unwrap();
 
     let exclude_missing = false;
-    let (results, _) = build_log(
-        &log_data,
-        &string_results,
-        &shared_strings_results,
-        &timesync_data,
-        exclude_missing,
-    );
+    let (results, _) = build_log(&log_data, &mut provider, &timesync_data, exclude_missing);
     assert_eq!(results.len(), 110953);
     assert_eq!(results[0].process, "/usr/libexec/opendirectoryd");
     assert_eq!(results[0].subsystem, "com.apple.opendirectoryd");
@@ -175,22 +160,15 @@ fn test_parse_all_logs_big_sur() {
     let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_path.push("tests/test_data/system_logs_big_sur.logarchive");
 
-    let provider = LogarchiveProvider::new(test_path.as_path());
-    let string_results = collect_strings(&provider).unwrap();
-    let shared_strings_results = collect_shared_strings(&provider).unwrap();
+    let mut provider = LogarchiveProvider::new(test_path.as_path());
+
     let timesync_data = collect_timesync(&provider).unwrap();
     let log_data = collect_logs(&provider);
 
     let mut log_data_vec: Vec<LogData> = Vec::new();
     let exclude_missing = false;
     for logs in &log_data {
-        let (mut data, _) = build_log(
-            &logs,
-            &string_results,
-            &shared_strings_results,
-            &timesync_data,
-            exclude_missing,
-        );
+        let (mut data, _) = build_log(&logs, &mut provider, &timesync_data, exclude_missing);
         log_data_vec.append(&mut data);
     }
     // Run: "log raw-dump -a macos-unifiedlogs/tests/test_data/system_logs_big_sur.logarchive"
@@ -312,9 +290,8 @@ fn test_parse_all_persist_logs_with_network_big_sur() {
     let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_path.push("tests/test_data/system_logs_big_sur.logarchive");
 
-    let provider = LogarchiveProvider::new(test_path.as_path());
-    let string_results = collect_strings(&provider).unwrap();
-    let shared_strings_results = collect_shared_strings(&provider).unwrap();
+    let mut provider = LogarchiveProvider::new(test_path.as_path());
+
     let timesync_data = collect_timesync(&provider).unwrap();
     let log_data = collect_logs(&provider);
 
@@ -322,13 +299,7 @@ fn test_parse_all_persist_logs_with_network_big_sur() {
     let exclude_missing = false;
 
     for logs in &log_data {
-        let (mut data, _) = build_log(
-            &logs,
-            &string_results,
-            &shared_strings_results,
-            &timesync_data,
-            exclude_missing,
-        );
+        let (mut data, _) = build_log(&logs, &mut provider, &timesync_data, exclude_missing);
         log_data_vec.append(&mut data);
     }
 
@@ -411,22 +382,15 @@ fn test_parse_all_logs_private_big_sur() {
     let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_path.push("tests/test_data/system_logs_big_sur_private_enabled.logarchive");
 
-    let provider = LogarchiveProvider::new(test_path.as_path());
-    let string_results = collect_strings(&provider).unwrap();
-    let shared_strings_results = collect_shared_strings(&provider).unwrap();
+    let mut provider = LogarchiveProvider::new(test_path.as_path());
+
     let timesync_data = collect_timesync(&provider).unwrap();
     let log_data = collect_logs(&provider);
 
     let mut log_data_vec: Vec<LogData> = Vec::new();
     let exclude_missing = false;
     for logs in &log_data {
-        let (mut data, _) = build_log(
-            &logs,
-            &string_results,
-            &shared_strings_results,
-            &timesync_data,
-            exclude_missing,
-        );
+        let (mut data, _) = build_log(&logs, &mut provider, &timesync_data, exclude_missing);
         log_data_vec.append(&mut data);
     }
     assert_eq!(log_data_vec.len(), 887890);
@@ -439,7 +403,6 @@ fn test_parse_all_logs_private_big_sur() {
             empty_counter += 1;
         }
         if logs.message.contains("<not found>") {
-            println!("{}", logs.message);
             not_found += 1;
         }
         if logs.message.contains("group: staff@/Local/Default") {
@@ -457,9 +420,8 @@ fn test_parse_all_logs_private_with_public_mix_big_sur() {
     let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_path.push("tests/test_data/system_logs_big_sur_public_private_data_mix.logarchive");
 
-    let provider = LogarchiveProvider::new(test_path.as_path());
-    let string_results = collect_strings(&provider).unwrap();
-    let shared_strings_results = collect_shared_strings(&provider).unwrap();
+    let mut provider = LogarchiveProvider::new(test_path.as_path());
+
     let timesync_data = collect_timesync(&provider).unwrap();
     let log_data = collect_logs(&provider);
 
@@ -467,13 +429,7 @@ fn test_parse_all_logs_private_with_public_mix_big_sur() {
     let exclude_missing = false;
 
     for logs in &log_data {
-        let (mut data, _) = build_log(
-            &logs,
-            &string_results,
-            &shared_strings_results,
-            &timesync_data,
-            exclude_missing,
-        );
+        let (mut data, _) = build_log(&logs, &mut provider, &timesync_data, exclude_missing);
         log_data_vec.append(&mut data);
     }
     assert_eq!(log_data_vec.len(), 1287628);
@@ -525,9 +481,8 @@ fn test_parse_all_logs_private_with_public_mix_big_sur_single_file() {
     let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_path.push("tests/test_data/system_logs_big_sur_public_private_data_mix.logarchive");
 
-    let provider = LogarchiveProvider::new(test_path.as_path());
-    let string_results = collect_strings(&provider).unwrap();
-    let shared_strings_results = collect_shared_strings(&provider).unwrap();
+    let mut provider = LogarchiveProvider::new(test_path.as_path());
+
     let timesync_data = collect_timesync(&provider).unwrap();
 
     test_path.push("Persist/0000000000000009.tracev3");
@@ -537,13 +492,7 @@ fn test_parse_all_logs_private_with_public_mix_big_sur_single_file() {
     let log_data = parse_log(handle).unwrap();
 
     let exclude_missing = false;
-    let (results, _) = build_log(
-        &log_data,
-        &string_results,
-        &shared_strings_results,
-        &timesync_data,
-        exclude_missing,
-    );
+    let (results, _) = build_log(&log_data, &mut provider, &timesync_data, exclude_missing);
     assert_eq!(results.len(), 91567);
 
     let mut hex_count = 0;
@@ -577,9 +526,8 @@ fn test_parse_all_logs_private_with_public_mix_big_sur_special_file() {
     let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_path.push("tests/test_data/system_logs_big_sur_public_private_data_mix.logarchive");
 
-    let provider = LogarchiveProvider::new(test_path.as_path());
-    let string_results = collect_strings(&provider).unwrap();
-    let shared_strings_results = collect_shared_strings(&provider).unwrap();
+    let mut provider = LogarchiveProvider::new(test_path.as_path());
+
     let timesync_data = collect_timesync(&provider).unwrap();
 
     test_path.push("Special/0000000000000008.tracev3");
@@ -589,13 +537,7 @@ fn test_parse_all_logs_private_with_public_mix_big_sur_special_file() {
     let log_data = parse_log(handle).unwrap();
 
     let exclude_missing = false;
-    let (results, _) = build_log(
-        &log_data,
-        &string_results,
-        &shared_strings_results,
-        &timesync_data,
-        exclude_missing,
-    );
+    let (results, _) = build_log(&log_data, &mut provider, &timesync_data, exclude_missing);
     assert_eq!(results.len(), 2238);
 
     let mut statedump = 0;
@@ -630,9 +572,8 @@ fn test_big_sur_missing_oversize_strings() {
     let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_path.push("tests/test_data/system_logs_big_sur.logarchive");
 
-    let provider = LogarchiveProvider::new(test_path.as_path());
-    let string_results = collect_strings(&provider).unwrap();
-    let shared_strings_results = collect_shared_strings(&provider).unwrap();
+    let mut provider = LogarchiveProvider::new(test_path.as_path());
+
     let timesync_data = collect_timesync(&provider).unwrap();
 
     // livedata may have oversize string data in other tracev3 on disk
@@ -643,13 +584,7 @@ fn test_big_sur_missing_oversize_strings() {
     test_path.pop();
 
     let exclude_missing = false;
-    let (data, _) = build_log(
-        &log_data,
-        &string_results,
-        &shared_strings_results,
-        &timesync_data,
-        exclude_missing,
-    );
+    let (data, _) = build_log(&log_data, &mut provider, &timesync_data, exclude_missing);
     assert_eq!(data.len(), 101566);
 
     let mut missing_strings = 0;
@@ -668,9 +603,8 @@ fn test_big_sur_oversize_strings_in_another_file() {
     let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_path.push("tests/test_data/system_logs_big_sur.logarchive");
 
-    let provider = LogarchiveProvider::new(test_path.as_path());
-    let string_results = collect_strings(&provider).unwrap();
-    let shared_strings_results = collect_shared_strings(&provider).unwrap();
+    let mut provider = LogarchiveProvider::new(test_path.as_path());
+
     let timesync_data = collect_timesync(&provider).unwrap();
 
     // Get most recent Persist tracev3 file could contain oversize log entries
@@ -697,13 +631,7 @@ fn test_big_sur_oversize_strings_in_another_file() {
     results.oversize.append(&mut special_data.oversize);
 
     let exclude_missing = false;
-    let (data, _) = build_log(
-        &results,
-        &string_results,
-        &shared_strings_results,
-        &timesync_data,
-        exclude_missing,
-    );
+    let (data, _) = build_log(&results, &mut provider, &timesync_data, exclude_missing);
     assert_eq!(data.len(), 101566);
 
     let mut missing_strings = 0;

@@ -8,8 +8,7 @@
 use crate::catalog::CatalogChunk;
 use crate::chunks::firehose::flags::FirehoseFormatters;
 use crate::chunks::firehose::message::MessageData;
-use crate::dsc::SharedCacheStrings;
-use crate::uuidtext::UUIDText;
+use crate::traits::FileProvider;
 use log::{debug, error};
 use nom::Needed;
 use nom::bytes::complete::take;
@@ -130,8 +129,7 @@ impl FirehoseSignpost {
     /// Get base log message string formatter from shared cache strings (dsc) or UUID text file for firehose signpost log entries (chunks)
     pub fn get_firehose_signpost<'a>(
         firehose: &FirehoseSignpost,
-        strings_data: &'a [UUIDText],
-        shared_strings: &'a [SharedCacheStrings],
+        provider: &'a mut dyn FileProvider,
         string_offset: u64,
         first_proc_id: &u64,
         second_proc_id: &u32,
@@ -170,8 +168,7 @@ impl FirehoseSignpost {
                 match extra_offset_value_result {
                     Ok(offset) => {
                         return MessageData::extract_shared_strings(
-                            shared_strings,
-                            strings_data,
+                            provider,
                             offset,
                             first_proc_id,
                             second_proc_id,
@@ -190,8 +187,7 @@ impl FirehoseSignpost {
                 }
             }
             MessageData::extract_shared_strings(
-                shared_strings,
-                strings_data,
+                provider,
                 string_offset,
                 first_proc_id,
                 second_proc_id,
@@ -209,7 +205,7 @@ impl FirehoseSignpost {
                 match offset_result {
                     Ok(offset) => {
                         return MessageData::extract_absolute_strings(
-                            strings_data,
+                            provider,
                             offset,
                             string_offset,
                             first_proc_id,
@@ -230,7 +226,7 @@ impl FirehoseSignpost {
             }
             if !firehose.firehose_formatters.uuid_relative.is_empty() {
                 return MessageData::extract_alt_uuid_strings(
-                    strings_data,
+                    provider,
                     string_offset,
                     &firehose.firehose_formatters.uuid_relative,
                     first_proc_id,
@@ -240,7 +236,7 @@ impl FirehoseSignpost {
                 );
             }
             MessageData::extract_format_strings(
-                strings_data,
+                provider,
                 string_offset,
                 first_proc_id,
                 second_proc_id,
@@ -255,7 +251,7 @@ impl FirehoseSignpost {
 mod tests {
     use crate::chunks::firehose::signpost::FirehoseSignpost;
     use crate::filesystem::LogarchiveProvider;
-    use crate::parser::{collect_shared_strings, collect_strings, parse_log};
+    use crate::parser::parse_log;
     use std::path::PathBuf;
 
     #[test]
@@ -289,10 +285,7 @@ mod tests {
     fn test_get_firehose_signpost_big_sur() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         test_path.push("tests/test_data/system_logs_big_sur.logarchive");
-        let provider = LogarchiveProvider::new(test_path.as_path());
-
-        let string_results = collect_strings(&provider).unwrap();
-        let shared_strings_results = collect_shared_strings(&provider).unwrap();
+        let mut provider = LogarchiveProvider::new(test_path.as_path());
 
         test_path.push("Signpost/0000000000000001.tracev3");
 
@@ -307,8 +300,7 @@ mod tests {
                     if firehose.unknown_log_activity_type == activity_type {
                         let (_, message_data) = FirehoseSignpost::get_firehose_signpost(
                             &firehose.firehose_signpost,
-                            &string_results,
-                            &shared_strings_results,
+                            &mut provider,
                             u64::from(firehose.format_string_location),
                             &preamble.first_number_proc_id,
                             &preamble.second_number_proc_id,

@@ -7,17 +7,16 @@
 
 use chrono::{SecondsFormat, TimeZone, Utc};
 use log::{LevelFilter, debug, info, error};
-use macos_unifiedlogs::dsc::SharedCacheStrings;
 use macos_unifiedlogs::filesystem::{LiveSystemProvider, LogarchiveProvider};
 use macos_unifiedlogs::iterator::UnifiedLogIterator;
 use macos_unifiedlogs::parser::{
-    build_log, collect_shared_strings, collect_strings, collect_timesync, parse_log,
+    build_log, collect_timesync, parse_log
 };
 use macos_unifiedlogs::timesync::TimesyncBoot;
 use macos_unifiedlogs::traits::FileProvider;
 use macos_unifiedlogs::unified_log::{LogData, UnifiedLogData};
-use macos_unifiedlogs::uuidtext::UUIDText;
 use simplelog::{ColorChoice, Config, TermLogger, TerminalMode};
+use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::Display;
 use std::fs;
@@ -142,6 +141,7 @@ fn main() {
 }
 
 fn parse_single_file(path: &Path, writer: &mut OutputWriter) {
+    let mut provider = LogarchiveProvider::new(path);
     let results = match fs::File::open(path)
         .map_err(|e| RuntimeError::FileOpen {
             path: path.to_string_lossy().to_string(),
@@ -153,9 +153,9 @@ fn parse_single_file(path: &Path, writer: &mut OutputWriter) {
                 message: format!("{}", err),
             })
         })
-        .and_then(|ref log| {
-            let (results, _) = build_log(log, &[], &[], &[], false);
-            Ok(results)
+        .map(|ref log| {
+            let (results, _) = build_log(log, &mut provider, &HashMap::new(), false);
+            results
         }) {
         Ok(reader) => reader,
         Err(e) => {
@@ -172,22 +172,16 @@ fn parse_single_file(path: &Path, writer: &mut OutputWriter) {
 
 // Parse a provided directory path. Currently, expect the path to follow macOS log collect structure
 fn parse_log_archive(path: &Path, writer: &mut OutputWriter) {
-    let provider = LogarchiveProvider::new(path);
+    let mut provider = LogarchiveProvider::new(path);
 
-    // Parse all UUID files which contain strings and other metadata
-    let string_results = collect_strings(&provider).unwrap();
-    // Parse UUID cache files which also contain strings and other metadata
-    let shared_strings_results = collect_shared_strings(&provider).unwrap();
     // Parse all timesync files
     let timesync_data = collect_timesync(&provider).unwrap();
 
     // Keep UUID, UUID cache, timesync files in memory while we parse all tracev3 files
     // Allows for faster lookups
     parse_trace_file(
-        &string_results,
-        &shared_strings_results,
         &timesync_data,
-        &provider,
+        &mut provider,
         writer,
     );
 
@@ -196,22 +190,18 @@ fn parse_log_archive(path: &Path, writer: &mut OutputWriter) {
 
 // Parse a live macOS system
 fn parse_live_system(writer: &mut OutputWriter) {
-    let provider = LiveSystemProvider::default();
-    let strings = collect_strings(&provider).unwrap();
-    let shared_strings = collect_shared_strings(&provider).unwrap();
+    let mut provider = LiveSystemProvider::default();
     let timesync_data = collect_timesync(&provider).unwrap();
 
-    parse_trace_file(&strings, &shared_strings, &timesync_data, &provider, writer);
+    parse_trace_file(&timesync_data, &mut provider, writer);
 
     info!("Finished parsing Unified Log data.");
 }
 
 // Use the provided strings, shared strings, timesync data to parse the Unified Log data at provided path.
 fn parse_trace_file(
-    string_results: &[UUIDText],
-    shared_strings_results: &[SharedCacheStrings],
-    timesync_data: &[TimesyncBoot],
-    provider: &dyn FileProvider,
+    timesync_data: &HashMap<String, TimesyncBoot>,
+    provider: &mut dyn FileProvider,
     writer: &mut OutputWriter,
 ) {
     // We need to persist the Oversize log entries (they contain large strings that don't fit in normal log entries)
@@ -228,11 +218,11 @@ fn parse_trace_file(
     // Loop through all tracev3 files in Persist directory
     let mut log_count = 0;
     for mut source in provider.tracev3_files() {
+        //println!("Parsing: {}", source.source_path());
         log_count += iterate_chunks(
             source.reader(),
             &mut missing_data,
-            string_results,
-            shared_strings_results,
+            provider,
             timesync_data,
             writer,
             &mut oversize_strings,
@@ -254,8 +244,7 @@ fn parse_trace_file(
         // Ex: tracev3A rolls, tracev3B references Oversize entry in tracev3A will trigger missing data since tracev3A is gone
         let (results, _) = build_log(
             &leftover_data,
-            string_results,
-            shared_strings_results,
+            provider,
             timesync_data,
             include_missing,
         );
@@ -269,9 +258,8 @@ fn parse_trace_file(
 fn iterate_chunks(
     mut reader: impl Read,
     missing: &mut Vec<UnifiedLogData>,
-    strings_data: &[UUIDText],
-    shared_strings: &[SharedCacheStrings],
-    timesync_data: &[TimesyncBoot],
+    provider: &mut dyn FileProvider,
+    timesync_data: &HashMap<String, TimesyncBoot>,
     writer: &mut OutputWriter,
     oversize_strings: &mut UnifiedLogData,
 ) -> usize {
@@ -296,8 +284,7 @@ fn iterate_chunks(
         chunk.oversize.append(&mut oversize_strings.oversize);
         let (results, missing_logs) = build_log(
             &chunk,
-            strings_data,
-            shared_strings,
+            provider,
             timesync_data,
             exclude_missing,
         );

@@ -1,0 +1,3 @@
+kind: Changed
+body: Moved to HashMap instead of Vec for UUIDText and dsc parsing
+time: 2025-02-26T23:37:32.296721-05:00

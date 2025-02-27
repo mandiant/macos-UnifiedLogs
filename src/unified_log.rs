@@ -9,6 +9,8 @@
 //!
 //! Provides a simple library to parse the macOS Unified Log format.
 
+use std::collections::HashMap;
+
 use crate::catalog::CatalogChunk;
 use crate::chunks::firehose::activity::FirehoseActivity;
 use crate::chunks::firehose::firehose_log::{Firehose, FirehoseItemInfo, FirehosePreamble};
@@ -19,13 +21,12 @@ use crate::chunks::oversize::Oversize;
 use crate::chunks::simpledump::SimpleDump;
 use crate::chunks::statedump::Statedump;
 use crate::chunkset::ChunksetChunk;
-use crate::dsc::SharedCacheStrings;
 use crate::header::HeaderChunk;
 use crate::message::format_firehose_log_message;
 use crate::preamble::LogPreamble;
 use crate::timesync::TimesyncBoot;
+use crate::traits::FileProvider;
 use crate::util::{encode_standard, extract_string, padding_size_8, unixepoch_to_iso};
-use crate::uuidtext::UUIDText;
 use log::{error, warn};
 use nom::bytes::complete::take;
 use regex::Regex;
@@ -86,9 +87,8 @@ pub struct UnifiedLogCatalogData {
 
 struct LogIterator<'a> {
     unified_log_data: &'a UnifiedLogData,
-    strings_data: &'a [UUIDText],
-    shared_strings: &'a [SharedCacheStrings],
-    timesync_data: &'a [TimesyncBoot],
+    provider: &'a mut dyn FileProvider,
+    timesync_data: &'a HashMap<String, TimesyncBoot>,
     exclude_missing: bool,
     message_re: Regex,
     catalog_data_iterator_index: usize,
@@ -96,9 +96,8 @@ struct LogIterator<'a> {
 impl<'a> LogIterator<'a> {
     fn new(
         unified_log_data: &'a UnifiedLogData,
-        strings_data: &'a [UUIDText],
-        shared_strings: &'a [SharedCacheStrings],
-        timesync_data: &'a [TimesyncBoot],
+        provider: &'a mut dyn FileProvider,
+        timesync_data: &'a HashMap<String, TimesyncBoot>,
         exclude_missing: bool,
     ) -> Result<Self, regex::Error> {
         /*
@@ -140,8 +139,7 @@ impl<'a> LogIterator<'a> {
 
         Ok(LogIterator {
             unified_log_data,
-            strings_data,
-            shared_strings,
+            provider,
             timesync_data,
             exclude_missing,
             message_re,
@@ -232,8 +230,7 @@ impl Iterator for LogIterator<'_> {
                             u64::from(firehose.firehose_non_activity.unknown_activity_id);
                         let message_data = FirehoseNonActivity::get_firehose_nonactivity_strings(
                             &firehose.firehose_non_activity,
-                            self.strings_data,
-                            self.shared_strings,
+                            self.provider,
                             u64::from(firehose.format_string_location),
                             &preamble.first_number_proc_id,
                             &preamble.second_number_proc_id,
@@ -331,8 +328,7 @@ impl Iterator for LogIterator<'_> {
                             u64::from(firehose.firehose_activity.unknown_activity_id);
                         let message_data = FirehoseActivity::get_firehose_activity_strings(
                             &firehose.firehose_activity,
-                            self.strings_data,
-                            self.shared_strings,
+                            self.provider,
                             u64::from(firehose.format_string_location),
                             &preamble.first_number_proc_id,
                             &preamble.second_number_proc_id,
@@ -388,8 +384,7 @@ impl Iterator for LogIterator<'_> {
                             u64::from(firehose.firehose_signpost.unknown_activity_id);
                         let message_data = FirehoseSignpost::get_firehose_signpost(
                             &firehose.firehose_signpost,
-                            self.strings_data,
-                            self.shared_strings,
+                            self.provider,
                             u64::from(firehose.format_string_location),
                             &preamble.first_number_proc_id,
                             &preamble.second_number_proc_id,
@@ -482,7 +477,7 @@ impl Iterator for LogIterator<'_> {
                     }
                     0x3 => {
                         let message_data = FirehoseTrace::get_firehose_trace_strings(
-                            self.strings_data,
+                            self.provider,
                             u64::from(firehose.format_string_location),
                             &preamble.first_number_proc_id,
                             &preamble.second_number_proc_id,
@@ -753,30 +748,12 @@ impl LogData {
         Ok((input, unified_log_data_true))
     }
 
-    /// Parse the Unified log data and return an iterator
-    pub fn iter_log<'a>(
-        unified_log_data: &'a UnifiedLogData,
-        strings_data: &'a [UUIDText],
-        shared_strings: &'a [SharedCacheStrings],
-        timesync_data: &'a [TimesyncBoot],
-        exclude_missing: bool,
-    ) -> Result<impl Iterator<Item = (Vec<LogData>, UnifiedLogData)> + 'a, regex::Error> {
-        LogIterator::new(
-            unified_log_data,
-            strings_data,
-            shared_strings,
-            timesync_data,
-            exclude_missing,
-        )
-    }
-
     /// Reconstruct Unified Log entries using the binary strings data, cached strings data, timesync data, and unified log. Provide bool to ignore log entries that are not able to be recontructed (additional tracev3 files needed)
     /// Return a reconstructed log entries and any leftover Unified Log entries that could not be reconstructed (data may be stored in other tracev3 files)
     pub fn build_log(
         unified_log_data: &UnifiedLogData,
-        strings_data: &[UUIDText],
-        shared_strings: &[SharedCacheStrings],
-        timesync_data: &[TimesyncBoot],
+        provider: &mut dyn FileProvider,
+        timesync_data: &HashMap<String, TimesyncBoot>,
         exclude_missing: bool,
     ) -> (Vec<LogData>, UnifiedLogData) {
         let mut log_data_vec: Vec<LogData> = Vec::new();
@@ -787,13 +764,9 @@ impl LogData {
             oversize: Vec::new(),
         };
 
-        let Ok(log_iterator) = LogIterator::new(
-            unified_log_data,
-            strings_data,
-            shared_strings,
-            timesync_data,
-            exclude_missing,
-        ) else {
+        let Ok(log_iterator) =
+            LogIterator::new(unified_log_data, provider, timesync_data, exclude_missing)
+        else {
             return (log_data_vec, missing_unified_log_data_vec);
         };
         for (mut log_data, mut missing_unified_log) in log_iterator {
@@ -957,11 +930,10 @@ impl LogData {
 #[cfg(test)]
 mod tests {
     use super::{LogData, UnifiedLogData};
-
     use crate::{
         chunks::firehose::firehose_log::Firehose,
         filesystem::LogarchiveProvider,
-        parser::{collect_shared_strings, collect_strings, collect_timesync, iter_log, parse_log},
+        parser::{collect_timesync, parse_log},
         unified_log::{EventType, LogType, UnifiedLogCatalogData},
     };
     use std::{fs, path::PathBuf};
@@ -979,25 +951,6 @@ mod tests {
         assert_eq!(results.catalog_data.len(), 56);
         assert_eq!(results.header.len(), 1);
         assert_eq!(results.oversize.len(), 12);
-    }
-
-    #[test]
-    fn test_iter_log() {
-        let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        test_path.push(
-            "tests/test_data/system_logs_big_sur.logarchive/Persist/0000000000000002.tracev3",
-        );
-
-        let buffer = fs::read(test_path).unwrap();
-
-        let (_, results) = LogData::parse_unified_log(&buffer).unwrap();
-        let iter = iter_log(&results, &[], &[], &[], false).unwrap();
-        for (entry, remaining) in iter {
-            assert!(entry.len() > 1000);
-            assert!(remaining.catalog_data.is_empty());
-            assert!(remaining.header.is_empty());
-            assert!(remaining.oversize.is_empty());
-        }
     }
 
     #[test]
@@ -1037,10 +990,7 @@ mod tests {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         test_path.push("tests/test_data/system_logs_big_sur.logarchive");
 
-        let provider = LogarchiveProvider::new(test_path.as_path());
-
-        let string_results = collect_strings(&provider).unwrap();
-        let shared_strings_results = collect_shared_strings(&provider).unwrap();
+        let mut provider = LogarchiveProvider::new(test_path.as_path());
         let timesync_data = collect_timesync(&provider).unwrap();
 
         test_path.push("Persist/0000000000000002.tracev3");
@@ -1049,13 +999,8 @@ mod tests {
         let log_data = parse_log(reader).unwrap();
 
         let exclude_missing = false;
-        let (results, _) = LogData::build_log(
-            &log_data,
-            &string_results,
-            &shared_strings_results,
-            &timesync_data,
-            exclude_missing,
-        );
+        let (results, _) =
+            LogData::build_log(&log_data, &mut provider, &timesync_data, exclude_missing);
 
         assert_eq!(results.len(), 207366);
         assert_eq!(results[0].process, "/usr/libexec/lightsoutmanagementd");
@@ -1177,11 +1122,19 @@ mod tests {
         );
         assert_eq!(data.catalog.catalog_process_info_entries.len(), 1);
         assert_eq!(
-            data.catalog.catalog_process_info_entries[0].main_uuid,
+            data.catalog
+                .catalog_process_info_entries
+                .get("158_311")
+                .unwrap()
+                .main_uuid,
             "2BEFD20C18EC3838814F2B4E5AF3BCEC"
         );
         assert_eq!(
-            data.catalog.catalog_process_info_entries[0].dsc_uuid,
+            data.catalog
+                .catalog_process_info_entries
+                .get("158_311")
+                .unwrap()
+                .dsc_uuid,
             "3D05845F3F65358F9EBF2236E772AC01"
         );
 

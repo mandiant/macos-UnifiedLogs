@@ -405,19 +405,32 @@ impl FirehosePreamble {
                     firehose_info.message_strings = encode_standard(pointer_object);
                     continue;
                 }
+                let null_private = 0;
+                // Even null values are marked private
+                if firehose_info.item_size == null_private {
+                    firehose_info.message_strings = String::from("<private>");
+                } else {
+                    let (private_data, private_string) = extract_string_size(
+                        private_string_start,
+                        u64::from(firehose_info.item_size),
+                    )?;
 
-                let (private_data, private_string) =
-                    extract_string_size(private_string_start, u64::from(firehose_info.item_size))?;
-
-                private_string_start = private_data;
-                firehose_info.message_strings = private_string;
+                    private_string_start = private_data;
+                    firehose_info.message_strings = private_string;
+                }
             } else if firehose_info.item_type == private_number {
-                let (private_data, private_string) = FirehosePreamble::parse_item_number(
-                    private_string_start,
-                    firehose_info.item_size,
-                )?;
-                private_string_start = private_data;
-                firehose_info.message_strings = format!("{}", private_string);
+                let private_number = 0x8000;
+                // Numbers can also be private
+                if firehose_info.item_size == private_number {
+                    firehose_info.message_strings = String::from("<private>")
+                } else {
+                    let (private_data, private_string) = FirehosePreamble::parse_item_number(
+                        private_string_start,
+                        firehose_info.item_size,
+                    )?;
+                    private_string_start = private_data;
+                    firehose_info.message_strings = format!("{private_string}");
+                }
             }
         }
         Ok((private_string_start, ()))
@@ -3407,5 +3420,62 @@ mod tests {
             firehouse_result_count += firehose.public_data.len();
         }
         assert_eq!(firehouse_result_count, 66)
+    }
+
+    #[test]
+    fn test_firehose_private_number_string() {
+        let test = [
+            69, 114, 114, 111, 114, 32, 68, 111, 109, 97, 105, 110, 61, 82, 84, 69, 114, 114, 111,
+            114, 68, 111, 109, 97, 105, 110, 32, 67, 111, 100, 101, 61, 50, 32, 34, 83, 101, 114,
+            118, 105, 99, 101, 32, 104, 97, 115, 32, 98, 101, 101, 110, 32, 100, 105, 115, 97, 98,
+            108, 101, 100, 32, 98, 121, 32, 117, 115, 101, 114, 46, 34, 32, 85, 115, 101, 114, 73,
+            110, 102, 111, 61, 123, 78, 83, 76, 111, 99, 97, 108, 105, 122, 101, 100, 68, 101, 115,
+            99, 114, 105, 112, 116, 105, 111, 110, 61, 83, 101, 114, 118, 105, 99, 101, 32, 104,
+            97, 115, 32, 98, 101, 101, 110, 32, 100, 105, 115, 97, 98, 108, 101, 100, 32, 98, 121,
+            32, 117, 115, 101, 114, 46, 125, 0,
+        ];
+
+        let mut item = FirehoseItemData {
+            item_info: vec![
+                FirehoseItemInfo {
+                    message_strings: String::from("<private>"),
+                    item_type: 69,
+                    item_size: 0,
+                },
+                FirehoseItemInfo {
+                    message_strings: String::new(),
+                    item_type: 1,
+                    item_size: 32768,
+                },
+                FirehoseItemInfo {
+                    message_strings: String::new(),
+                    item_type: 1,
+                    item_size: 32768,
+                },
+                FirehoseItemInfo {
+                    message_strings: String::from("<private>"),
+                    item_type: 65,
+                    item_size: 0,
+                },
+                FirehoseItemInfo {
+                    message_strings: String::from("<private>"),
+                    item_type: 129,
+                    item_size: 140,
+                },
+            ],
+            backtrace_strings: Vec::new(),
+        };
+
+        FirehosePreamble::parse_private_data(&test, &mut item).unwrap();
+
+        for entry in item.item_info {
+            if entry.message_strings == "<private>"
+                || entry.message_strings
+                    == "Error Domain=RTErrorDomain Code=2 \"Service has been disabled by user.\" UserInfo={NSLocalizedDescription=Service has been disabled by user.}"
+            {
+                continue;
+            }
+            panic!("Got wrong message strings: {entry:?}");
+        }
     }
 }

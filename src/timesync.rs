@@ -10,6 +10,7 @@ use nom::Needed;
 use nom::bytes::complete::take;
 use nom::number::complete::{be_u128, le_i64, le_u16, le_u32, le_u64};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::mem::size_of;
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -39,8 +40,8 @@ pub struct Timesync {
 
 impl TimesyncBoot {
     /// Parse the Unified Log timesync files
-    pub fn parse_timesync_data(data: &[u8]) -> nom::IResult<&[u8], Vec<TimesyncBoot>> {
-        let mut timesync_data: Vec<TimesyncBoot> = Vec::new();
+    pub fn parse_timesync_data(data: &[u8]) -> nom::IResult<&[u8], HashMap<String, TimesyncBoot>> {
+        let mut timesync_data: HashMap<String, TimesyncBoot> = HashMap::new();
         let mut input = data;
 
         let mut timesync_boot = TimesyncBoot::default();
@@ -56,7 +57,11 @@ impl TimesyncBoot {
                 input = timesync_input;
             } else {
                 if timesync_boot.signature != 0 {
-                    timesync_data.push(timesync_boot);
+                    if let Some(existing_boot) = timesync_data.get_mut(&timesync_boot.boot_uuid) {
+                        existing_boot.timesync.append(&mut timesync_boot.timesync);
+                    } else {
+                        timesync_data.insert(timesync_boot.boot_uuid.clone(), timesync_boot);
+                    }
                 }
                 let (timesync_input, timesync_boot_data) =
                     TimesyncBoot::parse_timesync_boot(input)?;
@@ -64,8 +69,11 @@ impl TimesyncBoot {
                 input = timesync_input;
             }
         }
-        timesync_data.push(timesync_boot);
-
+        if let Some(existing_boot) = timesync_data.get_mut(&timesync_boot.boot_uuid) {
+            existing_boot.timesync.append(&mut timesync_boot.timesync);
+        } else {
+            timesync_data.insert(timesync_boot.boot_uuid.clone(), timesync_boot);
+        }
         Ok((input, timesync_data))
     }
 
@@ -160,7 +168,7 @@ impl TimesyncBoot {
 
     /// Calculate timestamp for firehose log entry
     pub fn get_timestamp(
-        timesync_data: &[TimesyncBoot],
+        timesync_data: &HashMap<String, TimesyncBoot>,
         boot_uuid: &str,
         firehose_log_delta_time: u64,
         firehose_preamble_time: u64,
@@ -190,15 +198,9 @@ impl TimesyncBoot {
         let mut timesync_continous_time = 0;
         let mut timesync_walltime = 0;
 
-        let mut larger_time = false;
-
         // Apple Intel uses 1/1 as the timebase
         let mut timebase_adjustment = 1.0;
-        for timesync in timesync_data {
-            if boot_uuid != timesync.boot_uuid {
-                continue;
-            }
-
+        if let Some(timesync) = timesync_data.get(boot_uuid) {
             if timesync.timebase_numerator == 125 && timesync.timebase_denominator == 3 {
                 // For Apple Silicon (ARM) we need to adjust the mach time by multiplying by 125.0/3.0 to get the accurate nanosecond count
                 timebase_adjustment = 125.0 / 3.0;
@@ -216,16 +218,11 @@ impl TimesyncBoot {
                         timesync_continous_time = timesync_record.kernel_time;
                         timesync_walltime = timesync_record.walltime;
                     }
-                    larger_time = true;
                     break;
                 }
 
                 timesync_continous_time = timesync_record.kernel_time;
                 timesync_walltime = timesync_record.walltime;
-            }
-            // We should only break once we encountered a timesync_record.kernel_time greater than the firehose_log_delta_time
-            if larger_time {
-                break;
             }
         }
 
@@ -259,7 +256,14 @@ mod tests {
 
         let (_, timesync_data) = TimesyncBoot::parse_timesync_data(&buffer).unwrap();
         assert_eq!(timesync_data.len(), 5);
-        assert_eq!(timesync_data[0].timesync.len(), 5);
+        assert_eq!(
+            timesync_data
+                .get("9A6A3124274A44B29ABF2BC9E4599B3B")
+                .unwrap()
+                .timesync
+                .len(),
+            5
+        );
     }
 
     #[test]

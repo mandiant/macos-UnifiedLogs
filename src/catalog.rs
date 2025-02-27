@@ -5,6 +5,8 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
+use std::collections::HashMap;
+
 use crate::{preamble::LogPreamble, util::*};
 use nom::{
     IResult, Parser,
@@ -35,7 +37,7 @@ pub struct CatalogChunk {
     pub catalog_uuids: Vec<String>,
     /// array of strings with end-of-string character
     pub catalog_subsystem_strings: Vec<u8>,
-    pub catalog_process_info_entries: Vec<ProcessInfoEntry>,
+    pub catalog_process_info_entries: HashMap<String, ProcessInfoEntry>,
     pub catalog_subchunks: Vec<CatalogSubchunk>,
 }
 
@@ -143,13 +145,23 @@ impl CatalogChunk {
         let (input, subsystem_strings_data) = take(subsystems_strings_length)(input)?;
         let catalog_subsystem_strings = subsystem_strings_data.to_vec();
 
-        let (input, catalog_process_info_entries) = many_m_n(
+        let (input, catalog_process_info_entries_vec) = many_m_n(
             number_process_information_entries as usize,
             number_process_information_entries as usize,
             |input| Self::parse_catalog_process_entry(input, &catalog_uuids),
         )
         .parse(input)?;
 
+        let mut catalog_process_info_entries = HashMap::new();
+        for entry in catalog_process_info_entries_vec {
+            catalog_process_info_entries.insert(
+                format!(
+                    "{}_{}",
+                    entry.first_number_proc_id, entry.second_number_proc_id
+                ),
+                entry,
+            );
+        }
         let (input, catalog_subchunks) = many_m_n(
             number_sub_chunks as usize,
             number_sub_chunks as usize,
@@ -221,7 +233,7 @@ impl CatalogChunk {
             .get(catalog_dsc_uuid_index as usize)
             .map(ToString::to_string)
             .unwrap_or_else(|| {
-                log::warn!("[macos-unifiedlogs] Could not find DSC UUID in catalog");
+                //log::warn!("[macos-unifiedlogs] Could not find DSC UUID in catalog");
                 String::new()
             });
 
@@ -359,42 +371,37 @@ impl CatalogChunk {
             category: String::new(),
         };
 
-        // Go through catalog entries until first and second proc id match the log entry
-        for process_info in &self.catalog_process_info_entries {
-            if first_proc_id == process_info.first_number_proc_id
-                && second_proc_id == process_info.second_number_proc_id
-            {
-                // Go through subsystems in catalog entry until subsystem value is found
-                for subsystems in &process_info.subsystem_entries {
-                    if subsystem_value == subsystems.identifer {
-                        let subsystem_data: &[u8] = &self.catalog_subsystem_strings;
-                        let (input, _) = take(subsystems.subsystem_offset)(subsystem_data)?;
-                        let (_, subsystem_string) = extract_string(input)?;
+        if let Some(entry) = self
+            .catalog_process_info_entries
+            .get(&format!("{first_proc_id}_{second_proc_id}"))
+        {
+            for subsystems in &entry.subsystem_entries {
+                if subsystem_value == subsystems.identifer {
+                    let subsystem_data: &[u8] = &self.catalog_subsystem_strings;
+                    let (input, _) = take(subsystems.subsystem_offset)(subsystem_data)?;
+                    let (_, subsystem_string) = extract_string(input)?;
 
-                        let (input, _) = take(subsystems.category_offset)(subsystem_data)?;
-                        let (_, category_string) = extract_string(input)?;
-                        subsystem_info.subsystem = subsystem_string;
-                        subsystem_info.category = category_string;
-                        return Ok((input, subsystem_info));
-                    }
+                    let (input, _) = take(subsystems.category_offset)(subsystem_data)?;
+                    let (_, category_string) = extract_string(input)?;
+                    subsystem_info.subsystem = subsystem_string;
+                    subsystem_info.category = category_string;
+                    return Ok((input, subsystem_info));
                 }
             }
         }
 
-        log::warn!("[macos-unifiedlogs] Did not find subsystem in log entry");
+        //log::warn!("[macos-unifiedlogs] Did not find subsystem in log entry");
         subsystem_info.subsystem = String::from("Unknown subsystem");
         Ok((&[], subsystem_info))
     }
 
     /// Get the actual Process ID associated with log entry
     pub fn get_pid(&self, first_proc_id: u64, second_proc_id: u32) -> u64 {
-        // Go through catalog entries until first and second proc id match the log entry
-        for process_info in &self.catalog_process_info_entries {
-            if first_proc_id == process_info.first_number_proc_id
-                && second_proc_id == process_info.second_number_proc_id
-            {
-                return u64::from(process_info.pid);
-            }
+        if let Some(entry) = self
+            .catalog_process_info_entries
+            .get(&format!("{first_proc_id}_{second_proc_id}"))
+        {
+            return u64::from(entry.pid);
         }
 
         log::warn!("[macos-unifiedlogs] Did not find PID in log Catalog");
@@ -403,14 +410,13 @@ impl CatalogChunk {
 
     /// Get the effictive user id associated with log entry. Can be mapped to an account name
     pub fn get_euid(&self, first_proc_id: u64, second_proc_id: u32) -> u32 {
-        // Go through catalog entries until first and second proc id match the log entry
-        for process_info in &self.catalog_process_info_entries {
-            if first_proc_id == process_info.first_number_proc_id
-                && second_proc_id == process_info.second_number_proc_id
-            {
-                return process_info.effective_user_id;
-            }
+        if let Some(entry) = self
+            .catalog_process_info_entries
+            .get(&format!("{first_proc_id}_{second_proc_id}"))
+        {
+            return entry.effective_user_id;
         }
+
         log::warn!("[macos-unifiedlogs] Did not find EUID in log Catalog");
         0
     }
@@ -478,11 +484,19 @@ mod tests {
         );
         assert_eq!(catalog_data.catalog_process_info_entries.len(), 1);
         assert_eq!(
-            catalog_data.catalog_process_info_entries[0].main_uuid,
+            catalog_data
+                .catalog_process_info_entries
+                .get("158_311")
+                .unwrap()
+                .main_uuid,
             "2BEFD20C18EC3838814F2B4E5AF3BCEC"
         );
         assert_eq!(
-            catalog_data.catalog_process_info_entries[0].dsc_uuid,
+            catalog_data
+                .catalog_process_info_entries
+                .get("158_311")
+                .unwrap()
+                .dsc_uuid,
             "3D05845F3F65358F9EBF2236E772AC01"
         );
 
