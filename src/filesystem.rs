@@ -136,6 +136,9 @@ impl FileProvider for LiveSystemProvider {
         let uuid = if uuid.len() == uuid_len - 1 {
             // UUID starts with 0 which was not included in the string
             &format!("0{uuid}")
+        } else if uuid.len() == uuid_len - 2 {
+            // UUID starts with 00 which was not included in the string
+            &format!("00{uuid}")
         } else if uuid.len() == uuid_len {
             uuid
         } else {
@@ -228,6 +231,9 @@ impl FileProvider for LiveSystemProvider {
         let uuid = if uuid.len() == uuid_len - 1 {
             // UUID starts with 0 which was not included in the string
             &format!("0{uuid}")
+        } else if uuid.len() == uuid_len - 2 {
+            // UUID starts with 00 which was not included in the string
+            &format!("00{uuid}")
         } else if uuid.len() == uuid_len {
             uuid
         } else {
@@ -335,6 +341,9 @@ impl FileProvider for LogarchiveProvider {
         let uuid = if uuid.len() == uuid_len - 1 {
             // UUID starts with 0 which was not included in the string
             &format!("0{uuid}")
+        } else if uuid.len() == uuid_len - 2 {
+            // UUID starts with 00 which was not included in the string
+            &format!("00{uuid}")
         } else if uuid.len() == uuid_len {
             uuid
         } else {
@@ -378,6 +387,9 @@ impl FileProvider for LogarchiveProvider {
         let uuid = if uuid.len() == uuid_len - 1 {
             // UUID starts with 0 which was not included in the string
             &format!("0{uuid}")
+        } else if uuid.len() == uuid_len - 2 {
+            // UUID starts with 00 which was not included in the string
+            &format!("00{uuid}")
         } else if uuid.len() == uuid_len {
             uuid
         } else {

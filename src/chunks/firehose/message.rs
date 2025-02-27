@@ -1138,7 +1138,7 @@ impl MessageData {
             return MessageData::uuidtext_image_path(&data.footer_data, &data.entry_descriptors);
         }
 
-        panic!(
+        warn!(
             "[macos-unifiedlogs] Failed to get path string from UUIDText file for entry: {}",
             main_uuid
         );
