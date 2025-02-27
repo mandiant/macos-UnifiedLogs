@@ -42,52 +42,16 @@ pub fn parse_log(mut reader: impl Read) -> Result<UnifiedLogData, ParserError> {
     }
 }
 
-/// Returns an iterator that parses through the log entries
-pub fn iter_log<'a>(
-    unified_log_data: &'a UnifiedLogData,
-    strings_data: &'a [UUIDText],
-    shared_strings: &'a [SharedCacheStrings],
-    timesync_data: &'a [TimesyncBoot],
-    exclude_missing: bool,
-) -> Result<impl Iterator<Item = (Vec<LogData>, UnifiedLogData)> + 'a, regex::Error> {
-    LogData::iter_log(
-        unified_log_data,
-        strings_data,
-        shared_strings,
-        timesync_data,
-        exclude_missing,
-    )
-}
-
 /// Reconstruct Unified Log entries using the strings data, cached strings data, timesync data, and unified log. Provide bool to ignore log entries that are not able to be recontructed (additional tracev3 files needed)
 /// Return a reconstructed log entries and any leftover Unified Log entries that could not be reconstructed (data may be stored in other tracev3 files)
 // Log entries with Oversize string entries may have the data in a different tracev3 file.
 pub fn build_log(
     unified_data: &UnifiedLogData,
-    strings_data: &[UUIDText],
-    shared_strings: &[SharedCacheStrings],
-    timesync_data: &[TimesyncBoot],
-    exclude_missing: bool,
-) -> (Vec<LogData>, UnifiedLogData) {
-    LogData::build_log(
-        unified_data,
-        strings_data,
-        shared_strings,
-        timesync_data,
-        exclude_missing,
-    )
-}
-
-/// Reconstruct Unified Log entries using the strings data, cached strings data, timesync data, and unified log. Provide bool to ignore log entries that are not able to be recontructed (additional tracev3 files needed)
-/// Return a reconstructed log entries and any leftover Unified Log entries that could not be reconstructed (data may be stored in other tracev3 files)
-// Log entries with Oversize string entries may have the data in a different tracev3 file.
-pub fn build_logv2(
-    unified_data: &UnifiedLogData,
     provider: &mut dyn FileProvider,
     timesync_data: &[TimesyncBoot],
     exclude_missing: bool,
 ) -> (Vec<LogData>, UnifiedLogData) {
-    LogData::build_logv2(unified_data, provider, timesync_data, exclude_missing)
+    LogData::build_log(unified_data, provider, timesync_data, exclude_missing)
 }
 
 /// Parse all UUID files in provided directory. The directory should follow the same layout as the live system (ex: path/to/files/<two character UUID>/<remaining UUID name>)
@@ -321,24 +285,16 @@ mod tests {
     fn test_build_log() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         test_path.push("tests/test_data/system_logs_big_sur.logarchive");
-        let provider = LogarchiveProvider::new(test_path.as_path());
-
-        let string_results = collect_strings(&provider).unwrap();
-        let shared_strings_results = collect_shared_strings(&provider).unwrap();
-        let timesync_data = collect_timesync(&provider).unwrap();
+        let mut provider = LogarchiveProvider::new(test_path.as_path());
 
         test_path.push("Persist/0000000000000002.tracev3");
         let handle = std::fs::File::open(&test_path).unwrap();
         let log_data = parse_log(handle).unwrap();
 
+        let timesync_data = collect_timesync(&provider).unwrap();
+
         let exclude_missing = false;
-        let (results, _) = build_log(
-            &log_data,
-            &string_results,
-            &shared_strings_results,
-            &timesync_data,
-            exclude_missing,
-        );
+        let (results, _) = build_log(&log_data, &mut provider, &timesync_data, exclude_missing);
         assert_eq!(results.len(), 207366);
         assert_eq!(results[10].process, "/usr/libexec/lightsoutmanagementd");
         assert_eq!(results[10].subsystem, "com.apple.lom");

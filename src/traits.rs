@@ -22,7 +22,7 @@ pub trait FileProvider {
     fn uuidtext_files(&self) -> Box<dyn Iterator<Item = Box<dyn SourceFile>>>;
 
     /// Reads a provided UUID file at runtime.
-    /// The UUID is obtaind by parsing the `tracev3` files. Reads might fail if the UUID does exist, this may be expected
+    /// The UUID is obtaind by parsing the `tracev3` files. Reads will fail if the UUID does not exist
     /// This avoids having to read all `UUIDText` files into memory.
     fn read_uuidtext(&self, uuid: &str) -> Result<UUIDText, Error>;
 
@@ -39,7 +39,7 @@ pub trait FileProvider {
     fn dsc_files(&self) -> Box<dyn Iterator<Item = Box<dyn SourceFile>>>;
 
     /// Reads a provided UUID file at runtime.
-    /// The UUID is obtaind by parsing the `tracev3` files. Reads might fail if the UUID does exist, this may be expected
+    /// The UUID is obtaind by parsing the `tracev3` files. Reads will fail if the UUID does not exist
     /// This avoids having to read all `SharedCacheStrings` files into memory.
     fn read_dsc_uuid(&self, uuid: &str) -> Result<SharedCacheStrings, Error>;
 

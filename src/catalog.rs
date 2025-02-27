@@ -154,12 +154,6 @@ impl CatalogChunk {
 
         let mut catalog_process_info_entries = HashMap::new();
         for entry in catalog_process_info_entries_vec {
-            if catalog_process_info_entries.contains_key(&format!(
-                "{}_{}",
-                entry.first_number_proc_id, entry.second_number_proc_id
-            )) {
-                panic!("this wont work");
-            }
             catalog_process_info_entries.insert(
                 format!(
                     "{}_{}",

@@ -187,6 +187,7 @@ impl FileProvider for LiveSystemProvider {
             Ok(result) => result,
             Err(_err) => return,
         };
+        // Keep a cache of 30 UUIDText files
         if self.uuidtext_cache.len() > 30 {
             for key in self
                 .uuidtext_cache
@@ -210,6 +211,8 @@ impl FileProvider for LiveSystemProvider {
             Ok(result) => result,
             Err(_err) => return,
         };
+        // Keep a cache of 2 DSC UUID files. These files are larger than typical UUID files. ~30MB - ~150MB
+        // However, there are only a few of them. ~5 - 6
         while self.dsc_cache.len() > 2 {
             if let Some(key) = self.dsc_cache.keys().next() {
                 if key == uuid || key == uuid2 {
@@ -450,6 +453,22 @@ impl FileProvider for LogarchiveProvider {
             Ok(result) => result,
             Err(_err) => return,
         };
+        // Keep a cache of 30 UUIDText files
+        if self.uuidtext_cache.len() > 30 {
+            for key in self
+                .uuidtext_cache
+                .keys()
+                .take(5)
+                .cloned()
+                .collect::<Vec<String>>()
+            {
+                if key == uuid || key == uuid2 {
+                    continue;
+                }
+                let key = key.clone();
+                self.uuidtext_cache.remove(&key);
+            }
+        }
         self.uuidtext_cache.insert(uuid.to_string(), status);
     }
 
@@ -458,6 +477,17 @@ impl FileProvider for LogarchiveProvider {
             Ok(result) => result,
             Err(_err) => return,
         };
+        // Keep a cache of 2 DSC UUID files. These files are larger than typical UUID files. ~30MB - ~150MB
+        // However, there are only a few of them. ~5 - 6
+        while self.dsc_cache.len() > 2 {
+            if let Some(key) = self.dsc_cache.keys().next() {
+                if key == uuid || key == uuid2 {
+                    continue;
+                }
+                let key = key.clone();
+                self.dsc_cache.remove(&key);
+            }
+        }
         self.dsc_cache.insert(uuid.to_string(), status);
     }
 

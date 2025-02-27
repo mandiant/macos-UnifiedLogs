@@ -5,16 +5,14 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-use log::{error, warn};
-use nom::bytes::complete::take;
-use nom::number::complete::{be_u8, be_u16, be_u32, be_u64, le_u8, le_u32};
-use std::mem::size_of;
-
 use crate::catalog::CatalogChunk;
 use crate::chunks::firehose::firehose_log::{FirehoseItemData, FirehoseItemInfo};
 use crate::chunks::firehose::message::MessageData;
 use crate::traits::FileProvider;
-use crate::uuidtext::UUIDText;
+use log::{error, warn};
+use nom::bytes::complete::take;
+use nom::number::complete::{be_u8, be_u16, be_u32, be_u64, le_u8, le_u32};
+use std::mem::size_of;
 
 #[derive(Debug, Clone, Default)]
 pub struct FirehoseTrace {
@@ -137,25 +135,6 @@ impl FirehoseTrace {
 
     /// Get base log message string formatter from shared cache strings (dsc) or UUID text file for firehose trace log entries (chunks)
     pub fn get_firehose_trace_strings<'a>(
-        strings_data: &'a [UUIDText],
-        string_offset: u64,
-        first_proc_id: &u64,
-        second_proc_id: &u32,
-        catalogs: &CatalogChunk,
-    ) -> nom::IResult<&'a [u8], MessageData> {
-        // Only main_exe flag has been seen for format strings
-        MessageData::extract_format_strings(
-            strings_data,
-            string_offset,
-            first_proc_id,
-            second_proc_id,
-            catalogs,
-            0,
-        )
-    }
-
-    /// Get base log message string formatter from shared cache strings (dsc) or UUID text file for firehose trace log entries (chunks)
-    pub fn get_firehose_trace_stringsv2<'a>(
         provider: &'a mut dyn FileProvider,
         string_offset: u64,
         first_proc_id: &u64,
@@ -163,7 +142,7 @@ impl FirehoseTrace {
         catalogs: &CatalogChunk,
     ) -> nom::IResult<&'a [u8], MessageData> {
         // Only main_exe flag has been seen for format strings
-        MessageData::cache_extract_format_strings(
+        MessageData::extract_format_strings(
             provider,
             string_offset,
             first_proc_id,
@@ -176,13 +155,10 @@ impl FirehoseTrace {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
     use crate::{
-        chunks::firehose::trace::FirehoseTrace,
-        filesystem::LogarchiveProvider,
-        parser::{collect_strings, parse_log},
+        chunks::firehose::trace::FirehoseTrace, filesystem::LogarchiveProvider, parser::parse_log,
     };
+    use std::path::PathBuf;
 
     #[test]
     fn test_parse_firehose_trace() {
@@ -227,9 +203,7 @@ mod tests {
     fn test_get_firehose_trace_strings() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         test_path.push("tests/test_data/system_logs_high_sierra.logarchive");
-        let provider = LogarchiveProvider::new(test_path.as_path());
-
-        let string_results = collect_strings(&provider).unwrap();
+        let mut provider = LogarchiveProvider::new(test_path.as_path());
 
         test_path.push("logdata.LiveData.tracev3");
         let handle = std::fs::File::open(test_path).unwrap();
@@ -243,7 +217,7 @@ mod tests {
                 for firehose in preamble.public_data {
                     if firehose.unknown_log_activity_type == activity_type {
                         let (_, message_data) = FirehoseTrace::get_firehose_trace_strings(
-                            &string_results,
+                            &mut provider,
                             u64::from(firehose.format_string_location),
                             &preamble.first_number_proc_id,
                             &preamble.second_number_proc_id,
