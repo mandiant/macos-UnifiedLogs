@@ -162,7 +162,7 @@ impl FirehosePreamble {
                     let private_data_offset = private_offst - private_data_virtual_offset;
                     // Calculate start of private data. If the remaining input is greater than private data offset.
                     // Remove any padding/junk data in front of the private data
-                    if input.len() > private_data_offset.into() && public_data.is_empty() {
+                    if input.len() > private_data_offset as usize && public_data.is_empty() {
                         let leftover_data = input.len() - private_data_offset as usize;
                         let (private_data, _) = take(leftover_data)(input)?;
                         input = private_data;
@@ -390,7 +390,7 @@ impl FirehosePreamble {
                 if firehose_info.item_type == private_strings[3]
                     || firehose_info.item_type == private_strings[4]
                 {
-                    if private_string_start.len() < firehose_info.item_size.into() {
+                    if private_string_start.len() < firehose_info.item_size as usize {
                         let (private_data, pointer_object) =
                             take(private_string_start.len())(private_string_start)?;
                         private_string_start = private_data;
