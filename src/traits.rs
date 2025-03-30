@@ -3,7 +3,7 @@ use std::io::Error;
 use crate::{dsc::SharedCacheStrings, uuidtext::UUIDText};
 
 /// Implementing this trait allows library consumers to provide the files required by the parser in
-/// arbitrary formats, as long as they are provided as an iterator of items that implement [Read].
+/// arbitrary formats, as long as they are provided as an iterator of items that implement \[Read\].
 ///
 /// For help mapping files to the correct filetype, see the
 /// [`LogFileType`](crate::filesystem::LogFileType) enum's

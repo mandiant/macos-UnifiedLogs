@@ -99,7 +99,7 @@ pub fn build_log(
     LogData::build_log(unified_data, provider, timesync_data, exclude_missing)
 }
 
-/// Parse all UUID files in provided directory. The directory should follow the same layout as the live system (ex: path/to/files/<two character UUID>/<remaining UUID name>)
+/// Parse all UUID files in provided directory. The directory should follow the same layout as the live system (ex: path/to/files/\<two character UUID\>/\<remaining UUID name\>)
 pub fn collect_strings(provider: &dyn FileProvider) -> Result<Vec<UUIDText>, ParserError> {
     let mut uuidtext_vec: Vec<UUIDText> = Vec::new();
     // Start process to read a directory containing subdirectories that contain the uuidtext files

@@ -32,6 +32,57 @@
     clippy::unnecessary_cast
 )]
 
+//! # A library to parse Apple Unified Logs
+//! `macos_unifiedlogs` is a small cross platform library to help parse Unified Logs on a system or logarchive.
+//! No Apple APIs are used so this library can be used on non-apple platforms.
+//!
+//! A full example can found on [GitHub](https://github.com/mandiant/macos-UnifiedLogs)
+//! ## Example
+//! ```rust
+//!    use macos_unifiedlogs::filesystem::LiveSystemProvider;
+//!    use macos_unifiedlogs::traits::FileProvider;
+//!    use macos_unifiedlogs::parser::collect_timesync;
+//!    use macos_unifiedlogs::iterator::UnifiedLogIterator;
+//!    use macos_unifiedlogs::unified_log::UnifiedLogData;
+//!    use macos_unifiedlogs::parser::build_log;
+//!
+//!    // Run on live macOS system
+//!     let mut provider = LiveSystemProvider::default();
+//!     let timesync_data = collect_timesync(&provider).unwrap();
+//!
+//!     // We need to persist the Oversize log entries (they contain large strings that don't fit in normal log entries)
+//!     let mut oversize_strings = UnifiedLogData {
+//!        header: Vec::new(),
+//!        catalog_data: Vec::new(),
+//!        oversize: Vec::new(),
+//!     };
+//!     for mut entry in provider.tracev3_files() {
+//!         println!("TraceV3 file: {}", entry.source_path());
+//!         let mut buf = Vec::new();
+//!         entry.reader().read_to_end(&mut buf);
+//!         let log_iterator = UnifiedLogIterator {
+//!             data: buf,
+//!             header: Vec::new(),
+//!         };
+//!         // If we exclude entries that are missing strings, we may find them in later log files
+//!         let exclude = true;
+//!         for mut chunk in log_iterator {
+//!             chunk.oversize.append(&mut oversize_strings.oversize);
+//!             let (results, _missing_logs) = build_log(
+//!                 &chunk,
+//!                 &mut provider,
+//!                 &timesync_data,
+//!                 exclude,
+//!             );
+//!             oversize_strings.oversize = chunk.oversize;
+//!             println!("Got {} log entries", results.len());
+//!             break;
+//!         }
+//!         break;
+//!     }
+//!
+//! ```
+
 /// Functions to parse catalog information from tracev3 files
 mod catalog;
 mod chunks;
