@@ -32,20 +32,29 @@
     clippy::unnecessary_cast
 )]
 
+/// Functions to parse catalog information from tracev3 files
 mod catalog;
 mod chunks;
 mod chunkset;
+/// Parsers to extract specific log objects
 mod decoders;
+/// Functions to parse the shared string cache
 pub mod dsc;
 mod error;
+/// Providers to parse Unified Log data on a live system or a provided logarchive
 pub mod filesystem;
 mod header;
 pub mod iterator;
+/// Functions to assemble the log message
 mod message;
+/// Functions to extract and assemble log entries from the macOS Unified Log
 pub mod parser;
 mod preamble;
+/// Functions to parse time data associated with the Unified Log
 pub mod timesync;
 pub mod traits;
+/// Functions to parse tracev3 files
 pub mod unified_log;
 mod util;
+/// Functions to parse the log string files
 pub mod uuidtext;

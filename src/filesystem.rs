@@ -36,6 +36,11 @@ impl SourceFile for LocalFile {
 /// required files at the correct paths on a live macOS system. These files are only present on
 /// macOS Sierra (10.12) and above. The implemented methods emit error log messages if any are
 /// encountered while enumerating files or creating readers, but are otherwise infallible.
+/// # Example
+/// ```rust
+///    use macos_unifiedlogs::filesystem::LiveSystemProvider;
+///    let provider = LiveSystemProvider::default();
+/// ```
 #[derive(Default, Debug)]
 pub struct LiveSystemProvider {
     pub(crate) uuidtext_cache: HashMap<String, UUIDText>,
@@ -298,6 +303,17 @@ impl FileProvider for LiveSystemProvider {
     }
 }
 
+/// Provides an implementation of [`FileProvider`] that enumerates the
+/// required files at the correct paths on a from a provided logarchive.
+/// # Example
+/// ```rust
+///    use macos_unifiedlogs::filesystem::LogarchiveProvider;
+///    use std::path::PathBuf;
+///
+///    let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+///    test_path.push("tests/test_data/system_logs_big_sur.logarchive");
+///    let provider = LogarchiveProvider::new(test_path.as_path());
+/// ```
 pub struct LogarchiveProvider {
     base: PathBuf,
     pub(crate) uuidtext_cache: HashMap<String, UUIDText>,
@@ -315,6 +331,21 @@ impl LogarchiveProvider {
 }
 
 impl FileProvider for LogarchiveProvider {
+    /// Provide iterator for tracev3 files
+    /// # Example
+    /// ```rust
+    ///    use macos_unifiedlogs::filesystem::LogarchiveProvider;
+    ///    use macos_unifiedlogs::traits::FileProvider;
+    ///    use macos_unifiedlogs::parser::collect_timesync;
+    ///    use std::path::PathBuf;
+    ///
+    ///    let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    ///    test_path.push("tests/test_data/system_logs_big_sur.logarchive");
+    ///    let provider = LogarchiveProvider::new(test_path.as_path());
+    ///    for mut entry in provider.tracev3_files() {
+    ///      println!("TraceV3 file: {}", entry.source_path());
+    ///    }
+    /// ```
     fn tracev3_files(&self) -> Box<dyn Iterator<Item = Box<dyn SourceFile>>> {
         Box::new(
             WalkDir::new(&self.base)

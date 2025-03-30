@@ -43,9 +43,53 @@ pub fn parse_log(mut reader: impl Read) -> Result<UnifiedLogData, ParserError> {
     }
 }
 
-/// Reconstruct Unified Log entries using the strings data, cached strings data, timesync data, and unified log. Provide bool to ignore log entries that are not able to be recontructed (additional tracev3 files needed)
-/// Return a reconstructed log entries and any leftover Unified Log entries that could not be reconstructed (data may be stored in other tracev3 files)
-// Log entries with Oversize string entries may have the data in a different tracev3 file.
+/// Reconstruct Unified Log entries. Provide a bool to ignore log entries that are not able to be recontructed. You may be able to reconstruct after parsing additional log files
+/// # Example
+/// ```rust
+///    use macos_unifiedlogs::filesystem::LogarchiveProvider;
+///    use macos_unifiedlogs::traits::FileProvider;
+///    use macos_unifiedlogs::parser::collect_timesync;
+///    use macos_unifiedlogs::iterator::UnifiedLogIterator;
+///    use macos_unifiedlogs::unified_log::UnifiedLogData;
+///    use macos_unifiedlogs::parser::build_log;
+///    use std::path::PathBuf;
+///
+///    let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+///    test_path.push("tests/test_data/system_logs_big_sur.logarchive");
+///    let mut provider = LogarchiveProvider::new(test_path.as_path());
+///    let timesync_data = collect_timesync(&provider).unwrap();
+///
+///    // We need to persist the Oversize log entries (they contain large strings that don't fit in normal log entries)
+///    let mut oversize_strings = UnifiedLogData {
+///        header: Vec::new(),
+///        catalog_data: Vec::new(),
+///        oversize: Vec::new(),
+///    };
+///    for mut entry in provider.tracev3_files() {
+///      println!("TraceV3 file: {}", entry.source_path());
+///      let mut buf = Vec::new();
+///      entry.reader().read_to_end(&mut buf);
+///      let log_iterator = UnifiedLogIterator {
+///        data: buf,
+///        header: Vec::new(),
+///      };
+///      // If we exclude entries that are missing strings, we may find them in later log files
+///      let exclude = true;
+///      for mut chunk in log_iterator {
+///        chunk.oversize.append(&mut oversize_strings.oversize);
+///        let (results, _missing_logs) = build_log(
+///            &chunk,
+///            &mut provider,
+///            &timesync_data,
+///            exclude,
+///        );
+///        oversize_strings.oversize = chunk.oversize;
+///        println!("Got {} log entries", results.len());
+///         break;
+///      }
+///      break;
+///    }
+/// ```
 pub fn build_log(
     unified_data: &UnifiedLogData,
     provider: &mut dyn FileProvider,
@@ -125,6 +169,17 @@ pub fn collect_shared_strings(
 }
 
 /// Parse all timesync files in provided directory
+/// # Example
+/// ```rust
+///    use macos_unifiedlogs::filesystem::LogarchiveProvider;
+///    use macos_unifiedlogs::parser::collect_timesync;
+///    use std::path::PathBuf;
+///
+///    let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+///    test_path.push("tests/test_data/system_logs_big_sur.logarchive");
+///    let provider = LogarchiveProvider::new(test_path.as_path());
+///    let timesync_data = collect_timesync(&provider).unwrap();
+/// ```
 pub fn collect_timesync(
     provider: &dyn FileProvider,
 ) -> Result<HashMap<String, TimesyncBoot>, ParserError> {
