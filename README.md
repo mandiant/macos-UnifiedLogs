@@ -43,7 +43,7 @@ the Unified Log format there are some limitations:
 1. No printf style error code lookup support. This library does not do any error
    code lookups for log messages. The native `log` command on macOS supports
    error code lookups when it encounters printf style `%m` messages.\
-   An example base log messsage: 'Failed to open file, error: %m'\
+   For example the log message: 'Failed to open file, error: %m'\
    a. This Library outputs:
    ```
    Failed to open file, error: 1
@@ -53,12 +53,11 @@ the Unified Log format there are some limitations:
    Failed to open file, error: no such file or directory
    ```
 
-2. Support for most custom objects in log messages. However, some objects are
-   not supported. Unsupported objects will be base64 encoded
+2. Support for most custom objects in log messages. Unsupported objects will be base64 encoded
 
 # References
 
-https://github.com/ydkhatri/UnifiedLogReader\
-https://github.com/libyal/dtformats/blob/main/documentation/Apple%20Unified%20Logging%20and%20Activity%20Tracing%20formats.asciidoc\
-https://eclecticlight.co/2018/03/19/macos-unified-log-1-why-what-and-how/\
-https://www.crowdstrike.com/blog/how-to-leverage-apple-unified-log-for-incident-response/
+- https://github.com/ydkhatri/UnifiedLogReader
+- https://github.com/libyal/dtformats/blob/main/documentation/Apple%20Unified%20Logging%20and%20Activity%20Tracing%20formats.asciidoc
+- https://eclecticlight.co/2018/03/19/macos-unified-log-1-why-what-and-how
+- https://www.crowdstrike.com/blog/how-to-leverage-apple-unified-log-for-incident-response
