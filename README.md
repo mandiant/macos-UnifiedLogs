@@ -53,7 +53,7 @@ the Unified Log format there are some limitations:
    Failed to open file, error: no such file or directory
    ```
 
-2. Support for most custom objects in log messages. Unsupported objects will be base64 encoded
+2. This library supports most custom objects in log messages. However, unsupported objects will be base64 encoded
 
 # References
 
