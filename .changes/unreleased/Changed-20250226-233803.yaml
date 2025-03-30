@@ -1,0 +1,3 @@
+kind: Changed
+body: Only keep a small cache of UUID strings instead of all strings. Should reduce memory usage quite a bit
+time: 2025-02-26T23:38:03.254397-05:00

@@ -5,17 +5,15 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-use std::{fs::File, path::PathBuf};
-
 use criterion::{Criterion, criterion_group, criterion_main};
 use macos_unifiedlogs::{
-    dsc::SharedCacheStrings,
     filesystem::LogarchiveProvider,
-    parser::{build_log, collect_shared_strings, collect_strings, collect_timesync, parse_log},
+    parser::{build_log, collect_timesync, parse_log},
     timesync::TimesyncBoot,
+    traits::FileProvider,
     unified_log::UnifiedLogData,
-    uuidtext::UUIDText,
 };
+use std::{collections::HashMap, fs::File, path::PathBuf};
 
 fn big_sur_parse_log(path: &str) {
     let handle = File::open(PathBuf::from(path).as_path()).unwrap();
@@ -24,18 +22,11 @@ fn big_sur_parse_log(path: &str) {
 
 fn bench_build_log(
     log_data: &UnifiedLogData,
-    string_results: &Vec<UUIDText>,
-    shared_strings_results: &Vec<SharedCacheStrings>,
-    timesync_data: &Vec<TimesyncBoot>,
+    provider: &mut dyn FileProvider,
+    timesync_data: &HashMap<String, TimesyncBoot>,
     exclude_missing: bool,
 ) {
-    let (_, _) = build_log(
-        &log_data,
-        &string_results,
-        &shared_strings_results,
-        &timesync_data,
-        exclude_missing,
-    );
+    let (_, _) = build_log(&log_data, provider, &timesync_data, exclude_missing);
 }
 
 fn big_sur_single_log_benchpress(c: &mut Criterion) {
@@ -52,9 +43,7 @@ fn big_sur_build_log_benchbress(c: &mut Criterion) {
     let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_path.push("tests/test_data/system_logs_big_sur.logarchive");
 
-    let provider = LogarchiveProvider::new(test_path.as_path());
-    let string_results = collect_strings(&provider).unwrap();
-    let shared_strings_results = collect_shared_strings(&provider).unwrap();
+    let mut provider = LogarchiveProvider::new(test_path.as_path());
     let timesync_data = collect_timesync(&provider).unwrap();
 
     test_path.push("Persist/0000000000000004.tracev3");
@@ -64,15 +53,7 @@ fn big_sur_build_log_benchbress(c: &mut Criterion) {
     let log_data = parse_log(handle).unwrap();
 
     c.bench_function("Benching Building One Big Sur Log", |b| {
-        b.iter(|| {
-            bench_build_log(
-                &log_data,
-                &string_results,
-                &shared_strings_results,
-                &timesync_data,
-                exclude_missing,
-            )
-        })
+        b.iter(|| bench_build_log(&log_data, &mut provider, &timesync_data, exclude_missing))
     });
 }
 
