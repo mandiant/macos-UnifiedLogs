@@ -32,7 +32,7 @@ Data that is currently extracted includes:
 
 An example binary is available to download
 
-- `unifiedlog_iterator` - Can parse a logarchive into a JSOL or CSV file. It can also run
+- `unifiedlog_iterator` - Can parse a logarchive into a JSOL or CSV file. It can also parse the logs
   on a live system. The output file will be quite large
 
 ## Limitations
