@@ -5,7 +5,7 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-use crate::decoders::location;
+use crate::decoders::{config, location};
 use crate::util::{clean_uuid, encode_standard, extract_string};
 use log::{error, info};
 use nom::bytes::complete::take;
@@ -150,7 +150,9 @@ impl Statedump {
             "CLDaemonStatusStateTracker" => location::get_daemon_status_tracker(object_data),
             "CLClientManagerStateTracker" => location::get_state_tracker_data(object_data),
             "CLLocationManagerStateTracker" => location::get_location_tracker_state(object_data),
+            "DNS Configuration" => config::get_dns_config(object_data),
             _ => {
+                println!("{name}");
                 return format!(
                     "Unsupported Statedump object: {name}-{}",
                     encode_standard(object_data)
