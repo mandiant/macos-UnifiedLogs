@@ -86,50 +86,18 @@ fn parse_dns_config<'a>(
 
     // Now assemble our message!
     let mut message = String::from("DNS Configuration\n");
-    for (key, entry) in resolvers.iter().enumerate() {
-        let mut resolver_message = format!("resolver #{key}\n");
-        for (index, value) in entry.search_domains.iter().enumerate() {
-            resolver_message += &format!("  search domain[{index}] : {value}\n");
-        }
-        for (index, value) in entry.nameservers.iter().enumerate() {
-            resolver_message += &format!("  nameserver[{index}] : {value}\n");
-        }
-
-        if entry.if_index != 0 && !entry.if_index_value.is_empty() {
-            resolver_message += &format!(
-                "  if_index : {} ({})\n",
-                entry.if_index, entry.if_index_value
-            );
-        }
-
-        if !entry.domain.is_empty() {
-            resolver_message += &format!("  domain   : {}\n", entry.domain);
-        }
-        if !entry.options.is_empty() {
-            resolver_message += &format!("  options  : {}\n", entry.options);
-        }
-        if entry.timeout != 0 {
-            resolver_message += &format!("  timeout  : {}\n", entry.timeout);
-        }
-
-        resolver_message += &format!(
-            "  flags    : {:#010x?} {}\n",
-            entry.dns_flags, entry.dns_flags_string
-        );
-        resolver_message += &format!(
-            "  reach    : {:#010x?} {}\n",
-            entry.reach, entry.reach_string
-        );
-        if entry.order != 0 {
-            resolver_message += &format!("  order    : {}\n", entry.order);
-        }
-        resolver_message += &format!("  config id: {}\n\n", entry.config_id);
-
-        message += &resolver_message;
-    }
+    message += &assemble_message(&message, &resolvers);
 
     message += "DNS configuration (for scoped queries)\n\n";
-    for (key, entry) in scopes.iter().enumerate() {
+    message += &assemble_message(&message, &scopes);
+
+    Ok((remaining, message))
+}
+
+/// Combine our `DnsConfigs` into single message
+fn assemble_message(log_message: &str, configs: &[DnsConfig]) -> String {
+    let mut message = log_message.to_string();
+    for (key, entry) in configs.iter().enumerate() {
         let mut resolver_message = format!("resolver #{key}\n");
         for (index, value) in entry.search_domains.iter().enumerate() {
             resolver_message += &format!("  search domain[{index}] : {value}\n");
@@ -171,7 +139,7 @@ fn parse_dns_config<'a>(
         message += &resolver_message;
     }
 
-    Ok((remaining, message))
+    message
 }
 
 #[derive(Debug, Default)]
