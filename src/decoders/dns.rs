@@ -352,6 +352,7 @@ pub(crate) fn dns_records(data: &str) -> Result<&'static str, DecoderError<'_>> 
         "2" => "NS",
         "5" => "CNAME",
         "6" => "SOA",
+        "10" => "NULL",
         "12" => "PTR",
         "13" => "HINFO",
         "15" => "MX",

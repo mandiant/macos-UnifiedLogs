@@ -101,6 +101,27 @@ pub fn format_firehose_log_message(
             continue;
         }
 
+        const PRECISION_ITEMS: [u8; 2] = [0x10, 0x12]; // dynamic precision item types?
+        // If the item message was a precision type increment to actual value
+        if PRECISION_ITEMS.contains(&item_message[item_index].item_type) {
+            item_index += 1;
+        }
+        // Also seen number type value 0 also used for dynamic width/precision value
+        let dynamic_precision_value = 0x0;
+        if (item_message[item_index].item_type == dynamic_precision_value
+            && item_message[item_index].item_size == 0)
+            && formatter_string.contains("%*")
+        {
+            item_index += 1;
+        }
+
+        if item_index >= item_message.len() {
+            format_and_message.formatter = formatter.as_str().to_string();
+            format_and_message.message = String::from("<Missing message data>");
+            format_and_message_vec.push(format_and_message);
+            continue;
+        }
+
         let private_strings = [0x1, 0x21, 0x31, 0x41];
         let private_number = 0x1;
         let private_message = 0x8000;
@@ -213,28 +234,6 @@ pub fn format_firehose_log_message(
                     Err(err) => warn!("[macos-unifiedlogs] Failed to format message: {:?}", err),
                 }
             }
-        }
-
-        const PRECISION_ITEMS: [u8; 2] = [0x10, 0x12]; // dynamic precision item types?
-        // If the item message was a precision type increment to actual value
-        if PRECISION_ITEMS.contains(&item_message[item_index].item_type) {
-            item_index += 1;
-        }
-
-        if item_index >= item_message.len() {
-            format_and_message.formatter = formatter.as_str().to_string();
-            format_and_message.message = String::from("<Missing message data>");
-            format_and_message_vec.push(format_and_message);
-            continue;
-        }
-
-        // Also seen number type value 0 also used for dynamic width/precision value
-        let dynamic_precision_value = 0x0;
-        if (item_message[item_index].item_type == dynamic_precision_value
-            && item_message[item_index].item_size == 0)
-            && formatter_string.contains("%*")
-        {
-            item_index += 1;
         }
 
         item_index += 1;
@@ -1076,9 +1075,8 @@ fn parse_float(message: String) -> f64 {
     let byte_results = message.parse::<i64>();
     match byte_results {
         Ok(bytes) => return f64::from_bits(bytes as u64),
-        Err(err) => error!(
-            "[macos-unifiedlogs] Failed to parse float log message value: {}, err: {:?}",
-            message, err
+        Err(err) => warn!(
+            "[macos-unifiedlogs] Failed to parse float log message value: {message}, err: {err:?}. Log message possibly incorrectly formatted ex: printf(%u, \"message\") instead of printf(%u, 10). Apple may record message as '<decode: mismatch for [%u] got [STRING sz:10]>'",
         ),
     }
     f64::from_bits(0)
@@ -1089,9 +1087,8 @@ fn parse_int(message: String) -> i64 {
     let int_results = message.parse::<i64>();
     match int_results {
         Ok(message) => return message,
-        Err(err) => error!(
-            "[macos-unifiedlogs] Failed to parse int log message value: {}, err: {:?}",
-            message, err
+        Err(err) => warn!(
+            "[macos-unifiedlogs] Failed to parse int log message value: {message}, err: {err:?}. Log message possibly incorrectly formatted ex: printf(%u, \"message\") instead of printf(%u, 10). Apple may record message as '<decode: mismatch for [%u] got [STRING sz:10]>'",
         ),
     }
     0
@@ -1119,6 +1116,60 @@ mod tests {
 
         let log_string = format_firehose_log_message(test_data, &item_message, &message_re);
         assert_eq!(log_string, "opendirectoryd (build 796.100) launched...")
+    }
+
+    #[test]
+    fn test_bad_format_options() {
+        let message_re = Regex::new(r"(%(?:(?:\{[^}]+}?)(?:[-+0#]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*))?(?:h|hh|l|ll|w|I|z|t|q|I32|I64)?[cmCdiouxXeEfgGaAnpsSZP@%}]|(?:[-+0 #]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*))?(?:h|hh|l||q|t|ll|w|I|z|I32|I64)?[cmCdiouxXeEfgGaAnpsSZP@%]))").unwrap();
+        let message = String::from(
+            "PAVAbstractVideoInterface.cpp::%d] DCPAV[%d] %s::%s Setting %s syncWidth = %u",
+        );
+
+        let items = vec![
+            FirehoseItemInfo {
+                message_strings: String::from("406"),
+                item_type: 0,
+                item_size: 0,
+            },
+            FirehoseItemInfo {
+                message_strings: String::from("258"),
+                item_type: 0,
+                item_size: 0,
+            },
+            FirehoseItemInfo {
+                message_strings: String::from("DCPAVSimpleVideoInterface"),
+                item_type: 32,
+                item_size: 25,
+            },
+            FirehoseItemInfo {
+                message_strings: String::from("setColorElement"),
+                item_type: 32,
+                item_size: 15,
+            },
+            FirehoseItemInfo {
+                message_strings: String::from("3"),
+                item_type: 0,
+                item_size: 0,
+            },
+            FirehoseItemInfo {
+                message_strings: String::from("All"),
+                item_type: 32,
+                item_size: 3,
+            },
+            FirehoseItemInfo {
+                message_strings: String::from("89"),
+                item_type: 0,
+                item_size: 0,
+            },
+        ];
+
+        let log_string = format_firehose_log_message(message, &items, &message_re);
+        // The printf format options are bad/wrong for this message. We log warning and return 0 default
+        // Apple records as: <decode: mismatch for [%u] got [STRING sz:3]
+        assert_eq!(
+            log_string,
+            "PAVAbstractVideoInterface.cpp::406] DCPAV[258] DCPAVSimpleVideoInterface::setColorElement Setting 3 syncWidth = 0"
+        )
     }
 
     #[test]

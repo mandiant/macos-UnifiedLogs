@@ -210,7 +210,7 @@ impl Iterator for LogIterator<'_> {
                     timezone_name: self.unified_log_data.header[0]
                         .timezone_path
                         .split('/')
-                        .last()
+                        .next_back()
                         .unwrap_or("Unknown Timezone Name")
                         .to_string(),
                     library_uuid: String::new(),
@@ -562,7 +562,7 @@ impl Iterator for LogIterator<'_> {
                 timezone_name: self.unified_log_data.header[0]
                     .timezone_path
                     .split('/')
-                    .last()
+                    .next_back()
                     .unwrap_or("Unknown Timezone Name")
                     .to_string(),
                 library_uuid: simpledump.sender_uuid.to_owned(),
@@ -638,7 +638,7 @@ impl Iterator for LogIterator<'_> {
                 timezone_name: self.unified_log_data.header[0]
                     .timezone_path
                     .split('/')
-                    .last()
+                    .next_back()
                     .unwrap_or("Unknown Timezone Name")
                     .to_string(),
                 library_uuid: String::new(),

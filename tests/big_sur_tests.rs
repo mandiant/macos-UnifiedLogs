@@ -266,7 +266,7 @@ fn test_parse_all_logs_big_sur() {
     assert_eq!(unknown_strings, 0);
     assert_eq!(invalid_offsets, 54);
     assert_eq!(invalid_shared_string_offsets, 0);
-    assert_eq!(statedump_custom_objects, 2);
+    assert_eq!(statedump_custom_objects, 0);
     assert_eq!(statedump_protocol_buffer, 0);
     assert_eq!(found_precision_string, true);
 
