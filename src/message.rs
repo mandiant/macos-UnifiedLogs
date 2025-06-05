@@ -101,7 +101,28 @@ pub fn format_firehose_log_message(
             continue;
         }
 
-        let private_strings = [0x1, 0x12, 0x21, 0x31, 0x41];
+        const PRECISION_ITEMS: [u8; 2] = [0x10, 0x12]; // dynamic precision item types?
+        // If the item message was a precision type increment to actual value
+        if PRECISION_ITEMS.contains(&item_message[item_index].item_type) {
+            item_index += 1;
+        }
+        // Also seen number type value 0 also used for dynamic width/precision value
+        let dynamic_precision_value = 0x0;
+        if (item_message[item_index].item_type == dynamic_precision_value
+            && item_message[item_index].item_size == 0)
+            && formatter_string.contains("%*")
+        {
+            item_index += 1;
+        }
+
+        if item_index >= item_message.len() {
+            format_and_message.formatter = formatter.as_str().to_string();
+            format_and_message.message = String::from("<Missing message data>");
+            format_and_message_vec.push(format_and_message);
+            continue;
+        }
+
+        let private_strings = [0x1, 0x21, 0x31, 0x41];
         let private_number = 0x1;
         let private_message = 0x8000;
         if formatter_string.starts_with("%{") {
@@ -213,28 +234,6 @@ pub fn format_firehose_log_message(
                     Err(err) => warn!("[macos-unifiedlogs] Failed to format message: {:?}", err),
                 }
             }
-        }
-
-        const PRECISION_ITEMS: [u8; 2] = [0x10, 0x12]; // dynamic precision item types?
-        // If the item message was a precision type increment to actual value
-        if PRECISION_ITEMS.contains(&item_message[item_index].item_type) {
-            item_index += 1;
-        }
-
-        if item_index >= item_message.len() {
-            format_and_message.formatter = formatter.as_str().to_string();
-            format_and_message.message = String::from("<Missing message data>");
-            format_and_message_vec.push(format_and_message);
-            continue;
-        }
-
-        // Also seen number type value 0 also used for dynamic width/precision value
-        let dynamic_precision_value = 0x0;
-        if (item_message[item_index].item_type == dynamic_precision_value
-            && item_message[item_index].item_size == 0)
-            && formatter_string.contains("%*")
-        {
-            item_index += 1;
         }
 
         item_index += 1;
