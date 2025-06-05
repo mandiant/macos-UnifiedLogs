@@ -151,8 +151,8 @@ impl Statedump {
             "CLClientManagerStateTracker" => location::get_state_tracker_data(object_data),
             "CLLocationManagerStateTracker" => location::get_location_tracker_state(object_data),
             "DNS Configuration" => config::get_dns_config(object_data),
+            "Network information" => config::get_network_interface(object_data),
             _ => {
-                println!("{name}");
                 return format!(
                     "Unsupported Statedump object: {name}-{}",
                     encode_standard(object_data)
