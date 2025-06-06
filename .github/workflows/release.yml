@@ -34,7 +34,7 @@ jobs:
           components: clippy, rustfmt
 
       - name: Build Example
-        run: cd examples && cargo build --release
+        run: cd examples && cargo build --release --target ${{ matrix.info.target }}
 
       - name: Package Example
         shell: bash
