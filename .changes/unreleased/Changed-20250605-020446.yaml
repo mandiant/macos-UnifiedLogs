@@ -1,3 +1,0 @@
-kind: Changed
-body: 'Better logging when encountering log messages that do not follow printf formatting. Ex: printf(%u, "message") instead of printf(%u, 10)'
-time: 2025-06-05T02:04:46.847107758-04:00
