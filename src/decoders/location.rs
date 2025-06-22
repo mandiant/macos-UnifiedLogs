@@ -92,7 +92,7 @@ pub(crate) fn daemon_status_type(status: &str) -> Result<String, DecoderError<'_
 pub(crate) fn subharvester_identifier(status: &str) -> Result<String, DecoderError<'_>> {
     // Found in dyldcache liblog
     let message = match status {
-        "1" => "CellLegacy",
+        "0" => "CellLegacy",
         "2" => "Wifi",
         "3" => "Tracks",
         "4" => "Realtime",
