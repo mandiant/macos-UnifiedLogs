@@ -92,20 +92,20 @@ pub(crate) fn daemon_status_type(status: &str) -> Result<String, DecoderError<'_
 pub(crate) fn subharvester_identifier(status: &str) -> Result<String, DecoderError<'_>> {
     // Found in dyldcache liblog
     let message = match status {
-        "1" => "\"CellLegacy\"",
-        "2" => "\"Wifi\"",
-        "3" => "\"Tracks\"",
-        "4" => "\"Realtime\"",
-        "5" => "\"App\"",
-        "6" => "\"Pass\"",
-        "7" => "\"Indoor\"",
-        "8" => "\"Pressure\"",
-        "9" => "\"Poi\"",
-        "10" => "\"Trace\"",
-        "11" => "\"Avenger\"",
-        "12" => "\"Altimeter\"",
-        "13" => "\"Ionosphere\"",
-        "14" => "\"Unknown\"",
+        "1" => "CellLegacy",
+        "2" => "Wifi",
+        "3" => "Tracks",
+        "4" => "Realtime",
+        "5" => "App",
+        "6" => "Pass",
+        "7" => "Indoor",
+        "8" => "Pressure",
+        "9" => "Poi",
+        "10" => "Trace",
+        "11" => "Avenger",
+        "12" => "Altimeter",
+        "13" => "Ionosphere",
+        "14" => "Unknown",
         _ => {
             return Err(DecoderError::Parse {
                 input: status.as_bytes(),
@@ -114,7 +114,7 @@ pub(crate) fn subharvester_identifier(status: &str) -> Result<String, DecoderErr
             });
         }
     };
-    Ok(message.to_string())
+    Ok(format!("{:?}", message.to_string()))
 }
 
 /// Convert Core Location SQLITE code to string
