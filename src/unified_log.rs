@@ -626,7 +626,7 @@ impl Iterator for LogIterator<'_> {
                 event_type: EventType::Statedump,
                 process: String::new(),
                 message: format!(
-                    "title: {:?}\nObject Type: {:?}\n Object Type: {:?}\n{:?}",
+                    "title: {}\nObject Type: {}\nObject Type: {}\n{}",
                     statedump.title_name,
                     statedump.decoder_library,
                     statedump.decoder_type,
