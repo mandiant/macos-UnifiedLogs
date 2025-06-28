@@ -92,19 +92,20 @@ pub(crate) fn daemon_status_type(status: &str) -> Result<String, DecoderError<'_
 pub(crate) fn subharvester_identifier(status: &str) -> Result<String, DecoderError<'_>> {
     // Found in dyldcache liblog
     let message = match status {
-        "1" => "Wifi",
-        "2" => "Tracks",
-        "3" => "Realtime",
-        "4" => "App",
-        "5" => "Pass",
-        "6" => "Indoor",
-        "7" => "Pressure",
-        "8" => "Poi",
-        "9" => "Trace",
-        "10" => "Avenger",
-        "11" => "Altimeter",
-        "12" => "Ionosphere",
-        "13" => "Unknown",
+        "0" => "CellLegacy",
+        "2" => "Wifi",
+        "3" => "Tracks",
+        "4" => "Realtime",
+        "5" => "App",
+        "6" => "Pass",
+        "7" => "Indoor",
+        "8" => "Pressure",
+        "9" => "Poi",
+        "10" => "Trace",
+        "11" => "Avenger",
+        "12" => "Altimeter",
+        "13" => "Ionosphere",
+        "14" => "Unknown",
         _ => {
             return Err(DecoderError::Parse {
                 input: status.as_bytes(),
@@ -113,7 +114,7 @@ pub(crate) fn subharvester_identifier(status: &str) -> Result<String, DecoderErr
             });
         }
     };
-    Ok(message.to_string())
+    Ok(format!("{:?}", message.to_string()))
 }
 
 /// Convert Core Location SQLITE code to string
@@ -464,22 +465,10 @@ pub(crate) fn io_message(data: &str) -> Result<&'static str, DecoderError<'_>> {
 
 /// Parse and get the location Daemon tracker
 pub(crate) fn get_daemon_status_tracker(input: &[u8]) -> nom::IResult<&[u8], String> {
-    // https://gist.github.com/razvand/578f94748b624f4d47c1533f5a02b095
-    const RESERVED_SIZE: usize = 9;
-
+    // Slightly outdated but still helpful: https://gist.github.com/razvand/578f94748b624f4d47c1533f5a02b095
     let mut tup = (
-        le_f64,
-        le_u8,
-        le_u8,
-        le_u32,
-        le_u8,
-        take(RESERVED_SIZE),
-        le_u32,
-        le_i32,
-        le_u8,
-        le_u8,
-        le_u8,
-        le_u8,
+        le_f64, le_u8, le_u8, le_u8, le_u8, le_u32, le_u32, le_u32, le_u32, le_i32, le_u8, le_u8,
+        le_u8, le_u8,
     );
     let (
         location_data,
@@ -487,9 +476,11 @@ pub(crate) fn get_daemon_status_tracker(input: &[u8]) -> nom::IResult<&[u8], Str
             level,
             charged,
             connected,
+            _unknown,
+            _unknown2,
             charger_type,
-            was_connected,
-            _reserved,
+            _unknown3,
+            _unknown4,
             reachability,
             thermal_level,
             airplane,
@@ -499,8 +490,19 @@ pub(crate) fn get_daemon_status_tracker(input: &[u8]) -> nom::IResult<&[u8], Str
         ),
     ) = tup.parse(input)?;
 
+    let mut was_connected = false;
+    // When these unknown values are not 0 `was_connected` is always true
+    // Not 100% sure the significance or what they represent
+    if _unknown != 0 && _unknown2 != 0 && _unknown3 != 0 {
+        was_connected = true;
+    }
+
+    // Values found in dyldcache logd_location
     let reachability_str = match reachability {
+        0 => "kReachabilityUnavailable",
+        1 => "kReachabilitySmall",
         2 => "kReachabilityLarge",
+        1000 => "kReachabilityUnachievable",
         _ => {
             warn!(
                 "[macos-unifiedlogs] Unknown reachability value: {}",
@@ -510,8 +512,13 @@ pub(crate) fn get_daemon_status_tracker(input: &[u8]) -> nom::IResult<&[u8], Str
         }
     };
 
+    // Values found in dyldcache logd_location
+    // Other values seen are:
+    // kChargerTypeNone, kChargerTypeExternal, and kChargerTypeArcas.
+    // But have not observed the numerical value for these types
     let charger_type_str = match charger_type {
         0 => "kChargerTypeUnknown",
+        2 => "kChargerTypeUsb",
         _ => {
             warn!(
                 "[macos-unifiedlogs] Unknown charger type value: {}",
@@ -522,11 +529,10 @@ pub(crate) fn get_daemon_status_tracker(input: &[u8]) -> nom::IResult<&[u8], Str
     };
 
     let message = format!(
-        r#"{{"thermalLevel": {}, "reachability: "{}", "airplaneMode": {}, "batteryData":{{"wasConnected": {}, "charged": {}, "level": {}, "connected": {}, "chargerType": "{}"}}, "restrictedMode": {}, "batterySaverModeEnabled": {}, "push_service":{}}}"#,
+        r#"{{"thermalLevel": {}, "reachability": "{}", "airplaneMode": {}, "batteryData":{{"wasConnected": {was_connected}, "charged": {}, "level": {}, "connected": {}, "chargerType": "{}"}}, "restrictedMode": {}, "batterySaverModeEnabled": {}, "push_service":{}}}"#,
         thermal_level,
         reachability_str,
         lowercase_int_bool(airplane),
-        lowercase_int_bool(was_connected),
         lowercase_int_bool(charged),
         level,
         lowercase_int_bool(connected),
@@ -565,7 +571,7 @@ mod tests {
         let test_data = "2";
         let result = subharvester_identifier(test_data).unwrap();
 
-        assert_eq!(result, "Tracks")
+        assert_eq!(result, "\"Wifi\"")
     }
 
     #[test]
@@ -663,7 +669,21 @@ mod tests {
 
         assert_eq!(
             result,
-            "{\"thermalLevel\": -1, \"reachability: \"kReachabilityLarge\", \"airplaneMode\": false, \"batteryData\":{\"wasConnected\": false, \"charged\": false, \"level\": -1, \"connected\": false, \"chargerType\": \"kChargerTypeUnknown\"}, \"restrictedMode\": false, \"batterySaverModeEnabled\": false, \"push_service\":false}"
+            "{\"thermalLevel\": -1, \"reachability\": \"kReachabilityLarge\", \"airplaneMode\": false, \"batteryData\":{\"wasConnected\": false, \"charged\": false, \"level\": -1, \"connected\": false, \"chargerType\": \"kChargerTypeUnknown\"}, \"restrictedMode\": false, \"batterySaverModeEnabled\": false, \"push_service\":false}"
+        )
+    }
+
+    #[test]
+    fn test_get_daemon_status_tracker_was_connected_true() {
+        let test_data = [
+            0, 0, 0, 0, 0, 0, 89, 64, 0, 1, 19, 4, 2, 0, 0, 0, 1, 192, 243, 246, 5, 64, 0, 224, 2,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ];
+        let (_, result) = get_daemon_status_tracker(&test_data).unwrap();
+
+        assert_eq!(
+            result,
+            "{\"thermalLevel\": 0, \"reachability\": \"kReachabilityLarge\", \"airplaneMode\": false, \"batteryData\":{\"wasConnected\": true, \"charged\": false, \"level\": 100, \"connected\": true, \"chargerType\": \"kChargerTypeUsb\"}, \"restrictedMode\": false, \"batterySaverModeEnabled\": false, \"push_service\":false}"
         )
     }
 }

@@ -181,5 +181,5 @@ fn test_parse_all_logs_monterey() {
     assert_eq!(dns_counts, 3196);
 
     assert_eq!(location_tracker, 298);
-    assert_eq!(pauses_tracker, 118);
+    assert_eq!(pauses_tracker, 180); // Accurate count based on log raw-dump -A tests/test_data/system_logs_monterey.logarchive | grep -c pausesLocationUpdatesAutomatically
 }

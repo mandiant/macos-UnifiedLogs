@@ -57,11 +57,11 @@ struct Args {
     #[clap(short, long)]
     input: Option<PathBuf>,
 
-    /// Path to output file. Any directories must already exist
+    /// Filename to save results to
     #[clap(short, long)]
     output: Option<PathBuf>,
 
-    /// Output format. Options: csv, jsonl. Default is jsonl.
+    /// Output format. Options: csv, jsonl
     #[clap(short, long, default_value = Format::Jsonl)]
     format: Format,
 

@@ -200,6 +200,7 @@ fn test_parse_all_logs_big_sur() {
     let message_re = Regex::new(r"^[\s]*%s\s*$").unwrap();
     let mut empty_format_count = 0;
     let mut sock_count = 0;
+    let mut location_harvest_count = 0;
 
     // Breakdown log entries by smaller types to ensure count is accurate
     for logs in &log_data_vec {
@@ -247,6 +248,10 @@ fn test_parse_all_logs_big_sur() {
             loss_type += 1;
         }
 
+        if logs.message.contains("\"subHarvester\":\"Trace\"") {
+            location_harvest_count += 1;
+        }
+
         if message_re.is_match(&logs.raw_message) {
             string_count += 1;
         }
@@ -283,6 +288,7 @@ fn test_parse_all_logs_big_sur() {
     assert_eq!(fault_type, 680);
     assert_eq!(loss_type, 5);
     assert_eq!(sock_count, 2);
+    assert_eq!(location_harvest_count, 11);
 }
 
 #[test]
