@@ -67,8 +67,7 @@ impl ChunksetChunk {
         // Compressed data signatue should be bv41
         if chunkset_sig != bv41 {
             error!(
-                "[macos-unifiedlogs] Incorrect compression signature expected bv41, got: {:?}",
-                chunkset_sig
+                "[macos-unifiedlogs] Incorrect compression signature expected bv41, got: {chunkset_sig:?}"
             );
             return Err(nom::Err::Incomplete(Needed::Unknown));
         }
@@ -91,10 +90,7 @@ impl ChunksetChunk {
         match decompress_data_results {
             Ok(decompress_data) => chunkset_chunk.decompressed_data = decompress_data,
             Err(err) => {
-                error!(
-                    "[macos-unifiedlogs] Failed to decompress log data: {:?}",
-                    err
-                );
+                error!("[macos-unifiedlogs] Failed to decompress log data: {err:?}");
                 return Err(nom::Err::Incomplete(Needed::Unknown));
             }
         }
@@ -157,8 +153,7 @@ impl ChunksetChunk {
             match firehose_results {
                 Ok((_, firehose_data)) => unified_log_data.firehose.push(firehose_data),
                 Err(err) => error!(
-                    "[macos-unifiedlogs] Failed to parse firehose log entry (chunk): {:?}",
-                    err
+                    "[macos-unifiedlogs] Failed to parse firehose log entry (chunk): {err:?}"
                 ),
             }
         } else if chunk_type == oversize_chunk {
@@ -166,8 +161,7 @@ impl ChunksetChunk {
             match oversize_results {
                 Ok((_, oversize)) => unified_log_data.oversize.push(oversize),
                 Err(err) => error!(
-                    "[macos-unifiedlogs] Failed to parse oversize log entry (chunk): {:?}",
-                    err
+                    "[macos-unifiedlogs] Failed to parse oversize log entry (chunk): {err:?}"
                 ),
             }
         } else if chunk_type == statedump_chunk {
@@ -175,8 +169,7 @@ impl ChunksetChunk {
             match statedump_results {
                 Ok((_, statedump)) => unified_log_data.statedump.push(statedump),
                 Err(err) => error!(
-                    "[macos-unifiedlogs] Failed to parse statedump log entry (chunk): {:?}",
-                    err
+                    "[macos-unifiedlogs] Failed to parse statedump log entry (chunk): {err:?}"
                 ),
             }
         } else if chunk_type == simpledump_chunk {
@@ -184,15 +177,11 @@ impl ChunksetChunk {
             match simpledump_results {
                 Ok((_, simpledump)) => unified_log_data.simpledump.push(simpledump),
                 Err(err) => error!(
-                    "[macos-unifiedlogs] Failed to parse simpledump log entry (chunk): {:?}",
-                    err
+                    "[macos-unifiedlogs] Failed to parse simpledump log entry (chunk): {err:?}"
                 ),
             }
         } else {
-            error!(
-                "[macos-unifiedlogs] Unknown chunkset type: {:?}",
-                chunk_type
-            );
+            error!("[macos-unifiedlogs] Unknown chunkset type: {chunk_type:?}");
         }
     }
 }

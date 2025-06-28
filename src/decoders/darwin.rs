@@ -125,8 +125,8 @@ pub(crate) fn errno_codes(errno: &str) -> String {
         "-7" => "Keep looking",
         "-8" => "Data less",
         _ => {
-            warn!("[macos-unifiedlogs] Unknown darwin errno code: {}", errno);
-            return format!("Unknown errno: {}", errno);
+            warn!("[macos-unifiedlogs] Unknown darwin errno code: {errno}");
+            return format!("Unknown errno: {errno}");
         }
     };
 
@@ -138,14 +138,14 @@ pub(crate) fn permission(permissions: &str) -> String {
     let mut message = String::from("-");
     for bit in permissions.chars() {
         match bit {
-            '1' => message = format!("{}--x", message),
-            '2' => message = format!("{}-w-", message),
-            '4' => message = format!("{}r--", message),
-            '3' => message = format!("{}-wx", message),
-            '5' => message = format!("{}r-x", message),
-            '6' => message = format!("{}rw-", message),
-            '7' => message = format!("{}rwx", message),
-            _ => message = format!("{}---", message),
+            '1' => message = format!("{message}--x"),
+            '2' => message = format!("{message}-w-"),
+            '4' => message = format!("{message}r--"),
+            '3' => message = format!("{message}-wx"),
+            '5' => message = format!("{message}r-x"),
+            '6' => message = format!("{message}rw-"),
+            '7' => message = format!("{message}rwx"),
+            _ => message = format!("{message}---"),
         }
     }
     message

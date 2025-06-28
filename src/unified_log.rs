@@ -129,10 +129,7 @@ impl<'a> LogIterator<'a> {
         let message_re = match message_re_result {
             Ok(message_re) => message_re,
             Err(err) => {
-                error!(
-                    "Failed to compile regex for printf format parsing: {:?}",
-                    err
-                );
+                error!("Failed to compile regex for printf format parsing: {err:?}");
                 return Err(err);
             }
         };
@@ -285,7 +282,7 @@ impl Iterator for LogIterator<'_> {
 
                                 if !firehose.message.backtrace_strings.is_empty() {
                                     log_data.message = format!(
-                                        "Backtrace:\n{:}\n{:}",
+                                        "Backtrace:\n{}\n{}",
                                         firehose.message.backtrace_strings.join("\n"),
                                         log_message
                                     );
@@ -295,8 +292,7 @@ impl Iterator for LogIterator<'_> {
                             }
                             Err(err) => {
                                 warn!(
-                                    "[macos-unifiedlogs] Failed to get message string data for firehose non-activity log entry: {:?}",
-                                    err
+                                    "[macos-unifiedlogs] Failed to get message string data for firehose non-activity log entry: {err:?}"
                                 );
                             }
                         }
@@ -313,7 +309,7 @@ impl Iterator for LogIterator<'_> {
                                     log_data.category = subsystem.category;
                                 }
                                 Err(err) => {
-                                    warn!("[macos-unifiedlogs] Failed to get subsystem: {:?}", err)
+                                    warn!("[macos-unifiedlogs] Failed to get subsystem: {err:?}")
                                 }
                             }
                         }
@@ -363,7 +359,7 @@ impl Iterator for LogIterator<'_> {
                                 }
                                 if !firehose.message.backtrace_strings.is_empty() {
                                     log_data.message = format!(
-                                        "Backtrace:\n{:}\n{:}",
+                                        "Backtrace:\n{}\n{}",
                                         firehose.message.backtrace_strings.join("\n"),
                                         log_message
                                     );
@@ -373,8 +369,7 @@ impl Iterator for LogIterator<'_> {
                             }
                             Err(err) => {
                                 warn!(
-                                    "[macos-unifiedlogs] Failed to get message string data for firehose activity log entry: {:?}",
-                                    err
+                                    "[macos-unifiedlogs] Failed to get message string data for firehose activity log entry: {err:?}"
                                 );
                             }
                         }
@@ -435,17 +430,15 @@ impl Iterator for LogIterator<'_> {
                                 }
 
                                 log_message = format!(
-                                    "Signpost ID: {:X} - Signpost Name: {:X}\n {}",
+                                    "Signpost ID: {:X} - Signpost Name: {:X}\n {log_message}",
                                     firehose.firehose_signpost.signpost_id,
                                     firehose.firehose_signpost.signpost_name,
-                                    log_message
                                 );
 
                                 if !firehose.message.backtrace_strings.is_empty() {
                                     log_data.message = format!(
-                                        "Backtrace:\n{:}\n{:}",
+                                        "Backtrace:\n{}\n{log_message}",
                                         firehose.message.backtrace_strings.join("\n"),
-                                        log_message
                                     );
                                 } else {
                                     log_data.message = log_message;
@@ -453,8 +446,7 @@ impl Iterator for LogIterator<'_> {
                             }
                             Err(err) => {
                                 warn!(
-                                    "[macos-unifiedlogs] Failed to get message string data for firehose signpost log entry: {:?}",
-                                    err
+                                    "[macos-unifiedlogs] Failed to get message string data for firehose signpost log entry: {err:?}"
                                 );
                             }
                         }
@@ -470,7 +462,7 @@ impl Iterator for LogIterator<'_> {
                                     log_data.category = subsystem.category;
                                 }
                                 Err(err) => {
-                                    warn!("[macos-unifiedlogs] Failed to get subsystem: {:?}", err)
+                                    warn!("[macos-unifiedlogs] Failed to get subsystem: {err:?}")
                                 }
                             }
                         }
@@ -511,9 +503,8 @@ impl Iterator for LogIterator<'_> {
                                 }
                                 if !firehose.message.backtrace_strings.is_empty() {
                                     log_data.message = format!(
-                                        "Backtrace:\n{:}\n{:}",
+                                        "Backtrace:\n{}\n{log_message}",
                                         firehose.message.backtrace_strings.join("\n"),
-                                        log_message
                                     );
                                 } else {
                                     log_data.message = log_message;
@@ -521,16 +512,14 @@ impl Iterator for LogIterator<'_> {
                             }
                             Err(err) => {
                                 warn!(
-                                    "[macos-unifiedlogs] Failed to get message string data for firehose activity log entry: {:?}",
-                                    err
+                                    "[macos-unifiedlogs] Failed to get message string data for firehose activity log entry: {err:?}",
                                 );
                             }
                         }
                     }
-                    _ => error!(
-                        "[macos-unifiedlogs] Parsed unknown log firehose data: {:?}",
-                        firehose
-                    ),
+                    _ => {
+                        error!("[macos-unifiedlogs] Parsed unknown log firehose data: {firehose:?}",)
+                    }
                 }
                 log_data_vec.push(log_data);
             }
@@ -600,8 +589,7 @@ impl Iterator for LogIterator<'_> {
                         Ok((_, string_data)) => string_data,
                         Err(err) => {
                             error!(
-                                "[macos-unifiedlogs] Failed to extract string from statedump: {:?}",
-                                err
+                                "[macos-unifiedlogs] Failed to extract string from statedump: {err:?}"
                             );
                             String::from("Failed to extract string from statedump")
                         }
@@ -626,11 +614,8 @@ impl Iterator for LogIterator<'_> {
                 event_type: EventType::Statedump,
                 process: String::new(),
                 message: format!(
-                    "title: {}\nObject Type: {}\nObject Type: {}\n{}",
-                    statedump.title_name,
-                    statedump.decoder_library,
-                    statedump.decoder_type,
-                    data_string
+                    "title: {}\nObject Type: {}\nObject Type: {}\n{data_string}",
+                    statedump.title_name, statedump.decoder_library, statedump.decoder_type,
                 ),
                 log_type: LogType::Statedump,
                 euid: 0,
@@ -830,7 +815,7 @@ impl LogData {
         let header_results = HeaderChunk::parse_header(data);
         match header_results {
             Ok((_, header_data)) => unified_log_data.header.push(header_data),
-            Err(err) => error!("[macos-unifiedlogs] Failed to parse header data: {:?}", err),
+            Err(err) => error!("[macos-unifiedlogs] Failed to parse header data: {err:?}"),
         }
     }
 
@@ -839,10 +824,7 @@ impl LogData {
         let catalog_results = CatalogChunk::parse_catalog(data);
         match catalog_results {
             Ok((_, catalog_data)) => unified_log_data.catalog = catalog_data,
-            Err(err) => error!(
-                "[macos-unifiedlogs] Failed to parse catalog data: {:?}",
-                err
-            ),
+            Err(err) => error!("[macos-unifiedlogs] Failed to parse catalog data: {err:?}"),
         }
     }
 
@@ -863,10 +845,7 @@ impl LogData {
                 );
                 unified_log_data.oversize.append(&mut catalog_data.oversize);
             }
-            Err(err) => error!(
-                "[macos-unifiedlogs] Failed to parse chunkset data: {:?}",
-                err
-            ),
+            Err(err) => error!("[macos-unifiedlogs] Failed to parse chunkset data: {err:?}"),
         }
     }
 

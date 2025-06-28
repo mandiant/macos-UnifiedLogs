@@ -24,14 +24,14 @@ pub struct FirehoseFormatterError {
 
 impl ParseError<&[u8]> for FirehoseError {
     fn from_error_kind(input: &[u8], kind: ErrorKind) -> Self {
-        let message = format!("Failed to parse firehose data: {:?}: {:?}", kind, input);
+        let message = format!("Failed to parse firehose data: {kind:?}: {input:?}");
         FirehoseError { message }
     }
 
     fn append(input: &[u8], kind: ErrorKind, other: Self) -> Self {
         let message = format!(
-            "Failed to parse firehose data: {} {:?}: {:?}",
-            other.message, kind, input
+            "Failed to parse firehose data: {} {kind:?}: {input:?}",
+            other.message
         );
         FirehoseError { message }
     }
@@ -39,17 +39,15 @@ impl ParseError<&[u8]> for FirehoseError {
 
 impl ParseError<&[u8]> for CatalogProcessUUIDEntryError {
     fn from_error_kind(input: &[u8], kind: ErrorKind) -> Self {
-        let message = format!(
-            "Failed to parse Catalog Process UUID Entry metadata: {:?}: {:?}",
-            kind, input
-        );
+        let message =
+            format!("Failed to parse Catalog Process UUID Entry metadata: {kind:?}: {input:?}");
         CatalogProcessUUIDEntryError { message }
     }
 
     fn append(input: &[u8], kind: ErrorKind, other: Self) -> Self {
         let message = format!(
-            "Failed to parse Catalog Process UUID Entry metadata: {} {:?}: {:?}",
-            other.message, kind, input
+            "Failed to parse Catalog Process UUID Entry metadata: {} {kind:?}: {input:?}",
+            other.message
         );
         CatalogProcessUUIDEntryError { message }
     }
@@ -57,14 +55,14 @@ impl ParseError<&[u8]> for CatalogProcessUUIDEntryError {
 
 impl ParseError<&[u8]> for FirehoseFormatterError {
     fn from_error_kind(input: &[u8], kind: ErrorKind) -> Self {
-        let message = format!("Unknown firehose formatter flag: {:?}: {:?}", kind, input);
+        let message = format!("Unknown firehose formatter flag: {kind:?}: {input:?}");
         FirehoseFormatterError { message }
     }
 
     fn append(input: &[u8], kind: ErrorKind, other: Self) -> Self {
         let message = format!(
-            "Unknown firehose formatter flag: {} {:?}: {:?}",
-            other.message, kind, input
+            "Unknown firehose formatter flag: {} {kind:?}: {input:?}",
+            other.message
         );
         FirehoseFormatterError { message }
     }
