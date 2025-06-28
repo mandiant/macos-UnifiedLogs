@@ -70,10 +70,8 @@ fn get_dns_header(input: &[u8]) -> IResult<&[u8], String> {
 
     let (input, count_message) = parse_counts(input)?;
 
-    let header_message = format!(
-        "Query ID: {:#X?}, Flags: {:#X?} {}, {}",
-        id, flags, message, count_message
-    );
+    let header_message =
+        format!("Query ID: {id:#X?}, Flags: {flags:#X?} {message}, {count_message}");
 
     Ok((input, header_message))
 }
@@ -128,20 +126,13 @@ fn get_dns_flags(input: &[u8]) -> IResult<(&[u8], usize), String> {
     };
 
     let message = format!(
-        "Opcode: {}, 
-    Query Type: {},
-    Authoritative Answer Flag: {}, 
-    Truncation Flag: {}, 
-    Recursion Desired: {}, 
-    Recursion Available: {}, 
-    Response Code: {}",
-        opcode_message,
-        query,
-        authoritative_flag,
-        truncation_flag,
-        recursion_desired,
-        recursion_available,
-        response_message
+        "Opcode: {opcode_message}, 
+    Query Type: {query},
+    Authoritative Answer Flag: {authoritative_flag}, 
+    Truncation Flag: {truncation_flag}, 
+    Recursion Desired: {recursion_desired}, 
+    Recursion Available: {recursion_available}, 
+    Response Code: {response_message}",
     );
 
     Ok(((input, 0), message))
@@ -208,7 +199,7 @@ fn parse_svcb(input: &[u8]) -> nom::IResult<&[u8], String> {
     let (input, alpn_message) = map_parser(take(alpn_size), parse_svcb_alpn).parse(input)?;
     let (input, ip_message) = parse_svcb_ip(input)?;
 
-    let message = format!("rdata: {} . {} {}", id, alpn_message, ip_message);
+    let message = format!("rdata: {id} . {alpn_message} {ip_message}");
     Ok((input, message))
 }
 
@@ -250,7 +241,7 @@ fn parse_svcb_ip(mut input: &[u8]) -> nom::IResult<&[u8], String> {
                 if !ipv4s.is_empty() {
                     ipv4s.push(',');
                 }
-                write!(ipv4s, "{}", ip).ok(); // ignore errors on write in String
+                write!(ipv4s, "{ip}").ok(); // ignore errors on write in String
             }
             iter.finish()?;
         } else if ip_version == IPV6 {
@@ -259,7 +250,7 @@ fn parse_svcb_ip(mut input: &[u8]) -> nom::IResult<&[u8], String> {
                 if !ipv6s.is_empty() {
                     ipv6s.push(',');
                 }
-                write!(ipv6s, "{}", ip).ok(); // ignore errors on write in String
+                write!(ipv6s, "{ip}").ok(); // ignore errors on write in String
             }
             iter.finish()?;
         }
@@ -480,7 +471,7 @@ fn parse_idflags(data: &[u8]) -> nom::IResult<&[u8], String> {
     let message = match flag_results {
         Ok((_, result)) => result,
         Err(err) => {
-            error!("[macos-unifiedlogs] Failed to parse ID Flags: {:?}", err);
+            error!("[macos-unifiedlogs] Failed to parse ID Flags: {err:?}");
             String::from("Failed to parse ID Flags")
         }
     };
@@ -490,7 +481,7 @@ fn parse_idflags(data: &[u8]) -> nom::IResult<&[u8], String> {
     let (_, flags) = be_u16(dns_data)?;
     Ok((
         dns_data,
-        format!("id: {:#X?}, flags: {:#X?} {}", id, flags, message),
+        format!("id: {id:#X?}, flags: {flags:#X?} {message}"),
     ))
 }
 

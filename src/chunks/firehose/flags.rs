@@ -109,15 +109,12 @@ impl FirehoseFormatters {
                 debug!("[macos-unifiedlogs] Firehose flag: uuid_relative");
                 let (firehose_input, uuid_relative) = take(size_of::<u128>())(input)?;
                 let (_, firehose_uuid_relative) = be_u128(uuid_relative)?;
-                formatter_flags.uuid_relative = format!("{:X}", firehose_uuid_relative);
+                formatter_flags.uuid_relative = format!("{firehose_uuid_relative:X}");
                 input = firehose_input;
             }
             _ => {
-                error!(
-                    "[macos-unifiedlogs] Unknown Firehose formatter flag: {:?}",
-                    firehose_flags
-                );
-                debug!("[macos-unifiedlogs] Firehose data: {:X?}", data);
+                error!("[macos-unifiedlogs] Unknown Firehose formatter flag: {firehose_flags:?}");
+                debug!("[macos-unifiedlogs] Firehose data: {data:X?}");
                 return Err(nom::Err::Incomplete(Needed::Unknown));
             }
         }

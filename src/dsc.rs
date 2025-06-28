@@ -52,8 +52,7 @@ impl SharedCacheStrings {
         let expected_dsc_signature = 0x64736368;
         if expected_dsc_signature != signature {
             error!(
-                "[macos-unifiedlogs] Incorrect DSC file signature. Expected {}. Got: {}",
-                expected_dsc_signature, signature
+                "[macos-unifiedlogs] Incorrect DSC file signature. Expected {expected_dsc_signature}. Got: {signature}"
             );
             return Err(nom::Err::Incomplete(Needed::Unknown));
         }

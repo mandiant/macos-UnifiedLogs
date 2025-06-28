@@ -20,11 +20,8 @@ use std::path::PathBuf;
 /// Parse a tracev3 file and return the deconstructed log data
 pub fn parse_log(mut reader: impl Read) -> Result<UnifiedLogData, ParserError> {
     let mut buf = Vec::new();
-    if let Err(e) = reader.read_to_end(&mut buf) {
-        error!(
-            "[macos-unifiedlogs] Failed to read the tracev3 file: {:?}",
-            e
-        );
+    if let Err(err) = reader.read_to_end(&mut buf) {
+        error!("[macos-unifiedlogs] Failed to read the tracev3 file: {err:?}");
         return Err(ParserError::Read);
     }
 
@@ -34,10 +31,7 @@ pub fn parse_log(mut reader: impl Read) -> Result<UnifiedLogData, ParserError> {
     match log_data_results {
         Ok((_, log_data)) => Ok(log_data),
         Err(err) => {
-            error!(
-                "[macos-unifiedlogs] Failed to parse the tracev3 file: {:?}",
-                err
-            );
+            error!("[macos-unifiedlogs] Failed to parse the tracev3 file: {err:?}");
             Err(ParserError::Tracev3Parse)
         }
     }
@@ -107,23 +101,17 @@ pub fn collect_strings(provider: &dyn FileProvider) -> Result<Vec<UUIDText>, Par
         let mut buf = Vec::new();
         let path = source.source_path().to_owned();
         if let Err(e) = source.reader().read_to_end(&mut buf) {
-            error!(
-                "[macos-unifiedlogs] Failed to read uuidfile {}: {:?}",
-                path, e
-            );
+            error!("[macos-unifiedlogs] Failed to read uuidfile {path}: {e:?}");
             continue;
         };
 
-        info!("Read {} bytes for file {}", buf.len(), path);
+        info!("Read {} bytes for file {path}", buf.len());
 
         let uuid_results = UUIDText::parse_uuidtext(&buf);
         let mut uuidtext_data = match uuid_results {
             Ok((_, results)) => results,
             Err(err) => {
-                error!(
-                    "[macos-unifiedlogs] Failed to parse UUID file {}: {:?}",
-                    path, err
-                );
+                error!("[macos-unifiedlogs] Failed to parse UUID file {path}: {err:?}");
                 continue;
             }
         };
@@ -146,8 +134,8 @@ pub fn collect_shared_strings(
     // Start process to read and parse uuid files related to dsc
     for mut source in provider.dsc_files() {
         let mut buf = Vec::new();
-        if let Err(e) = source.reader().read_to_end(&mut buf) {
-            error!("[macos-unifiedlogs] Failed to read dsc file: {:?}", e);
+        if let Err(err) = source.reader().read_to_end(&mut buf) {
+            error!("[macos-unifiedlogs] Failed to read dsc file: {err:?}");
             continue;
         }
 
@@ -161,7 +149,7 @@ pub fn collect_shared_strings(
                 shared_strings_vec.push(results);
             }
             Err(err) => {
-                error!("[macos-unifiedlogs] Failed to parse dsc file: {:?}", err);
+                error!("[macos-unifiedlogs] Failed to parse dsc file: {err:?}");
             }
         };
     }
@@ -187,18 +175,15 @@ pub fn collect_timesync(
     // Start process to read and parse all timesync files
     for mut source in provider.timesync_files() {
         let mut buffer = Vec::new();
-        if let Err(e) = source.reader().read_to_end(&mut buffer) {
-            error!("[macos-unifiedlogs] Failed to read timesync file: {:?}", e);
+        if let Err(err) = source.reader().read_to_end(&mut buffer) {
+            error!("[macos-unifiedlogs] Failed to read timesync file: {err:?}");
             continue;
         }
 
         let timesync_map = match TimesyncBoot::parse_timesync_data(&buffer) {
             Ok((_, result)) => result,
             Err(err) => {
-                error!(
-                    "[macos-unifiedlogs] Failed to parse timesync file: {:?}",
-                    err
-                );
+                error!("[macos-unifiedlogs] Failed to parse timesync file: {err:?}");
                 continue;
             }
         };

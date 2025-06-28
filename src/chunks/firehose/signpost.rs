@@ -153,13 +153,13 @@ impl FirehoseSignpost {
                 {
                     large_offset = firehose.firehose_formatters.large_shared_cache / 2;
                     // Combine large offset value with current string offset to get the true offset
-                    extra_offset_value = format!("{:X}{:08X}", large_offset, string_offset);
+                    extra_offset_value = format!("{large_offset:X}{string_offset:08X}");
                 } else if firehose.firehose_formatters.shared_cache {
                     // Large offset is 8 if shared_cache flag is set
                     large_offset = 8;
-                    extra_offset_value = format!("{:X}{:07X}", large_offset, string_offset);
+                    extra_offset_value = format!("{large_offset:X}{string_offset:07X}");
                 } else {
-                    extra_offset_value = format!("{:X}{:08X}", large_offset, string_offset);
+                    extra_offset_value = format!("{large_offset:X}{string_offset:08X}");
                 }
 
                 // Combine large offset value with current string offset to get the true offset
@@ -179,8 +179,7 @@ impl FirehoseSignpost {
                     Err(err) => {
                         // We should not get errors since we are combining two numbers to create the offset
                         error!(
-                            "Failed to get shared string offset to format string for signpost firehose entry: {:?}",
-                            err
+                            "Failed to get shared string offset to format string for signpost firehose entry: {err:?}"
                         );
                         return Err(nom::Err::Incomplete(Needed::Unknown));
                     }
@@ -217,8 +216,7 @@ impl FirehoseSignpost {
                     Err(err) => {
                         // We should not get errors since we are combining two numbers to create the offset
                         error!(
-                            "Failed to get absolute offset to format string for signpost firehose entry: {:?}",
-                            err
+                            "Failed to get absolute offset to format string for signpost firehose entry: {err:?}"
                         );
                         return Err(nom::Err::Incomplete(Needed::Unknown));
                     }

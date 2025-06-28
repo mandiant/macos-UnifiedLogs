@@ -126,19 +126,13 @@ impl Statedump {
                 match json_data {
                     Ok(json) => json,
                     Err(err) => {
-                        error!(
-                            "[macos-unifiedlogs] Failed to convert plist to json: {:?}",
-                            err
-                        );
+                        error!("[macos-unifiedlogs] Failed to convert plist to json: {err:?}");
                         String::from("Failed to convert plist data to json")
                     }
                 }
             }
             Err(err) => {
-                error!(
-                    "[macos-unifiedlogs] Failed to parse statedump plist data: {:?}",
-                    err
-                );
+                error!("[macos-unifiedlogs] Failed to parse statedump plist data: {err:?}");
                 String::from("Failed to get plist data")
             }
         }
@@ -162,11 +156,8 @@ impl Statedump {
         match message_result {
             Ok((_, result)) => result,
             Err(err) => {
-                error!(
-                    "[macos-unifiedlogs] Failed to parse statedump object {}: {:?}",
-                    name, err
-                );
-                format!("Failed to parse statedump object: {}", name)
+                error!("[macos-unifiedlogs] Failed to parse statedump object {name}: {err:?}");
+                format!("Failed to parse statedump object: {name}")
             }
         }
     }

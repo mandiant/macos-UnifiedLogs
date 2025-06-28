@@ -504,10 +504,7 @@ pub(crate) fn get_daemon_status_tracker(input: &[u8]) -> nom::IResult<&[u8], Str
         2 => "kReachabilityLarge",
         1000 => "kReachabilityUnachievable",
         _ => {
-            warn!(
-                "[macos-unifiedlogs] Unknown reachability value: {}",
-                reachability
-            );
+            warn!("[macos-unifiedlogs] Unknown reachability value: {reachability}");
             "Unknown reachability value"
         }
     };
@@ -520,23 +517,16 @@ pub(crate) fn get_daemon_status_tracker(input: &[u8]) -> nom::IResult<&[u8], Str
         0 => "kChargerTypeUnknown",
         2 => "kChargerTypeUsb",
         _ => {
-            warn!(
-                "[macos-unifiedlogs] Unknown charger type value: {}",
-                charger_type
-            );
+            warn!("[macos-unifiedlogs] Unknown charger type value: {charger_type}");
             "Unknown charger type value"
         }
     };
 
     let message = format!(
-        r#"{{"thermalLevel": {}, "reachability": "{}", "airplaneMode": {}, "batteryData":{{"wasConnected": {was_connected}, "charged": {}, "level": {}, "connected": {}, "chargerType": "{}"}}, "restrictedMode": {}, "batterySaverModeEnabled": {}, "push_service":{}}}"#,
-        thermal_level,
-        reachability_str,
+        r#"{{"thermalLevel": {thermal_level}, "reachability": "{reachability_str}", "airplaneMode": {}, "batteryData":{{"wasConnected": {was_connected}, "charged": {}, "level": {level}, "connected": {}, "chargerType": "{charger_type_str}"}}, "restrictedMode": {}, "batterySaverModeEnabled": {}, "push_service":{}}}"#,
         lowercase_int_bool(airplane),
         lowercase_int_bool(charged),
-        level,
         lowercase_int_bool(connected),
-        charger_type_str,
         lowercase_int_bool(restricted),
         lowercase_int_bool(battery_saver),
         lowercase_int_bool(push_service)

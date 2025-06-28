@@ -36,8 +36,8 @@ pub fn format_firehose_log_message(
 ) -> String {
     let mut log_message = format_string;
     let mut format_and_message_vec: Vec<FormatAndMessage> = Vec::new();
-    info!("Unified log base message: {:?}", log_message);
-    info!("Unified log entry strings: {:?}", item_message);
+    info!("Unified log base message: {log_message:?}");
+    info!("Unified log entry strings: {item_message:?}");
 
     // Some log entries may be completely empty (no format string or message data)
     /*
@@ -191,10 +191,7 @@ pub fn format_firehose_log_message(
                 );
                 match results {
                     Ok((_, formatted_message)) => formatted_log_message = formatted_message,
-                    Err(err) => warn!(
-                        "Failed to format message type ex: public/private: {:?}",
-                        err
-                    ),
+                    Err(err) => warn!("Failed to format message type ex: public/private: {err:?}"),
                 }
             }
         } else {
@@ -231,7 +228,7 @@ pub fn format_firehose_log_message(
                 );
                 match results {
                     Ok((_, formatted_message)) => formatted_log_message = formatted_message,
-                    Err(err) => warn!("[macos-unifiedlogs] Failed to format message: {:?}", err),
+                    Err(err) => warn!("[macos-unifiedlogs] Failed to format message: {err:?}"),
                 }
             }
         }
@@ -254,8 +251,8 @@ pub fn format_firehose_log_message(
                 log_message = remaining_message.to_string();
             }
             None => error!(
-                "Failed to split log message ({}) by printf formatter: {}",
-                log_message, &values.formatter
+                "Failed to split log message ({log_message}) by printf formatter: {}",
+                &values.formatter
             ),
         }
     }
@@ -300,10 +297,7 @@ fn parse_formatter<'a>(
         match char_results {
             Ok(char_message) => message = (char_message as u8 as char).to_string(),
             Err(err) => {
-                error!(
-                    "[macos-unifiedlogs] Failed to parse number item to char string: {:?}",
-                    err
-                );
+                error!("[macos-unifiedlogs] Failed to parse number item to char string: {err:?}");
                 return Ok((
                     "",
                     String::from("Failed to parse number item to char string"),
@@ -364,7 +358,7 @@ fn parse_formatter<'a>(
                 .clone_into(&mut message);
         }
 
-        width_value = format!("{}", precision_value);
+        width_value = format!("{precision_value}");
         width = width_value.as_str();
         let (input, _) = take(size_of::<u8>())(formatter_message)?;
         formatter_message = input;
@@ -377,10 +371,9 @@ fn parse_formatter<'a>(
             let precision_results = precision_data.parse::<usize>();
             match precision_results {
                 Ok(value) => precision_value = value,
-                Err(err) => error!(
-                    "[macos-unifiedlogs] Failed to parse format precision value: {:?}",
-                    err
-                ),
+                Err(err) => {
+                    error!("[macos-unifiedlogs] Failed to parse format precision value: {err:?}")
+                }
             }
         } else if precision_value != 0 {
             // For dynamic length use the length of the message string
@@ -406,7 +399,7 @@ fn parse_formatter<'a>(
     //    "open on /var/folders: No such file or directory"
     // "No such file or directory" is error code 2
     if ERROR_TYPES.contains(&type_data) {
-        message = format!("Error code: {}", message);
+        message = format!("Error code: {message}");
         return Ok(("", message));
     }
 
@@ -415,10 +408,7 @@ fn parse_formatter<'a>(
         let width_results = width.parse::<usize>();
         match width_results {
             Ok(value) => width_value = value,
-            Err(err) => error!(
-                "[macos-unifiedlogs] Failed to parse format width value: {:?}",
-                err
-            ),
+            Err(err) => error!("[macos-unifiedlogs] Failed to parse format width value: {err:?}"),
         }
         if pad_zero {
             // Pad using zeros instead of spaces
@@ -492,7 +482,7 @@ fn parse_type_formatter<'a>(
     let (_, mut message) = parse_formatter(format, message_value, item_type, item_index)?;
     if format_type.contains("signpost") {
         let (_, signpost_message) = parse_signpost_format(format_type)?;
-        message = format!("{} ({})", message, signpost_message);
+        message = format!("{message} ({signpost_message})");
     }
     Ok(("", message))
 }
@@ -544,8 +534,7 @@ fn format_alignment_left(
             }
         }
         message = format!(
-            "{plus_symbol}{:0<width$.precision$}",
-            float_message,
+            "{plus_symbol}{float_message:0<width$.precision$}",
             width = format_width - adjust_width,
             precision = precision_value,
             plus_symbol = plus_option
@@ -553,8 +542,7 @@ fn format_alignment_left(
     } else if INT_TYPES.contains(&type_data) {
         let int_message = parse_int(message);
         message = format!(
-            "{plus_symbol}{:0<width$.precision$}",
-            int_message,
+            "{plus_symbol}{int_message:0<width$.precision$}",
             width = format_width - adjust_width,
             precision = precision_value,
             plus_symbol = plus_option
@@ -564,8 +552,7 @@ fn format_alignment_left(
             precision_value = message.len()
         }
         message = format!(
-            "{plus_symbol}{:0<width$.precision$}",
-            message,
+            "{plus_symbol}{message:0<width$.precision$}",
             width = format_width - adjust_width,
             precision = precision_value,
             plus_symbol = plus_option
@@ -574,16 +561,14 @@ fn format_alignment_left(
         let hex_message = parse_int(message);
         if hashtag {
             message = format!(
-                "{plus_symbol}{:0<#width$.precision$X}",
-                hex_message,
+                "{plus_symbol}{hex_message:0<#width$.precision$X}",
                 width = format_width - adjust_width,
                 precision = precision_value,
                 plus_symbol = plus_option
             );
         } else {
             message = format!(
-                "{plus_symbol}{:0<width$.precision$X}",
-                hex_message,
+                "{plus_symbol}{hex_message:0<width$.precision$X}",
                 width = format_width - adjust_width,
                 precision = precision_value,
                 plus_symbol = plus_option
@@ -593,16 +578,14 @@ fn format_alignment_left(
         let octal_message = parse_int(message);
         if hashtag {
             message = format!(
-                "{plus_symbol}{:0<#width$.precision$o}",
-                octal_message,
+                "{plus_symbol}{octal_message:0<#width$.precision$o}",
                 width = format_width - adjust_width,
                 precision = precision_value,
                 plus_symbol = plus_option
             );
         } else {
             message = format!(
-                "{plus_symbol}{:0<width$.precision$o}",
-                octal_message,
+                "{plus_symbol}{octal_message:0<width$.precision$o}",
                 width = format_width - adjust_width,
                 precision = precision_value,
                 plus_symbol = plus_option
@@ -641,8 +624,7 @@ fn format_alignment_right(
             }
         }
         message = format!(
-            "{plus_symbol}{:0>width$.precision$}",
-            float_message,
+            "{plus_symbol}{float_message:0>width$.precision$}",
             width = format_width - adjust_width,
             precision = precision_value,
             plus_symbol = plus_option
@@ -650,8 +632,7 @@ fn format_alignment_right(
     } else if INT_TYPES.contains(&type_data) {
         let int_message = parse_int(message);
         message = format!(
-            "{plus_symbol}{:0>width$.precision$}",
-            int_message,
+            "{plus_symbol}{int_message:0>width$.precision$}",
             width = format_width - adjust_width,
             precision = precision_value,
             plus_symbol = plus_option
@@ -661,8 +642,7 @@ fn format_alignment_right(
             precision_value = message.len()
         }
         message = format!(
-            "{plus_symbol}{:0>width$.precision$}",
-            message,
+            "{plus_symbol}{message:0>width$.precision$}",
             width = format_width - adjust_width,
             precision = precision_value,
             plus_symbol = plus_option
@@ -671,16 +651,14 @@ fn format_alignment_right(
         let hex_message = parse_int(message);
         if hashtag {
             message = format!(
-                "{plus_symbol}{:0>#width$.precision$X}",
-                hex_message,
+                "{plus_symbol}{hex_message:0>#width$.precision$X}",
                 width = format_width - adjust_width,
                 precision = precision_value,
                 plus_symbol = plus_option
             );
         } else {
             message = format!(
-                "{plus_symbol}{:0>width$.precision$X}",
-                hex_message,
+                "{plus_symbol}{hex_message:0>width$.precision$X}",
                 width = format_width - adjust_width,
                 precision = precision_value,
                 plus_symbol = plus_option
@@ -690,16 +668,14 @@ fn format_alignment_right(
         let octal_message = parse_int(message);
         if hashtag {
             message = format!(
-                "{plus_symbol}{:0>#width$.precision$o}",
-                octal_message,
+                "{plus_symbol}{octal_message:0>#width$.precision$o}",
                 width = format_width - adjust_width,
                 precision = precision_value,
                 plus_symbol = plus_option
             );
         } else {
             message = format!(
-                "{plus_symbol}{:0>width$.precision$o}",
-                octal_message,
+                "{plus_symbol}{octal_message:0>width$.precision$o}",
                 width = format_width - adjust_width,
                 precision = precision_value,
                 plus_symbol = plus_option
@@ -738,8 +714,7 @@ fn format_alignment_left_space(
             }
         }
         message = format!(
-            "{plus_symbol}{:<width$.precision$}",
-            float_message,
+            "{plus_symbol}{float_message:<width$.precision$}",
             width = format_width - adjust_width,
             precision = precision_value,
             plus_symbol = plus_option
@@ -747,8 +722,7 @@ fn format_alignment_left_space(
     } else if INT_TYPES.contains(&type_data) {
         let int_message = parse_int(message);
         message = format!(
-            "{plus_symbol}{:<width$.precision$}",
-            int_message,
+            "{plus_symbol}{int_message:<width$.precision$}",
             width = format_width - adjust_width,
             precision = precision_value,
             plus_symbol = plus_option
@@ -758,8 +732,7 @@ fn format_alignment_left_space(
             precision_value = message.len()
         }
         message = format!(
-            "{plus_symbol}{:<width$.precision$}",
-            message,
+            "{plus_symbol}{message:<width$.precision$}",
             width = format_width - adjust_width,
             precision = precision_value,
             plus_symbol = plus_option
@@ -768,16 +741,14 @@ fn format_alignment_left_space(
         let hex_message = parse_int(message);
         if hashtag {
             message = format!(
-                "{plus_symbol}{:<#width$.precision$X}",
-                hex_message,
+                "{plus_symbol}{hex_message:<#width$.precision$X}",
                 width = format_width - adjust_width,
                 precision = precision_value,
                 plus_symbol = plus_option
             );
         } else {
             message = format!(
-                "{plus_symbol}{:<width$.precision$X}",
-                hex_message,
+                "{plus_symbol}{hex_message:<width$.precision$X}",
                 width = format_width - adjust_width,
                 precision = precision_value,
                 plus_symbol = plus_option
@@ -787,16 +758,14 @@ fn format_alignment_left_space(
         let octal_message = parse_int(message);
         if hashtag {
             message = format!(
-                "{plus_symbol}{:<#width$.precision$o}",
-                octal_message,
+                "{plus_symbol}{octal_message:<#width$.precision$o}",
                 width = format_width - adjust_width,
                 precision = precision_value,
                 plus_symbol = plus_option
             );
         } else {
             message = format!(
-                "{plus_symbol}{:<width$.precision$o}",
-                octal_message,
+                "{plus_symbol}{octal_message:<width$.precision$o}",
                 width = format_width - adjust_width,
                 precision = precision_value,
                 plus_symbol = plus_option
@@ -835,8 +804,7 @@ fn format_alignment_right_space(
             }
         }
         message = format!(
-            "{plus_symbol}{:>width$.precision$}",
-            float_message,
+            "{plus_symbol}{float_message:>width$.precision$}",
             width = format_width - adjust_width,
             precision = precision_value,
             plus_symbol = plus_option
@@ -844,8 +812,7 @@ fn format_alignment_right_space(
     } else if INT_TYPES.contains(&type_data) {
         let int_message = parse_int(message);
         message = format!(
-            "{plus_symbol}{:>width$.precision$}",
-            int_message,
+            "{plus_symbol}{int_message:>width$.precision$}",
             width = format_width - adjust_width,
             precision = precision_value,
             plus_symbol = plus_option
@@ -855,8 +822,7 @@ fn format_alignment_right_space(
             precision_value = message.len()
         }
         message = format!(
-            "{plus_symbol}{:>width$.precision$}",
-            message,
+            "{plus_symbol}{message:>width$.precision$}",
             width = format_width - adjust_width,
             precision = precision_value,
             plus_symbol = plus_option
@@ -865,16 +831,14 @@ fn format_alignment_right_space(
         let hex_message = parse_int(message);
         if hashtag {
             message = format!(
-                "{plus_symbol}{:>#width$.precision$X}",
-                hex_message,
+                "{plus_symbol}{hex_message:>#width$.precision$X}",
                 width = format_width - adjust_width,
                 precision = precision_value,
                 plus_symbol = plus_option
             );
         } else {
             message = format!(
-                "{plus_symbol}{:>width$.precision$X}",
-                hex_message,
+                "{plus_symbol}{hex_message:>width$.precision$X}",
                 width = format_width - adjust_width,
                 precision = precision_value,
                 plus_symbol = plus_option
@@ -884,16 +848,14 @@ fn format_alignment_right_space(
         let octal_message = parse_int(message);
         if hashtag {
             message = format!(
-                "{plus_symbol}{:>#width$.precision$o}",
-                octal_message,
+                "{plus_symbol}{octal_message:>#width$.precision$o}",
                 width = format_width - adjust_width,
                 precision = precision_value,
                 plus_symbol = plus_option
             );
         } else {
             message = format!(
-                "{plus_symbol}{:>width$.precision$o}",
-                octal_message,
+                "{plus_symbol}{octal_message:>width$.precision$o}",
                 width = format_width - adjust_width,
                 precision = precision_value,
                 plus_symbol = plus_option
@@ -930,16 +892,14 @@ fn format_left(
         }
 
         message = format!(
-            "{plus_symbol}{:<.precision$}",
-            float_message,
+            "{plus_symbol}{float_message:<.precision$}",
             precision = precision_value,
             plus_symbol = plus_option
         );
     } else if INT_TYPES.contains(&type_data) {
         let int_message = parse_int(message);
         message = format!(
-            "{plus_symbol}{:<.precision$}",
-            int_message,
+            "{plus_symbol}{int_message:<.precision$}",
             precision = precision_value,
             plus_symbol = plus_option
         );
@@ -948,8 +908,7 @@ fn format_left(
             precision_value = message.len()
         }
         message = format!(
-            "{plus_symbol}{:<.precision$}",
-            message,
+            "{plus_symbol}{message:<.precision$}",
             precision = precision_value,
             plus_symbol = plus_option
         );
@@ -957,15 +916,13 @@ fn format_left(
         let hex_message = parse_int(message);
         if hashtag {
             message = format!(
-                "{plus_symbol}{:<#.precision$X}",
-                hex_message,
+                "{plus_symbol}{hex_message:<#.precision$X}",
                 precision = precision_value,
                 plus_symbol = plus_option
             );
         } else {
             message = format!(
-                "{plus_symbol}{:<.precision$X}",
-                hex_message,
+                "{plus_symbol}{hex_message:<.precision$X}",
                 precision = precision_value,
                 plus_symbol = plus_option
             );
@@ -974,15 +931,13 @@ fn format_left(
         let octal_message = parse_int(message);
         if hashtag {
             message = format!(
-                "{plus_symbol}{:<#.precision$o}",
-                octal_message,
+                "{plus_symbol}{octal_message:<#.precision$o}",
                 precision = precision_value,
                 plus_symbol = plus_option
             );
         } else {
             message = format!(
-                "{plus_symbol}{:<.precision$o}",
-                octal_message,
+                "{plus_symbol}{octal_message:<.precision$o}",
                 precision = precision_value,
                 plus_symbol = plus_option
             );
@@ -1018,16 +973,14 @@ fn format_right(
         }
 
         message = format!(
-            "{plus_symbol}{:>.precision$}",
-            float_message,
+            "{plus_symbol}{float_message:>.precision$}",
             precision = precision_value,
             plus_symbol = plus_option
         );
     } else if INT_TYPES.contains(&type_data) {
         let int_message = parse_int(message);
         message = format!(
-            "{plus_symbol}{:>.precision$}",
-            int_message,
+            "{plus_symbol}{int_message:>.precision$}",
             precision = precision_value,
             plus_symbol = plus_option
         );
@@ -1036,8 +989,7 @@ fn format_right(
             precision_value = message.len()
         }
         message = format!(
-            "{plus_symbol}{:>.precision$}",
-            message,
+            "{plus_symbol}{message:>.precision$}",
             precision = precision_value,
             plus_symbol = plus_option
         );
@@ -1045,15 +997,13 @@ fn format_right(
         let hex_message = parse_int(message);
         if hashtag {
             message = format!(
-                "{plus_symbol}{:>#.precision$X}",
-                hex_message,
+                "{plus_symbol}{hex_message:>#.precision$X}",
                 precision = precision_value,
                 plus_symbol = plus_option
             );
         } else {
             message = format!(
-                "{plus_symbol}{:>.precision$X}",
-                hex_message,
+                "{plus_symbol}{hex_message:>.precision$X}",
                 precision = precision_value,
                 plus_symbol = plus_option
             );
@@ -1061,8 +1011,7 @@ fn format_right(
     } else if OCTAL_TYPES.contains(&type_data) {
         let octal_message = parse_int(message);
         message = format!(
-            "{plus_symbol}{:>#.precision$o}",
-            octal_message,
+            "{plus_symbol}{octal_message:>#.precision$o}",
             precision = precision_value,
             plus_symbol = plus_option
         );

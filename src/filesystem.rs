@@ -169,9 +169,8 @@ impl FileProvider for LiveSystemProvider {
             Ok((_, results)) => results,
             Err(err) => {
                 error!(
-                    "[macos-unifiedlogs] Failed to parse UUID file {}: {:?}",
-                    path.to_str().unwrap_or_default(),
-                    err
+                    "[macos-unifiedlogs] Failed to parse UUID file {}: {err:?}",
+                    path.to_str().unwrap_or_default()
                 );
                 return Err(Error::new(
                     ErrorKind::InvalidData,
@@ -262,9 +261,8 @@ impl FileProvider for LiveSystemProvider {
             Ok((_, results)) => results,
             Err(err) => {
                 error!(
-                    "[macos-unifiedlogs] Failed to parse dsc UUID file {}: {:?}",
+                    "[macos-unifiedlogs] Failed to parse dsc UUID file {}: {err:?}",
                     path.to_str().unwrap_or_default(),
-                    err
                 );
                 return Err(Error::new(
                     ErrorKind::InvalidData,
@@ -402,9 +400,8 @@ impl FileProvider for LogarchiveProvider {
             Ok((_, results)) => results,
             Err(err) => {
                 error!(
-                    "[macos-unifiedlogs] Failed to parse UUID file {}: {:?}",
+                    "[macos-unifiedlogs] Failed to parse UUID file {}: {err:?}",
                     base.to_str().unwrap_or_default(),
-                    err
                 );
                 return Err(Error::new(
                     ErrorKind::InvalidData,
@@ -445,9 +442,8 @@ impl FileProvider for LogarchiveProvider {
             Ok((_, results)) => results,
             Err(err) => {
                 error!(
-                    "[macos-unifiedlogs] Failed to parse dsc UUID file {}: {:?}",
+                    "[macos-unifiedlogs] Failed to parse dsc UUID file {}: {err:?}",
                     base.to_str().unwrap_or_default(),
-                    err
                 );
                 return Err(Error::new(
                     ErrorKind::InvalidData,

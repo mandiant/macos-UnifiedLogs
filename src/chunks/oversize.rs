@@ -123,8 +123,7 @@ impl Oversize {
         }
         // We may not find any oversize data (data may have rolled from logs?)
         info!(
-            "Did not find any oversize log entries from Data Ref ID: {}, First Proc ID: {}, and Second Proc ID: {}",
-            data_ref, first_proc_id, second_proc_id
+            "Did not find any oversize log entries from Data Ref ID: {data_ref}, First Proc ID: {first_proc_id}, and Second Proc ID: {second_proc_id}"
         );
         message_strings
     }

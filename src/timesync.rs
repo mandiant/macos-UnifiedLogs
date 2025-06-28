@@ -84,8 +84,7 @@ impl TimesyncBoot {
         let expected_boot_signature = 0xbbb0;
         if expected_boot_signature != timesync_signature {
             error!(
-                "[macos-unifiedlogs] Incorrect Timesync boot header signature. Expected {}. Got: {}",
-                expected_boot_signature, timesync_signature
+                "[macos-unifiedlogs] Incorrect Timesync boot header signature. Expected {expected_boot_signature}. Got: {timesync_signature}",
             );
             return Err(nom::Err::Incomplete(Needed::Unknown));
         }
@@ -138,8 +137,7 @@ impl TimesyncBoot {
         let expected_record_signature = 0x207354;
         if expected_record_signature != timesync_signature {
             error!(
-                "[macos-unifiedlogs] Incorrect Timesync record header signature. Expected {}. Got: {}",
-                expected_record_signature, timesync_signature
+                "[macos-unifiedlogs] Incorrect Timesync record header signature. Expected {expected_record_signature}. Got: {timesync_signature}",
             );
             return Err(nom::Err::Incomplete(Needed::Unknown));
         }

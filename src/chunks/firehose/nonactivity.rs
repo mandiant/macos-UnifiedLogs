@@ -135,14 +135,14 @@ impl FirehoseNonActivity {
                 {
                     large_offset = firehose.firehose_formatters.large_shared_cache / 2;
                     // Combine large offset value with current string offset to get the true offset
-                    extra_offset_value = format!("{:X}{:08X}", large_offset, string_offset);
+                    extra_offset_value = format!("{large_offset:X}{string_offset:08X}");
                 } else if firehose.firehose_formatters.shared_cache {
                     // Large offset is 8 if shared_cache flag is set
                     large_offset = 8;
                     let add_offset = 0x10000000 * u64::from(large_offset);
                     extra_offset_value = format!("{:X}", add_offset + string_offset);
                 } else {
-                    extra_offset_value = format!("{:X}{:08X}", large_offset, string_offset);
+                    extra_offset_value = format!("{large_offset:X}{string_offset:08X}");
                 }
 
                 let extra_offset_value_result = u64::from_str_radix(&extra_offset_value, 16);
@@ -161,8 +161,7 @@ impl FirehoseNonActivity {
                     Err(err) => {
                         // We should not get errors since we are combining two numbers to create the offset
                         error!(
-                            "Failed to get shared string offset to format string for non-activity firehose entry: {:?}",
-                            err
+                            "Failed to get shared string offset to format string for non-activity firehose entry: {err:?}"
                         );
                         return Err(nom::Err::Incomplete(Needed::Unknown));
                     }
@@ -199,8 +198,7 @@ impl FirehoseNonActivity {
                     Err(err) => {
                         // We should not get errors since we are combining two numbers to create the offset
                         error!(
-                            "Failed to get absolute offset to format string for non-activity firehose entry: {:?}",
-                            err
+                            "Failed to get absolute offset to format string for non-activity firehose entry: {err:?}"
                         );
                         return Err(nom::Err::Incomplete(Needed::Unknown));
                     }

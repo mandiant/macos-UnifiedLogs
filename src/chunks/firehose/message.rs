@@ -77,10 +77,7 @@ impl MessageData {
 
         // Get shared strings collections
         if let Some(shared_string) = provider.cached_dsc(&dsc_uuid) {
-            debug!(
-                "[macos-unifiedlogs] Associated dsc file with log entry: {:?}",
-                dsc_uuid
-            );
+            debug!("[macos-unifiedlogs] Associated dsc file with log entry: {dsc_uuid:?}");
 
             for ranges in &shared_string.ranges {
                 if string_offset >= ranges.range_offset
@@ -253,8 +250,8 @@ impl MessageData {
             process_string.clone_into(&mut message_data.process);
             message_data.library = process_string;
             message_data.format_string = format!(
-                "Error: Invalid offset {} for UUID {}",
-                string_offset, message_data.process_uuid
+                "Error: Invalid offset {string_offset} for UUID {}",
+                message_data.process_uuid
             );
 
             return Ok((&[], message_data));
@@ -404,8 +401,8 @@ impl MessageData {
                 MessageData::uuidtext_image_path(footer_data, &data.entry_descriptors)?;
             message_data.library = library_string;
             message_data.format_string = format!(
-                "Error: Invalid offset {} for absolute UUID {}",
-                string_offset, message_data.library_uuid
+                "Error: Invalid offset {string_offset} for absolute UUID {}",
+                message_data.library_uuid
             );
 
             // Extract image path from second UUIDtext file
@@ -534,10 +531,8 @@ impl MessageData {
             let (_, library_string) =
                 MessageData::uuidtext_image_path(footer_data, &data.entry_descriptors)?;
             message_data.library = library_string;
-            message_data.format_string = format!(
-                "Error: Invalid offset {} for alternative UUID {}",
-                string_offset, uuid
-            );
+            message_data.format_string =
+                format!("Error: Invalid offset {string_offset} for alternative UUID {uuid}");
 
             // Extract image path from second UUIDtext file
             let (_, process_string) =
@@ -548,13 +543,10 @@ impl MessageData {
         }
 
         warn!(
-            "[macos-unifiedlogs] Failed to get message string from alternative UUIDText file: {}",
-            uuid
+            "[macos-unifiedlogs] Failed to get message string from alternative UUIDText file: {uuid}"
         );
-        message_data.format_string = format!(
-            "Failed to get string message from alternative UUIDText file: {}",
-            uuid
-        );
+        message_data.format_string =
+            format!("Failed to get string message from alternative UUIDText file: {uuid}");
         Ok((&[], message_data))
     }
 
@@ -588,16 +580,12 @@ impl MessageData {
         }
 
         warn!(
-            "[macos-unifiedlogs] Failed to get path string from UUIDText file for entry: {}",
-            main_uuid
+            "[macos-unifiedlogs] Failed to get path string from UUIDText file for entry: {main_uuid}"
         );
 
         Ok((
             &[],
-            format!(
-                "Failed to get path string from UUIDText file for entry: {}",
-                main_uuid
-            ),
+            format!("Failed to get path string from UUIDText file for entry: {main_uuid}"),
         ))
     }
 

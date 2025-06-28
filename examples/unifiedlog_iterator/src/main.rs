@@ -6,12 +6,10 @@
 // See the License for the specific language governing permissions and limitations under the License.
 
 use chrono::{SecondsFormat, TimeZone, Utc};
-use log::{LevelFilter, debug, info, error};
+use log::{LevelFilter, debug, error, info};
 use macos_unifiedlogs::filesystem::{LiveSystemProvider, LogarchiveProvider};
 use macos_unifiedlogs::iterator::UnifiedLogIterator;
-use macos_unifiedlogs::parser::{
-    build_log, collect_timesync, parse_log
-};
+use macos_unifiedlogs::parser::{build_log, collect_timesync, parse_log};
 use macos_unifiedlogs::timesync::TimesyncBoot;
 use macos_unifiedlogs::traits::FileProvider;
 use macos_unifiedlogs::unified_log::{LogData, UnifiedLogData};
@@ -23,7 +21,7 @@ use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
-use clap::{builder, Parser, ValueEnum};
+use clap::{Parser, ValueEnum, builder};
 use csv::Writer;
 
 #[derive(Clone, Debug)]
@@ -36,10 +34,10 @@ impl Display for RuntimeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self {
             RuntimeError::FileOpen { path, message } => {
-                f.write_str(&format!("Failed to open source file {}: {}", path, message))
+                f.write_str(&format!("Failed to open source file {path}: {message}"))
             }
             RuntimeError::FileParse { path, message } => {
-                f.write_str(&format!("Failed to parse {}: {}", path, message))
+                f.write_str(&format!("Failed to parse {path}: {message}"))
             }
         }
     }
@@ -65,7 +63,7 @@ struct Args {
     #[clap(short, long, default_value = Format::Jsonl)]
     format: Format,
 
-    /// Append to output file
+    /// Append to output file.
     /// If false, will overwrite output file
     #[clap(short, long, default_value = "false")]
     append: bool,
@@ -103,8 +101,13 @@ impl From<Format> for &str {
 }
 
 fn main() {
-    TermLogger::init(LevelFilter::Warn, Config::default(), TerminalMode::Stderr, ColorChoice::Auto)
-        .expect("Failed to initialize simple logger");
+    TermLogger::init(
+        LevelFilter::Warn,
+        Config::default(),
+        TerminalMode::Stderr,
+        ColorChoice::Auto,
+    )
+    .expect("Failed to initialize simple logger");
     info!("Starting Unified Log parser...");
 
     let args = Args::parse();
@@ -150,7 +153,7 @@ fn parse_single_file(path: &Path, writer: &mut OutputWriter) {
         .and_then(|mut reader| {
             parse_log(&mut reader).map_err(|err| RuntimeError::FileParse {
                 path: path.to_string_lossy().to_string(),
-                message: format!("{}", err),
+                message: format!("{err}"),
             })
         })
         .map(|ref log| {
@@ -159,13 +162,13 @@ fn parse_single_file(path: &Path, writer: &mut OutputWriter) {
         }) {
         Ok(reader) => reader,
         Err(e) => {
-            error!("Failed to parse {:?}: {}", path, e);
+            error!("Failed to parse {path:?}: {e}");
             return;
         }
     };
     for row in results {
         if let Err(e) = writer.write_record(&row) {
-            error!("Error writing record: {}", e);
+            error!("Error writing record: {e}");
         };
     }
 }
@@ -179,11 +182,7 @@ fn parse_log_archive(path: &Path, writer: &mut OutputWriter) {
 
     // Keep UUID, UUID cache, timesync files in memory while we parse all tracev3 files
     // Allows for faster lookups
-    parse_trace_file(
-        &timesync_data,
-        &mut provider,
-        writer,
-    );
+    parse_trace_file(&timesync_data, &mut provider, writer);
 
     info!("Finished parsing Unified Log data.");
 }
@@ -227,7 +226,7 @@ fn parse_trace_file(
             writer,
             &mut oversize_strings,
         );
-        debug!("count: {}", log_count);
+        debug!("count: {log_count}");
     }
     let include_missing = false;
     debug!("Oversize cache size: {}", oversize_strings.oversize.len());
@@ -242,17 +241,14 @@ fn parse_trace_file(
         // Exclude_missing = false
         // If we fail to find any missing data its probably due to the logs rolling
         // Ex: tracev3A rolls, tracev3B references Oversize entry in tracev3A will trigger missing data since tracev3A is gone
-        let (results, _) = build_log(
-            &leftover_data,
-            provider,
-            timesync_data,
-            include_missing,
-        );
+        let (results, _) = build_log(&leftover_data, provider, timesync_data, include_missing);
         log_count += results.len();
 
-        output(&results, writer).unwrap();
+        if let Err(err) = output(&results, writer) {
+            log::error!("Failed to output remaining log data: {err:?}");
+        }
     }
-    info!("Parsed {} log entries", log_count);
+    info!("Parsed {log_count} log entries");
 }
 
 fn iterate_chunks(
@@ -265,8 +261,8 @@ fn iterate_chunks(
 ) -> usize {
     let mut buf = Vec::new();
 
-    if let Err(e) = reader.read_to_end(&mut buf) {
-        log::error!("Failed to read tracev3 file: {:?}", e);
+    if let Err(err) = reader.read_to_end(&mut buf) {
+        log::error!("Failed to read tracev3 file: {err:?}");
         return 0;
     }
 
@@ -282,15 +278,12 @@ fn iterate_chunks(
     let mut count = 0;
     for mut chunk in log_iterator {
         chunk.oversize.append(&mut oversize_strings.oversize);
-        let (results, missing_logs) = build_log(
-            &chunk,
-            provider,
-            timesync_data,
-            exclude_missing,
-        );
+        let (results, missing_logs) = build_log(&chunk, provider, timesync_data, exclude_missing);
         count += results.len();
         oversize_strings.oversize = chunk.oversize;
-        output(&results, writer).unwrap();
+        if let Err(err) = output(&results, writer) {
+            log::error!("Failed to output log data: {err:?}");
+        }
         if missing_logs.catalog_data.is_empty()
             && missing_logs.header.is_empty()
             && missing_logs.oversize.is_empty()
@@ -343,7 +336,7 @@ impl OutputWriter {
             }
             "jsonl" => OutputWriterEnum::Json(writer),
             _ => {
-                error!("Unsupported output format: {}", output_format);
+                error!("Unsupported output format: {output_format}");
                 std::process::exit(1);
             }
         };

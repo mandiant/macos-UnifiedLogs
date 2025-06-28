@@ -85,10 +85,7 @@ pub(crate) fn errors(oderror: &str) -> String {
         "5204" => "ODErrorCredentialsContactPrimary",
         "2" => "Not Found",
         _ => {
-            warn!(
-                "[macos-unifiedlogs] Unknown open directory error code: {}",
-                oderror
-            );
+            warn!("[macos-unifiedlogs] Unknown open directory error code: {oderror}",);
             oderror
         }
     };
@@ -111,10 +108,7 @@ pub(crate) fn member_id_type(member_string: &str) -> String {
         "11" => "X509 DN",
         "12" => "KERBEROS",
         _ => {
-            warn!(
-                "[macos-unifiedlogs] Unknown open directory member id type: {}",
-                member_string
-            );
+            warn!("[macos-unifiedlogs] Unknown open directory member id type: {member_string}",);
             member_string
         }
     };
@@ -190,7 +184,7 @@ fn get_member_data(input: &[u8]) -> nom::IResult<&[u8], String> {
         Err(_) => (input, " <not found>".to_string()),
     };
 
-    let message = format!("{}{}", member_message, source_path);
+    let message = format!("{member_message}{source_path}");
     Ok((input, message))
 }
 
@@ -212,7 +206,7 @@ fn get_sid_data(input: &[u8]) -> nom::IResult<&[u8], String> {
 
     let (input, message) = fold_many0(
         le_u32,
-        || format!("S-{}-{}-{}", revision, authority, subauthority),
+        || format!("S-{revision}-{authority}-{subauthority}"),
         |mut acc, additional_subauthority| {
             write!(&mut acc, "-{additional_subauthority}").ok(); // ignored Write error
             acc

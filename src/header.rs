@@ -136,10 +136,9 @@ impl HeaderChunk {
         let path_data = from_utf8(timezone_path);
         match path_data {
             Ok(results) => header_chunk.timezone_path = results.trim_end_matches('\0').to_string(),
-            Err(err) => warn!(
-                "[macos-unifiedlogs] Failed to get timezone path from header: {:?}",
-                err
-            ),
+            Err(err) => {
+                warn!("[macos-unifiedlogs] Failed to get timezone path from header: {err:?}")
+            }
         }
 
         let build_version = from_utf8(build_version_string);
@@ -147,10 +146,9 @@ impl HeaderChunk {
             Ok(results) => {
                 header_chunk.build_version_string = results.trim_end_matches('\0').to_string()
             }
-            Err(err) => warn!(
-                "[macos-unifiedlogs] Failed to get build version from header: {:?}",
-                err
-            ),
+            Err(err) => {
+                warn!("[macos-unifiedlogs] Failed to get build version from header: {err:?}")
+            }
         }
 
         let hardware_info = from_utf8(hardware_model_string);
@@ -158,10 +156,9 @@ impl HeaderChunk {
             Ok(results) => {
                 header_chunk.hardware_model_string = results.trim_end_matches('\0').to_string()
             }
-            Err(err) => warn!(
-                "[macos-unifiedlogs] Failed to get hardware info from header: {:?}",
-                err
-            ),
+            Err(err) => {
+                warn!("[macos-unifiedlogs] Failed to get hardware info from header: {err:?}")
+            }
         }
 
         let (_, boot_uuid_be) = be_u128(boot_uuid)?;

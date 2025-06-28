@@ -276,7 +276,7 @@ impl FirehosePreamble {
                 let (item_value_input, message_number) =
                     FirehosePreamble::parse_item_number(firehose_input, u16::from(item.item_size))?;
 
-                item.message_strings = format!("{}", message_number);
+                item.message_strings = format!("{message_number}");
                 firehose_input = item_value_input;
                 item_count += 1;
                 items_data.push(item);
@@ -357,7 +357,7 @@ impl FirehosePreamble {
                     "[macos-unifiedlogs] Unknown Firehose item: {}",
                     &item.item_type
                 );
-                debug!("[macos-unifiedlogs] Firehose item data: {:?}", data);
+                debug!("[macos-unifiedlogs] Firehose item data: {data:?}");
             }
         }
 
@@ -505,7 +505,7 @@ impl FirehosePreamble {
                 unknown_log_activity_type,
                 input.len()
             );
-            debug!("[macos-unifiedlogs] Firehose data: {:X?}", data);
+            debug!("[macos-unifiedlogs] Firehose data: {data:X?}");
             return Ok((input, firehose_results));
         }
 
@@ -661,11 +661,8 @@ impl FirehosePreamble {
             8 => le_i64(input)?,
             1 => map(le_i8, i64::from).parse(input)?,
             _ => {
-                warn!(
-                    "[macos-unifiedlogs] Unknown number size support: {:?}",
-                    item_size
-                );
-                debug!("[macos-unifiedlogs] Item data: {:?}", data);
+                warn!("[macos-unifiedlogs] Unknown number size support: {item_size:?}");
+                debug!("[macos-unifiedlogs] Item data: {data:?}");
                 (input, -9999)
             }
         })

@@ -38,8 +38,7 @@ impl UUIDText {
 
         if expected_uuidtext_signature != uuidtext_signature {
             error!(
-                "[macos-unifiedlogs] Incorrect UUIDText header signature. Expected {}. Got: {}",
-                expected_uuidtext_signature, uuidtext_signature
+                "[macos-unifiedlogs] Incorrect UUIDText header signature. Expected {expected_uuidtext_signature}. Got: {uuidtext_signature}"
             );
             return Err(nom::Err::Incomplete(Needed::Unknown));
         }
