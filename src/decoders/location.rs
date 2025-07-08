@@ -93,6 +93,7 @@ pub(crate) fn subharvester_identifier(status: &str) -> Result<String, DecoderErr
     // Found in dyldcache liblog
     let message = match status {
         "0" => "CellLegacy",
+        "1" => "Cell",
         "2" => "Wifi",
         "3" => "Tracks",
         "4" => "Realtime",
