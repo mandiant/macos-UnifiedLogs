@@ -1,6 +1,6 @@
 [package]
 name = "macos-unifiedlogs"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/mandiant/macos-unifiedlogs"
@@ -16,7 +16,7 @@ serde = { version = "1.0.219", features = ["derive"] }
 log = "0.4.27"
 lz4_flex = "0.11.5"
 byteorder = "1.5.0"
-plist = "1.7.2"
+plist = "1.7.3"
 regex = "1.11.1"
 base64 = "0.22.1"
 chrono = "0.4.41"
