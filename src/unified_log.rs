@@ -26,7 +26,9 @@ use crate::message::format_firehose_log_message;
 use crate::preamble::LogPreamble;
 use crate::timesync::TimesyncBoot;
 use crate::traits::FileProvider;
-use crate::util::{encode_standard, extract_string, padding_size_8, unixepoch_to_iso};
+use crate::util::{
+    encode_standard, extract_string, padding_size_8, u64_to_usize, unixepoch_to_iso,
+};
 use log::{error, warn};
 use nom::bytes::complete::take;
 use regex::Regex;
@@ -685,6 +687,16 @@ impl LogData {
             let chunk_size = preamble.chunk_data_size;
 
             // Grab all data associated with Unified Log entry (chunk)
+            let chunk_size = match u64_to_usize(chunk_size) {
+                Some(c) => c,
+                None => {
+                    error!("[macos-unifiedlogs] u64 is bigger than system usize");
+                    return Err(nom::Err::Error(nom::error::Error::new(
+                        data,
+                        nom::error::ErrorKind::TooLarge,
+                    )));
+                }
+            };
             let (data, chunk_data) = take(chunk_size + chunk_preamble_size)(input)?;
 
             if preamble.chunk_tag == header_chunk {
@@ -713,12 +725,23 @@ impl LogData {
             if data.len() < padding_size as usize {
                 break;
             }
+            let padding_size = match u64_to_usize(padding_size) {
+                Some(p) => p,
+                None => {
+                    error!("[macos-unifiedlogs] u64 is bigger than system usize");
+                    return Err(nom::Err::Error(nom::error::Error::new(
+                        data,
+                        nom::error::ErrorKind::TooLarge,
+                    )));
+                }
+            };
+
             let (data, _) = take(padding_size)(data)?;
             if data.is_empty() {
                 break;
             }
             input = data;
-            if input.len() < chunk_preamble_size as usize {
+            if input.len() < chunk_preamble_size {
                 warn!(
                     "Not enough data for preamble header, needed 16 bytes. Got: {:?}",
                     input.len()

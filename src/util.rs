@@ -65,6 +65,17 @@ pub(crate) fn extract_string_size(data: &[u8], message_size: u64) -> nom::IResul
     }
 
     // Get whole string message except end of string (0s)
+    let message_size = match u64_to_usize(message_size) {
+        Some(m) => m,
+        None => {
+            error!("[macos-unifiedlogs] u64 is bigger than system usize");
+            return Err(nom::Err::Error(nom::error::Error::new(
+                data,
+                nom::error::ErrorKind::TooLarge,
+            )));
+        }
+    };
+
     let (input, path) = take(message_size)(data)?;
     let path_string = String::from_utf8(path.to_vec());
     match path_string {
@@ -151,6 +162,10 @@ pub(crate) fn decode_standard(data: &str) -> Result<Vec<u8>, DecodeError> {
 pub(crate) fn unixepoch_to_iso(timestamp: &i64) -> String {
     let date_time_result = Utc.timestamp_nanos(*timestamp);
     date_time_result.to_rfc3339_opts(SecondsFormat::Nanos, true)
+}
+
+pub(crate) fn u64_to_usize(n: u64) -> Option<usize> {
+    usize::try_from(n).ok()
 }
 
 #[cfg(test)]

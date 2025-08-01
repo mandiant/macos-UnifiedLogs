@@ -10,7 +10,9 @@ use crate::chunks::firehose::loss::FirehoseLoss;
 use crate::chunks::firehose::nonactivity::FirehoseNonActivity;
 use crate::chunks::firehose::signpost::FirehoseSignpost;
 use crate::chunks::firehose::trace::FirehoseTrace;
-use crate::util::{encode_standard, extract_string_size, padding_size_8, padding_size_four};
+use crate::util::{
+    encode_standard, extract_string_size, padding_size_8, padding_size_four, u64_to_usize,
+};
 use log::{debug, error, warn};
 use nom::Parser;
 use nom::bytes::complete::take_while;
@@ -534,6 +536,16 @@ impl FirehosePreamble {
 
         // Verify we did not nom into remnant/junk data
         let padding_data = padding_size_8(data_size.into());
+        let padding_data = match u64_to_usize(padding_data) {
+            Some(p) => p,
+            None => {
+                error!("[macos-unifiedlogs] u64 is bigger than system usize");
+                return Err(nom::Err::Error(nom::error::Error::new(
+                    input,
+                    nom::error::ErrorKind::TooLarge,
+                )));
+            }
+        };
         let (mut input, _) = take(padding_data)(input)?;
         if (padding_data as usize) > taken_data.len() {
             input = remaining_data;
@@ -568,6 +580,16 @@ impl FirehosePreamble {
             .collect::<Vec<String>>();
 
         let padding_size = padding_size_four(u64::try_from(offset_count).unwrap());
+        let padding_size = match u64_to_usize(padding_size) {
+            Some(p) => p,
+            None => {
+                error!("[macos-unifiedlogs] u64 is bigger than system usize");
+                return Err(nom::Err::Error(nom::error::Error::new(
+                    input,
+                    nom::error::ErrorKind::TooLarge,
+                )));
+            }
+        };
         let (backtrace_input, _) = take(padding_size)(input)?;
         input = backtrace_input;
 

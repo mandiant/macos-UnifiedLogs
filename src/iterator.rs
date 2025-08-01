@@ -118,7 +118,17 @@ impl Iterator for UnifiedLogIterator {
 
 /// Nom bytes of the log chunk
 fn nom_bytes<'a>(data: &'a [u8], size: &u64) -> nom::IResult<&'a [u8], &'a [u8]> {
-    take(*size)(data)
+    let size = match usize::try_from(*size).ok() {
+        Some(s) => s,
+        None => {
+            error!("[macos-unifiedlogs] u64 is bigger than system usize");
+            return Err(nom::Err::Error(nom::error::Error::new(
+                data,
+                nom::error::ErrorKind::TooLarge,
+            )));
+        }
+    };
+    take(size)(data)
 }
 
 #[cfg(test)]
