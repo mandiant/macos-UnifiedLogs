@@ -363,7 +363,7 @@ fn parse_interface<'a>(
             ip,
             rank,
             reach,
-            signature: format!("0x{:02x?}", sig)
+            signature: format!("0x{sig:02x?}")
                 .replace(", ", "")
                 .replace("[", "")
                 .replace("]", ""),

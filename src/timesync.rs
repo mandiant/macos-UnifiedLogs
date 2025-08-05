@@ -111,7 +111,7 @@ impl TimesyncBoot {
             signature: timesync_signature,
             header_size: timesync_header_size,
             unknown: timesync_unknown,
-            boot_uuid: format!("{:X}", timesync_boot_uuid),
+            boot_uuid: format!("{timesync_boot_uuid:X}"),
             timebase_numerator: timesync_timebase_numerator,
             timebase_denominator: timesync_timebase_denominator,
             boot_time: timesync_boot_time,
@@ -237,8 +237,6 @@ mod tests {
     use crate::filesystem::LogarchiveProvider;
     use crate::parser::collect_timesync;
     use crate::timesync::TimesyncBoot;
-    use std::fs::File;
-    use std::io::Read;
     use std::path::PathBuf;
 
     #[test]
@@ -248,9 +246,7 @@ mod tests {
             "tests/test_data/system_logs_big_sur.logarchive/timesync/0000000000000002.timesync",
         );
 
-        let mut open = File::open(test_path).unwrap();
-        let mut buffer = Vec::new();
-        open.read_to_end(&mut buffer).unwrap();
+        let buffer = std::fs::read(test_path).unwrap();
 
         let (_, timesync_data) = TimesyncBoot::parse_timesync_data(&buffer).unwrap();
         assert_eq!(timesync_data.len(), 5);
@@ -271,9 +267,7 @@ mod tests {
         test_path
             .push("tests/test_data/Bad Data/Timesync/Bad_Boot_header_0000000000000002.timesync");
 
-        let mut open = File::open(test_path).unwrap();
-        let mut buffer = Vec::new();
-        open.read_to_end(&mut buffer).unwrap();
+        let buffer = std::fs::read(test_path).unwrap();
 
         let (_, _) = TimesyncBoot::parse_timesync_data(&buffer).unwrap();
     }
@@ -285,9 +279,7 @@ mod tests {
         test_path
             .push("tests/test_data/Bad Data/Timesync/Bad_Record_header_0000000000000002.timesync");
 
-        let mut open = File::open(test_path).unwrap();
-        let mut buffer = Vec::new();
-        open.read_to_end(&mut buffer).unwrap();
+        let buffer = std::fs::read(test_path).unwrap();
 
         let (_, _) = TimesyncBoot::parse_timesync_data(&buffer).unwrap();
     }
@@ -298,9 +290,7 @@ mod tests {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         test_path.push("tests/test_data/Bad Data/Timesync/Bad_content_0000000000000002.timesync");
 
-        let mut open = File::open(test_path).unwrap();
-        let mut buffer = Vec::new();
-        open.read_to_end(&mut buffer).unwrap();
+        let buffer = std::fs::read(test_path).unwrap();
 
         let (_, _) = TimesyncBoot::parse_timesync_data(&buffer).unwrap();
     }
@@ -311,9 +301,7 @@ mod tests {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         test_path.push("tests/test_data/Bad Data/Timesync/BadFile.timesync");
 
-        let mut open = File::open(test_path).unwrap();
-        let mut buffer = Vec::new();
-        open.read_to_end(&mut buffer).unwrap();
+        let buffer = std::fs::read(test_path).unwrap();
 
         let (_, _) = TimesyncBoot::parse_timesync_data(&buffer).unwrap();
     }

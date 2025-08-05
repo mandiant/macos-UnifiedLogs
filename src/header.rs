@@ -162,7 +162,7 @@ impl HeaderChunk {
         }
 
         let (_, boot_uuid_be) = be_u128(boot_uuid)?;
-        header_chunk.boot_uuid = format!("{:X}", boot_uuid_be);
+        header_chunk.boot_uuid = format!("{boot_uuid_be:X}");
 
         Ok((input, header_chunk))
     }

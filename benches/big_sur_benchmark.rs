@@ -26,7 +26,7 @@ fn bench_build_log(
     timesync_data: &HashMap<String, TimesyncBoot>,
     exclude_missing: bool,
 ) {
-    let (_, _) = build_log(&log_data, provider, &timesync_data, exclude_missing);
+    let (_, _) = build_log(log_data, provider, timesync_data, exclude_missing);
 }
 
 fn big_sur_single_log_benchpress(c: &mut Criterion) {

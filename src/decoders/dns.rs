@@ -156,7 +156,7 @@ pub(crate) fn get_domain_name(input: &str) -> Result<String, DecoderError<'_>> {
     let non_domain_chars = ['\n', '\t', '\r'];
     for unicode in results.chars() {
         // skip non-domain characters and replace with '.'
-        if non_domain_chars.contains(&unicode) || format!("{:?}", unicode).contains("\\u{") {
+        if non_domain_chars.contains(&unicode) || format!("{unicode:?}").contains("\\u{") {
             clean_domain.push('.');
             continue;
         }
@@ -286,7 +286,7 @@ fn parse_mac_addr(input: &[u8]) -> nom::IResult<&[u8], String> {
             if !acc.is_empty() {
                 acc.push(':');
             }
-            write!(&mut acc, "{:02X?}", item).ok(); // ignore errors on write in String
+            write!(&mut acc, "{item:02X?}").ok(); // ignore errors on write in String
             acc
         },
     )

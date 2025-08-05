@@ -302,7 +302,7 @@ pub struct OutputWriter {
 }
 
 enum OutputWriterEnum {
-    Csv(Writer<Box<dyn Write>>),
+    Csv(Box<Writer<Box<dyn Write>>>),
     Json(Box<dyn Write>),
 }
 
@@ -332,7 +332,7 @@ impl OutputWriter {
                     "System Timezone Name",
                 ])?;
                 csv_writer.flush()?;
-                OutputWriterEnum::Csv(csv_writer)
+                OutputWriterEnum::Csv(Box::new(csv_writer))
             }
             "jsonl" => OutputWriterEnum::Json(writer),
             _ => {
