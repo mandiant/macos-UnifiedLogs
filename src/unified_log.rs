@@ -968,7 +968,19 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_pointer_width = "64")]
     #[should_panic(expected = "Eof")]
+    fn test_bad_log_content_64() {
+        test_bad_log_content();
+    }
+
+    #[test]
+    #[cfg(target_pointer_width = "32")]
+    #[should_panic(expected = "TooLarge")]
+    fn test_bad_log_content_32() {
+        test_bad_log_content();
+    }
+
     fn test_bad_log_content() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         test_path.push("tests/test_data/Bad Data/TraceV3/Bad_content_0000000000000005.tracev3");
@@ -978,7 +990,19 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_pointer_width = "64")]
     #[should_panic(expected = "Eof")]
+    fn test_bad_log_file_64() {
+        test_bad_log_file();
+    }
+
+    #[test]
+    #[cfg(target_pointer_width = "32")]
+    #[should_panic(expected = "TooLarge")]
+    fn test_bad_log_file_32() {
+        test_bad_log_file();
+    }
+
     fn test_bad_log_file() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         test_path.push("tests/test_data/Bad Data/TraceV3/00.tracev3");
