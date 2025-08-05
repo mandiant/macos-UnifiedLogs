@@ -349,6 +349,13 @@ impl FileProvider for LogarchiveProvider {
             WalkDir::new(&self.base)
                 .into_iter()
                 .filter_map(|entry| entry.ok())
+                .filter(|entry| {
+                    entry
+                        .file_name()
+                        .to_str()
+                        .map(|x| !x.starts_with("._")) // Stop Windows thumbnails
+                        .unwrap_or(false)
+                })
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::TraceV3))
                 .filter_map(|entry| {
                     Some(Box::new(LocalFile::new(entry.path()).ok()?) as Box<dyn SourceFile>)
@@ -361,6 +368,13 @@ impl FileProvider for LogarchiveProvider {
             WalkDir::new(&self.base)
                 .into_iter()
                 .filter_map(|entry| entry.ok())
+                .filter(|entry| {
+                    entry
+                        .file_name()
+                        .to_str()
+                        .map(|x| !x.starts_with("._")) // Stop Windows thumbnails
+                        .unwrap_or(false)
+                })
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::UUIDText))
                 .filter_map(|entry| {
                     Some(Box::new(LocalFile::new(entry.path()).ok()?) as Box<dyn SourceFile>)
@@ -468,6 +482,13 @@ impl FileProvider for LogarchiveProvider {
             WalkDir::new(&self.base)
                 .into_iter()
                 .filter_map(|entry| entry.ok())
+                .filter(|entry| {
+                    entry
+                        .file_name()
+                        .to_str()
+                        .map(|x| !x.starts_with("._")) // Stop Windows thumbnails
+                        .unwrap_or(false)
+                })
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::Dsc))
                 .filter_map(|entry| {
                     Some(Box::new(LocalFile::new(entry.path()).ok()?) as Box<dyn SourceFile>)
@@ -523,6 +544,13 @@ impl FileProvider for LogarchiveProvider {
             WalkDir::new(&self.base)
                 .into_iter()
                 .filter_map(|entry| entry.ok())
+                .filter(|entry| {
+                    entry
+                        .file_name()
+                        .to_str()
+                        .map(|x| !x.starts_with("._")) // Stop Windows thumbnails
+                        .unwrap_or(false)
+                })
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::Timesync))
                 .filter_map(|entry| {
                     Some(Box::new(LocalFile::new(entry.path()).ok()?) as Box<dyn SourceFile>)
