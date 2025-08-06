@@ -8,6 +8,7 @@
 use std::collections::HashMap;
 
 use crate::{preamble::LogPreamble, util::*};
+use log::error;
 use nom::{
     IResult, Parser,
     bytes::complete::take,
@@ -239,6 +240,16 @@ impl CatalogChunk {
 
         const SUBSYSTEM_SIZE: u64 = 6;
         let padding = anticipated_padding_size_8(number_subsystems.into(), SUBSYSTEM_SIZE);
+        let padding = match u64_to_usize(padding) {
+            Some(p) => p,
+            None => {
+                error!("[macos-unifiedlogs] u64 is bigger than system usize");
+                return Err(nom::Err::Error(nom::error::Error::new(
+                    input,
+                    nom::error::ErrorKind::TooLarge,
+                )));
+            }
+        };
         let (input, _) = take(padding)(input)?;
 
         Ok((
@@ -342,6 +353,16 @@ impl CatalogChunk {
         let padding =
             anticipated_padding_size_8((number_index + number_string_offsets).into(), OFFSET_SIZE);
 
+        let padding = match u64_to_usize(padding) {
+            Some(p) => p,
+            None => {
+                error!("[macos-unifiedlogs] u64 is bigger than system usize");
+                return Err(nom::Err::Error(nom::error::Error::new(
+                    input,
+                    nom::error::ErrorKind::TooLarge,
+                )));
+            }
+        };
         let (input, _) = take(padding)(input)?;
 
         Ok((

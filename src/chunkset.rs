@@ -15,9 +15,9 @@ use nom::{
     number::complete::{le_u32, le_u64},
 };
 
-use crate::chunks::firehose::firehose_log::FirehosePreamble;
 use crate::chunks::simpledump::SimpleDump;
 use crate::chunks::statedump::Statedump;
+use crate::{chunks::firehose::firehose_log::FirehosePreamble, util::u64_to_usize};
 use crate::{
     chunks::oversize::Oversize, preamble::LogPreamble, unified_log::UnifiedLogCatalogData,
 };
@@ -116,6 +116,16 @@ impl ChunksetChunk {
             let chunk_size = preamble.chunk_data_size;
 
             // Grab all data associated with log (chunk) data
+            let chunk_size = match u64_to_usize(chunk_size) {
+                Some(c) => c,
+                None => {
+                    error!("[macos-unifiedlogs] u64 is bigger than system usize");
+                    return Err(nom::Err::Error(nom::error::Error::new(
+                        data,
+                        nom::error::ErrorKind::TooLarge,
+                    )));
+                }
+            };
             let (data, chunk_data) = take(chunk_size + chunk_preamble_size)(input)?;
             ChunksetChunk::get_chunkset_data(chunk_data, preamble.chunk_tag, unified_log_data);
 
@@ -126,7 +136,7 @@ impl ChunksetChunk {
             }
 
             input = remaining_data;
-            if input.len() < chunk_preamble_size as usize {
+            if input.len() < chunk_preamble_size {
                 warn!(
                     "[macos-unifiedlogs] Not enough data for Chunkset preamble header, needed 16 bytes. Got: {:?}",
                     input.len()

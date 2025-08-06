@@ -5,11 +5,11 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-use crate::catalog::CatalogChunk;
 use crate::traits::FileProvider;
 use crate::util::extract_string;
 use crate::uuidtext::UUIDTextEntry;
-use log::{debug, info, warn};
+use crate::{catalog::CatalogChunk, util::u64_to_usize};
+use log::{debug, error, info, warn};
 use nom::bytes::complete::take;
 
 #[derive(Debug, Default)]
@@ -103,6 +103,16 @@ impl MessageData {
                         continue;
                     }
 
+                    let offset = match u64_to_usize(offset) {
+                        Some(c) => c,
+                        None => {
+                            error!("[macos-unifiedlogs] u64 is bigger than system usize");
+                            return Err(nom::Err::Error(nom::error::Error::new(
+                                &[],
+                                nom::error::ErrorKind::TooLarge,
+                            )));
+                        }
+                    };
                     let (message_start, _) = take(offset)(string_data)?;
                     let (_, message_string) = extract_string(message_start)?;
                     message_data.format_string = message_string;
@@ -372,7 +382,28 @@ impl MessageData {
                     string_start += entry.entry_size;
                     continue;
                 }
-                let (message_start, _) = take(offset + u64::from(string_start))(footer_data)?;
+
+                let offset = match u64_to_usize(offset) {
+                    Some(o) => o,
+                    None => {
+                        error!("[macos-unifiedlogs] u64 is bigger than system usize");
+                        return Err(nom::Err::Error(nom::error::Error::new(
+                            &[],
+                            nom::error::ErrorKind::TooLarge,
+                        )));
+                    }
+                };
+                let string_start = match usize::try_from(string_start) {
+                    Ok(s) => s,
+                    Err(_) => {
+                        error!("[macos-unifiedlogs] u64 is bigger than system usize");
+                        return Err(nom::Err::Error(nom::error::Error::new(
+                            &[],
+                            nom::error::ErrorKind::TooLarge,
+                        )));
+                    }
+                };
+                let (message_start, _) = take(offset + string_start)(footer_data)?;
                 let (_, message_string) = extract_string(message_start)?;
 
                 // Extract image path from current UUIDtext file

@@ -26,7 +26,9 @@ use crate::message::format_firehose_log_message;
 use crate::preamble::LogPreamble;
 use crate::timesync::TimesyncBoot;
 use crate::traits::FileProvider;
-use crate::util::{encode_standard, extract_string, padding_size_8, unixepoch_to_iso};
+use crate::util::{
+    encode_standard, extract_string, padding_size_8, u64_to_usize, unixepoch_to_iso,
+};
 use log::{error, warn};
 use nom::bytes::complete::take;
 use regex::Regex;
@@ -685,6 +687,16 @@ impl LogData {
             let chunk_size = preamble.chunk_data_size;
 
             // Grab all data associated with Unified Log entry (chunk)
+            let chunk_size = match u64_to_usize(chunk_size) {
+                Some(c) => c,
+                None => {
+                    error!("[macos-unifiedlogs] u64 is bigger than system usize");
+                    return Err(nom::Err::Error(nom::error::Error::new(
+                        data,
+                        nom::error::ErrorKind::TooLarge,
+                    )));
+                }
+            };
             let (data, chunk_data) = take(chunk_size + chunk_preamble_size)(input)?;
 
             if preamble.chunk_tag == header_chunk {
@@ -713,12 +725,23 @@ impl LogData {
             if data.len() < padding_size as usize {
                 break;
             }
+            let padding_size = match u64_to_usize(padding_size) {
+                Some(p) => p,
+                None => {
+                    error!("[macos-unifiedlogs] u64 is bigger than system usize");
+                    return Err(nom::Err::Error(nom::error::Error::new(
+                        data,
+                        nom::error::ErrorKind::TooLarge,
+                    )));
+                }
+            };
+
             let (data, _) = take(padding_size)(data)?;
             if data.is_empty() {
                 break;
             }
             input = data;
-            if input.len() < chunk_preamble_size as usize {
+            if input.len() < chunk_preamble_size {
                 warn!(
                     "Not enough data for preamble header, needed 16 bytes. Got: {:?}",
                     input.len()
@@ -945,7 +968,19 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_pointer_width = "64")]
     #[should_panic(expected = "Eof")]
+    fn test_bad_log_content_64() {
+        test_bad_log_content();
+    }
+
+    #[test]
+    #[cfg(target_pointer_width = "32")]
+    #[should_panic(expected = "TooLarge")]
+    fn test_bad_log_content_32() {
+        test_bad_log_content();
+    }
+
     fn test_bad_log_content() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         test_path.push("tests/test_data/Bad Data/TraceV3/Bad_content_0000000000000005.tracev3");
@@ -955,7 +990,19 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_pointer_width = "64")]
     #[should_panic(expected = "Eof")]
+    fn test_bad_log_file_64() {
+        test_bad_log_file();
+    }
+
+    #[test]
+    #[cfg(target_pointer_width = "32")]
+    #[should_panic(expected = "TooLarge")]
+    fn test_bad_log_file_32() {
+        test_bad_log_file();
+    }
+
     fn test_bad_log_file() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         test_path.push("tests/test_data/Bad Data/TraceV3/00.tracev3");
