@@ -22,10 +22,8 @@
 )]
 #![deny(
     clippy::cast_lossless,
-    //clippy::cast_possible_truncation, 
     clippy::cast_possible_wrap,
     clippy::cast_ptr_alignment,
-    //clippy::cast_sign_loss,
     clippy::char_lit_as_u8,
     clippy::checked_conversions,
     clippy::unnecessary_cast
