@@ -174,9 +174,7 @@ fn get_sqlite_data(input: &[u8]) -> IResult<&[u8], &'static str> {
         101 => "SQLITE DONE",
         266 => "SQLITE IO ERR READ",
         _ => {
-            warn!(
-                "[macos-unifiedlogs] Unknown Core Location sqlite error: {sqlite_code}"
-            );
+            warn!("[macos-unifiedlogs] Unknown Core Location sqlite error: {sqlite_code}");
             "Unknown Core Location sqlite error"
         }
     };

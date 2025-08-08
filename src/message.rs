@@ -891,42 +891,28 @@ fn format_left(
             }
         }
 
-        message = format!(
-            "{plus_option}{float_message:<.precision_value$}"
-        );
+        message = format!("{plus_option}{float_message:<.precision_value$}");
     } else if INT_TYPES.contains(&type_data) {
         let int_message = parse_int(message);
-        message = format!(
-            "{plus_option}{int_message:<.precision_value$}"
-        );
+        message = format!("{plus_option}{int_message:<.precision_value$}");
     } else if STRING_TYPES.contains(&type_data) {
         if precision_value == 0 {
             precision_value = message.len()
         }
-        message = format!(
-            "{plus_option}{message:<.precision_value$}"
-        );
+        message = format!("{plus_option}{message:<.precision_value$}");
     } else if HEX_TYPES.contains(&type_data) {
         let hex_message = parse_int(message);
         if hashtag {
-            message = format!(
-                "{plus_option}{hex_message:<#.precision_value$X}"
-            );
+            message = format!("{plus_option}{hex_message:<#.precision_value$X}");
         } else {
-            message = format!(
-                "{plus_option}{hex_message:<.precision_value$X}"
-            );
+            message = format!("{plus_option}{hex_message:<.precision_value$X}");
         }
     } else if OCTAL_TYPES.contains(&type_data) {
         let octal_message = parse_int(message);
         if hashtag {
-            message = format!(
-                "{plus_option}{octal_message:<#.precision_value$o}"
-            );
+            message = format!("{plus_option}{octal_message:<#.precision_value$o}");
         } else {
-            message = format!(
-                "{plus_option}{octal_message:<.precision_value$o}"
-            );
+            message = format!("{plus_option}{octal_message:<.precision_value$o}");
         }
     }
     message
@@ -958,37 +944,25 @@ fn format_right(
             }
         }
 
-        message = format!(
-            "{plus_option}{float_message:>.precision_value$}"
-        );
+        message = format!("{plus_option}{float_message:>.precision_value$}");
     } else if INT_TYPES.contains(&type_data) {
         let int_message = parse_int(message);
-        message = format!(
-            "{plus_option}{int_message:>.precision_value$}"
-        );
+        message = format!("{plus_option}{int_message:>.precision_value$}");
     } else if STRING_TYPES.contains(&type_data) {
         if precision_value == 0 {
             precision_value = message.len()
         }
-        message = format!(
-            "{plus_option}{message:>.precision_value$}"
-        );
+        message = format!("{plus_option}{message:>.precision_value$}");
     } else if HEX_TYPES.contains(&type_data) {
         let hex_message = parse_int(message);
         if hashtag {
-            message = format!(
-                "{plus_option}{hex_message:>#.precision_value$X}"
-            );
+            message = format!("{plus_option}{hex_message:>#.precision_value$X}");
         } else {
-            message = format!(
-                "{plus_option}{hex_message:>.precision_value$X}"
-            );
+            message = format!("{plus_option}{hex_message:>.precision_value$X}");
         }
     } else if OCTAL_TYPES.contains(&type_data) {
         let octal_message = parse_int(message);
-        message = format!(
-            "{plus_option}{octal_message:>#.precision_value$o}"
-        );
+        message = format!("{plus_option}{octal_message:>#.precision_value$o}");
     }
     message
 }
