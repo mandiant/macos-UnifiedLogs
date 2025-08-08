@@ -664,10 +664,7 @@ mod tests {
             68, 234, 2, 0, 119, 171, 170, 119, 76, 234, 2, 0, 240, 254, 0, 0, 0, 1, 0, 0, 1, 0, 0,
             0, 0, 0, 3, 0, 0, 0, 0, 0, 19, 0, 47, 0,
         ];
-        assert!(matches!(
-            CatalogChunk::parse_catalog_subchunk(test_bad_compression),
-            Err(_)
-        ));
+        assert!(CatalogChunk::parse_catalog_subchunk(test_bad_compression).is_err());
     }
 
     #[test]

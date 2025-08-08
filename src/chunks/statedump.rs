@@ -104,7 +104,7 @@ impl Statedump {
         statedump_results.unknown_data_type = statedump_unknown_data_type;
         statedump_results.unknown_data_size = statedump_unknown_data_size;
 
-        let uuid_string = format!("{:02X?}", uuid);
+        let uuid_string = format!("{uuid:02X?}");
         statedump_results.uuid = clean_uuid(&uuid_string);
 
         let (input, statedump_data) = take(statedump_unknown_data_size)(input)?;

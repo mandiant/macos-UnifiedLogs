@@ -10,7 +10,6 @@
     clippy::all,
     clippy::doc_markdown,
     clippy::needless_continue,
-    clippy::match_on_vec_items,
     clippy::imprecise_flops,
     clippy::suboptimal_flops,
     clippy::lossy_float_literal,

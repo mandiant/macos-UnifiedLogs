@@ -168,7 +168,7 @@ fn test_parse_all_logs_big_sur() {
     let mut log_data_vec: Vec<LogData> = Vec::new();
     let exclude_missing = false;
     for logs in &log_data {
-        let (mut data, _) = build_log(&logs, &mut provider, &timesync_data, exclude_missing);
+        let (mut data, _) = build_log(logs, &mut provider, &timesync_data, exclude_missing);
         log_data_vec.append(&mut data);
     }
     // Run: "log raw-dump -a macos-unifiedlogs/tests/test_data/system_logs_big_sur.logarchive"
@@ -273,7 +273,7 @@ fn test_parse_all_logs_big_sur() {
     assert_eq!(invalid_shared_string_offsets, 0);
     assert_eq!(statedump_custom_objects, 0);
     assert_eq!(statedump_protocol_buffer, 0);
-    assert_eq!(found_precision_string, true);
+    assert!(found_precision_string);
 
     assert_eq!(statedump_count, 322);
     assert_eq!(signpost_count, 50665);
@@ -305,7 +305,7 @@ fn test_parse_all_persist_logs_with_network_big_sur() {
     let exclude_missing = false;
 
     for logs in &log_data {
-        let (mut data, _) = build_log(&logs, &mut provider, &timesync_data, exclude_missing);
+        let (mut data, _) = build_log(logs, &mut provider, &timesync_data, exclude_missing);
         log_data_vec.append(&mut data);
     }
 
@@ -374,7 +374,7 @@ fn test_parse_all_persist_logs_with_network_big_sur() {
     assert_eq!(messages_containing_network, 9173);
     // Console.app is missing a log entry. The log command shows the entry
     assert_eq!(default_type, 8320);
-    assert_eq!(network_message_uuid, true);
+    assert!(network_message_uuid);
 
     assert_eq!(info_type, 638);
     assert_eq!(error_type, 215);
@@ -396,7 +396,7 @@ fn test_parse_all_logs_private_big_sur() {
     let mut log_data_vec: Vec<LogData> = Vec::new();
     let exclude_missing = false;
     for logs in &log_data {
-        let (mut data, _) = build_log(&logs, &mut provider, &timesync_data, exclude_missing);
+        let (mut data, _) = build_log(logs, &mut provider, &timesync_data, exclude_missing);
         log_data_vec.append(&mut data);
     }
     assert_eq!(log_data_vec.len(), 887890);
@@ -405,7 +405,7 @@ fn test_parse_all_logs_private_big_sur() {
     let mut not_found = 0;
     let mut staff_count = 0;
     for logs in log_data_vec {
-        if logs.message == "" {
+        if logs.message.is_empty() {
             empty_counter += 1;
         }
         if logs.message.contains("<not found>") {
@@ -435,7 +435,7 @@ fn test_parse_all_logs_private_with_public_mix_big_sur() {
     let exclude_missing = false;
 
     for logs in &log_data {
-        let (mut data, _) = build_log(&logs, &mut provider, &timesync_data, exclude_missing);
+        let (mut data, _) = build_log(logs, &mut provider, &timesync_data, exclude_missing);
         log_data_vec.append(&mut data);
     }
     assert_eq!(log_data_vec.len(), 1287628);
@@ -523,7 +523,7 @@ fn test_parse_all_logs_private_with_public_mix_big_sur_single_file() {
 
     assert_eq!(hex_count, 4);
     assert_eq!(dns, 801);
-    assert_eq!(public_private_mixture, true);
+    assert!(public_private_mixture);
 }
 
 // We are able to get 2238 entries from this special tracev3 file. But log command only gets 231
@@ -596,7 +596,7 @@ fn test_big_sur_missing_oversize_strings() {
     let mut missing_strings = 0;
     for results in data {
         if results.message.contains("<Missing message data>") {
-            missing_strings = missing_strings + 1;
+            missing_strings += 1;
         }
     }
     // There should be only 29 entries that have actual missing data
@@ -643,7 +643,7 @@ fn test_big_sur_oversize_strings_in_another_file() {
     let mut missing_strings = 0;
     for results in data {
         if results.message.contains("<Missing message data>") {
-            missing_strings = missing_strings + 1;
+            missing_strings += 1;
         }
     }
     // 29 log entries actually have missing data

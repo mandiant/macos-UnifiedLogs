@@ -185,7 +185,7 @@ fn test_parse_all_logs_high_sierra() {
 
     let exclude_missing = false;
     for logs in &log_data {
-        let (mut data, _) = build_log(&logs, &mut provider, &timesync_data, exclude_missing);
+        let (mut data, _) = build_log(logs, &mut provider, &timesync_data, exclude_missing);
         log_data_vec.append(&mut data);
     }
     assert_eq!(log_data_vec.len(), 569796);
@@ -202,7 +202,7 @@ fn test_parse_all_logs_high_sierra() {
     let message_re = Regex::new(r"^[\s]*%s\s*$").unwrap();
 
     for logs in &log_data_vec {
-        if logs.message == "" {
+        if logs.message.is_empty() {
             empty_counter += 1;
 
             if logs.process

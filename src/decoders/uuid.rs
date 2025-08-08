@@ -16,7 +16,7 @@ pub(crate) fn parse_uuid(input: &str) -> Result<String, DecoderError<'_>> {
         message: "Failed to base64 decode uuid data",
     })?;
 
-    let mut uuid_string = format!("{:02X?}", decoded_data);
+    let mut uuid_string = format!("{decoded_data:02X?}");
     uuid_string = clean_uuid(&uuid_string);
     Ok(uuid_string)
 }

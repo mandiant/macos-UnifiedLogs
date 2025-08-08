@@ -174,10 +174,7 @@ fn get_sqlite_data(input: &[u8]) -> IResult<&[u8], &'static str> {
         101 => "SQLITE DONE",
         266 => "SQLITE IO ERR READ",
         _ => {
-            warn!(
-                "[macos-unifiedlogs] Unknown Core Location sqlite error: {}",
-                sqlite_code
-            );
+            warn!("[macos-unifiedlogs] Unknown Core Location sqlite error: {sqlite_code}");
             "Unknown Core Location sqlite error"
         }
     };
@@ -210,7 +207,7 @@ pub(crate) fn get_state_tracker_data(input: &[u8]) -> IResult<&[u8], String> {
         input,
         format!(
             "{{\"locationRestricted\":{}, \"locationServicesenabledStatus\":{}}}",
-            lowercase_bool(&format!("{}", location_restricted)),
+            lowercase_bool(&format!("{location_restricted}")),
             location_enabled
         ),
     ))
