@@ -217,7 +217,13 @@ fn parse_trace_file(
     // Loop through all tracev3 files in Persist directory
     let mut log_count = 0;
     for mut source in provider.tracev3_files() {
-        //println!("Parsing: {}", source.source_path());
+        if Path::new(source.source_path())
+            .file_name()
+            .is_some_and(|f| f.to_str().unwrap().starts_with("._"))
+        {
+            continue;
+        }
+        println!("Parsing: {}", source.source_path());
         log_count += iterate_chunks(
             source.reader(),
             &mut missing_data,
