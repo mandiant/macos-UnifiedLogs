@@ -14,7 +14,9 @@ jobs:
       matrix:
         info:
           - os: "ubuntu-latest"
-            target: ["aarch64-unknown-linux-gnu", "x86_64-unknown-linux-musl"]
+            target: "aarch64-unknown-linux-gnu"
+          - os: "ubuntu-latest"
+            target:  "x86_64-unknown-linux-musl"
     runs-on: ${{ matrix.info.os }}
     steps:
       - name: Setup Stable Rust toolchain
