@@ -19,6 +19,7 @@ jobs:
             target:  "x86_64-unknown-linux-musl"
     runs-on: ${{ matrix.info.os }}
     steps:
+      - uses: actions/checkout@v4
       - name: Setup Stable Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
