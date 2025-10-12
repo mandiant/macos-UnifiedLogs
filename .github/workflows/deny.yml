@@ -1,8 +1,16 @@
 name: Cargo Deny Check
 on: [pull_request]
+
+permissions: {}
+
 jobs:
   cargo-deny:
+    name: Run cargo deny checks
     runs-on: ubuntu-22.04
+    permissions: 
+      contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: EmbarkStudios/cargo-deny-action@v2
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5
+        with:
+          persist-credentials: false
+      - uses: EmbarkStudios/cargo-deny-action@f2ba7abc2abebaf185c833c3961145a3c275caad #v2.0.13

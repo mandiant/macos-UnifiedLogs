@@ -4,14 +4,23 @@ on:
       - v[0-9]+.*
 
 name: Publish
+permissions: {}
 
 jobs:
   crates_publish:
     name: Publish (crates.io)
     runs-on: ubuntu-latest
+    permissions: 
+      contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5
+        with:
+          persist-credentials: false
+      - name: Setup Stable Rust toolchain
+        uses: dtolnay/rust-toolchain@6d653acede28d24f02e3cd41383119e8b1b35921 #v2025.09.23
+        with:
+          components: clippy, rustfmt
+          toolchain: stable
 
       - name: Logon to Crates
         run: cargo login ${{ secrets.CRATES_IO_API_TOKEN }}
