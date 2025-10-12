@@ -6,8 +6,12 @@ on:
       - "**/Cargo.lock"
   schedule:
     - cron: "0 0 * * *"
+
+permissions: {}
+
 jobs:
   security_audit:
+    name: Cargo Audit
     strategy:
       fail-fast: false
       matrix:
@@ -18,12 +22,15 @@ jobs:
               cross: false,
             }
     runs-on: ${{ matrix.info.os }}
+    permissions: 
+      issues: write # Open issue if impacted by a new cargo audit result
+      contents: read
     steps:
-      - uses: actions/checkout@v4
-      - run: rustup update
-      - name: Generate Cargo.lock
-        run: cargo generate-lockfile
-      - name: Run audit action to view any security issues
-        uses: rustsec/audit-check@v2
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          persist-credentials: false
+      - name: Run audit action to view any security issues
+        uses: actions-rust-lang/audit@579aeab71c3eeeeae955a8e3c6136bfc93915987 #v1.24
+        with:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
