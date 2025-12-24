@@ -30,7 +30,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Run audit action to view any security issues
-        uses: actions-rust-lang/audit@579aeab71c3eeeeae955a8e3c6136bfc93915987 #v1.24
+        uses: actions-rust-lang/audit@410bbe6de17ca06c0a60070cca18c88b485ca5a1 #v1.2.6
         with:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

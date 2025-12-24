@@ -1,6 +1,6 @@
 [package]
 name = "macos-unifiedlogs"
-version = "0.4.2"
+version = "0.4.3"
 edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/mandiant/macos-unifiedlogs"
@@ -11,21 +11,21 @@ keywords = ["forensics", "macOS", "unifiedlog"]
 
 [dependencies]
 nom = "8.0.0"
-serde_json = "1.0.145"
+serde_json = "1.0.147"
 serde = { version = "1.0.228", features = ["derive"] }
-log = "0.4.28"
-lz4_flex = "0.11.5"
+log = "0.4.29"
+lz4_flex = "0.12.0"
 byteorder = "1.5.0"
 plist = "1.8.0"
-regex = "1.12.1"
+regex = "1.12.2"
 base64 = "0.22.1"
 chrono = "0.4.42"
 walkdir = "2.5.0"
-sunlight = "0.1.1"
+sunlight = "0.1.4"
 
 [dev-dependencies]
 chrono = "0.4.42"
-criterion = "0.7.0"
+criterion = "0.8.1"
 anyhow = "1.0.100"
 test-case = "3.3"
 
