@@ -288,6 +288,11 @@ fn iterate_chunks(
         count += results.len();
         oversize_strings.oversize = chunk.oversize;
         if let Err(err) = output(&results, writer) {
+            if err.downcast_ref::<std::io::Error>()
+                .is_some_and(|e| e.kind() == std::io::ErrorKind::BrokenPipe) {
+                debug!("Broken pipe. Exiting.");
+                std::process::exit(141);  // 128 + 13 (SIGPIPE)
+            }
             log::error!("Failed to output log data: {err:?}");
         }
         if missing_logs.catalog_data.is_empty()
