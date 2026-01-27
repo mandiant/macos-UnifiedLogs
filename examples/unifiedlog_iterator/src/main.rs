@@ -223,7 +223,7 @@ fn parse_trace_file(
         {
             continue;
         }
-        println!("Parsing: {}", source.source_path());
+        info!("Parsing: {}", source.source_path());
         log_count += iterate_chunks(
             source.reader(),
             &mut missing_data,
