@@ -57,11 +57,10 @@ impl MessageData {
             && let Some(ranges) = shared_string.ranges.first()
         {
             let uuid_index = ranges.unknown_uuid_index as usize;
-            if uuid_index >= shared_string.uuids.len() {
+            let uuid_len = shared_string.uuids.len();
+            if uuid_index >= uuid_len {
                 warn!(
-                    "[macos-unifiedlogs] UUID index {} out of bounds (max: {}). Malformed data.",
-                    uuid_index,
-                    shared_string.uuids.len()
+                    "[macos-unifiedlogs] UUID index {uuid_index} out of bounds (max: {uuid_len}). Malformed data."
                 );
                 message_data.format_string = String::from("Error: Invalid UUID index");
                 return Ok((&[], message_data));
@@ -128,11 +127,10 @@ impl MessageData {
                     message_data.format_string = message_string;
 
                     let uuid_index = ranges.unknown_uuid_index as usize;
-                    if uuid_index >= shared_string.uuids.len() {
+                    let uuid_len = shared_string.uuids.len();
+                    if uuid_index >= uuid_len {
                         warn!(
-                            "[macos-unifiedlogs] UUID index {} out of bounds (max: {}). Malformed data.",
-                            uuid_index,
-                            shared_string.uuids.len()
+                            "[macos-unifiedlogs] UUID index {uuid_index} out of bounds (max: {uuid_len}). Malformed data."
                         );
                         message_data.format_string = String::from("Error: Invalid UUID index");
                         return Ok((&[], message_data));
@@ -162,11 +160,10 @@ impl MessageData {
             // Still get the image path/library for the log entry
             if let Some(ranges) = shared_string.ranges.first() {
                 let uuid_index = ranges.unknown_uuid_index as usize;
-                if uuid_index >= shared_string.uuids.len() {
+                let uuid_len = shared_string.uuids.len();
+                if uuid_index >= uuid_len {
                     warn!(
-                        "[macos-unifiedlogs] UUID index {} out of bounds (max: {}). Malformed data.",
-                        uuid_index,
-                        shared_string.uuids.len()
+                        "[macos-unifiedlogs] UUID index {uuid_index} out of bounds (max: {uuid_len}). Malformed data."
                     );
                     message_data.format_string = String::from("Error: Invalid UUID index");
                     return Ok((&[], message_data));
