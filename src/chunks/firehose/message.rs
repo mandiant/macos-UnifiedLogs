@@ -56,11 +56,21 @@ impl MessageData {
             && let Some(shared_string) = provider.cached_dsc(&dsc_uuid)
             && let Some(ranges) = shared_string.ranges.first()
         {
-            shared_string.uuids[ranges.unknown_uuid_index as usize]
+            let uuid_index = ranges.unknown_uuid_index as usize;
+            let uuid_len = shared_string.uuids.len();
+            if uuid_index >= uuid_len {
+                warn!(
+                    "[macos-unifiedlogs] UUID index {uuid_index} out of bounds (max: {uuid_len}). Malformed data."
+                );
+                message_data.format_string = String::from("Error: Invalid UUID index");
+                return Ok((&[], message_data));
+            }
+
+            shared_string.uuids[uuid_index]
                 .path_string
                 .clone_into(&mut message_data.library);
 
-            shared_string.uuids[ranges.unknown_uuid_index as usize]
+            shared_string.uuids[uuid_index]
                 .uuid
                 .clone_into(&mut message_data.library_uuid);
             message_data.format_string = String::from("%s");
@@ -116,11 +126,21 @@ impl MessageData {
                     let (_, message_string) = extract_string(message_start)?;
                     message_data.format_string = message_string;
 
-                    shared_string.uuids[ranges.unknown_uuid_index as usize]
+                    let uuid_index = ranges.unknown_uuid_index as usize;
+                    let uuid_len = shared_string.uuids.len();
+                    if uuid_index >= uuid_len {
+                        warn!(
+                            "[macos-unifiedlogs] UUID index {uuid_index} out of bounds (max: {uuid_len}). Malformed data."
+                        );
+                        message_data.format_string = String::from("Error: Invalid UUID index");
+                        return Ok((&[], message_data));
+                    }
+
+                    shared_string.uuids[uuid_index]
                         .path_string
                         .clone_into(&mut message_data.library);
 
-                    shared_string.uuids[ranges.unknown_uuid_index as usize]
+                    shared_string.uuids[uuid_index]
                         .uuid
                         .clone_into(&mut message_data.library_uuid);
                     message_data.process_uuid = main_uuid;
@@ -139,11 +159,21 @@ impl MessageData {
         if let Some(shared_string) = provider.cached_dsc(&dsc_uuid) {
             // Still get the image path/library for the log entry
             if let Some(ranges) = shared_string.ranges.first() {
-                shared_string.uuids[ranges.unknown_uuid_index as usize]
+                let uuid_index = ranges.unknown_uuid_index as usize;
+                let uuid_len = shared_string.uuids.len();
+                if uuid_index >= uuid_len {
+                    warn!(
+                        "[macos-unifiedlogs] UUID index {uuid_index} out of bounds (max: {uuid_len}). Malformed data."
+                    );
+                    message_data.format_string = String::from("Error: Invalid UUID index");
+                    return Ok((&[], message_data));
+                }
+
+                shared_string.uuids[uuid_index]
                     .path_string
                     .clone_into(&mut message_data.library);
 
-                shared_string.uuids[ranges.unknown_uuid_index as usize]
+                shared_string.uuids[uuid_index]
                     .uuid
                     .clone_into(&mut message_data.library_uuid);
                 message_data.format_string = String::from("Error: Invalid shared string offset");
