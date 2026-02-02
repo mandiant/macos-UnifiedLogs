@@ -21,12 +21,19 @@ use std::fmt::Display;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-
-use ctrlc;
 
 use clap::{builder, Parser, ValueEnum};
 use csv::Writer;
+
+/// Global atomic flag to track SIGINT signal
+static SIGINT_RECEIVED: AtomicBool = AtomicBool::new(false);
+
+/// Signal handler function for SIGINT
+extern "C" fn handle_sigint(_sig: libc::c_int) {
+    SIGINT_RECEIVED.store(true, Ordering::SeqCst);
+}
 
 #[derive(Clone, Debug)]
 enum RuntimeError {
@@ -151,22 +158,25 @@ fn main() {
         .clone()
         .unwrap_or_else(|| Bookmark::default_path(&mode_str));
 
-    info!("Using bookmark path: {:?}", bookmark_path);
+    info!("Using bookmark path: {path:?}", path = bookmark_path);
 
     let mut bookmark = if args.resume {
         Bookmark::load(&bookmark_path).unwrap_or_else(|| {
-            info!("Creating new bookmark at {:?}", bookmark_path);
+            info!("Creating new bookmark at {path:?}", path = bookmark_path);
             Bookmark::new(source_id.clone())
         })
     } else {
         Bookmark::new(source_id.clone())
     };
 
-    // Check if source changed (for live mode, check boot UUID; for archive mode, warn)
+    // Check if source changed
+    // TODO: Also check boot UUID for live mode to detect system reboots.
+    // When boot UUID changes, timestamps reset, so we should start fresh.
     if args.resume && bookmark.source_id != source_id {
         warn!(
-            "Bookmark source mismatch: expected '{}', got '{}'. Starting fresh.",
-            bookmark.source_id, source_id
+            "Bookmark source mismatch: expected '{expected}', got '{actual}'. Starting fresh.",
+            expected = bookmark.source_id,
+            actual = source_id
         );
         bookmark = Bookmark::new(source_id.clone());
     }
@@ -185,25 +195,17 @@ fn main() {
 
     let mut writer = OutputWriter::new(Box::new(handle), output_format.into()).unwrap();
 
-    // Wrap bookmark in Arc<Mutex<>> for signal handler access
+    // Wrap bookmark in Arc<Mutex<>> for shared access
     let bookmark = Arc::new(Mutex::new(bookmark));
-    let bookmark_for_handler = Arc::clone(&bookmark);
-    let bookmark_path_for_handler = bookmark_path.clone();
 
-    // Set up signal handler
+    // Set up signal handler using libc
     if args.resume {
-        ctrlc::set_handler(move || {
-            eprintln!("\nReceived interrupt signal, saving bookmark...");
-            if let Ok(bookmark) = bookmark_for_handler.lock() {
-                if let Err(e) = bookmark.save(&bookmark_path_for_handler) {
-                    eprintln!("Failed to save bookmark on interrupt: {}", e);
-                } else {
-                    eprintln!("Bookmark saved to {:?}", bookmark_path_for_handler);
-                }
-            }
-            std::process::exit(0);
-        })
-        .expect("Error setting Ctrl-C handler");
+        unsafe {
+            libc::signal(
+                libc::SIGINT,
+                handle_sigint as *const () as libc::sighandler_t,
+            );
+        }
     }
 
     let result = match (args.mode.clone(), args.input.clone()) {
@@ -220,19 +222,42 @@ fn main() {
         }
     };
 
+    // Check if interrupted by signal
+    if SIGINT_RECEIVED.load(Ordering::SeqCst) {
+        eprintln!("\nReceived interrupt signal, saving bookmark...");
+        match bookmark.lock() {
+            Ok(bookmark) => {
+                if let Err(e) = bookmark.save(&bookmark_path) {
+                    eprintln!("Failed to save bookmark on interrupt: {error}", error = e);
+                } else {
+                    eprintln!("Bookmark saved to {path:?}", path = bookmark_path);
+                }
+            }
+            Err(_) => {
+                eprintln!("Warning: Could not acquire bookmark lock (mutex poisoned). Bookmark not saved.");
+            }
+        }
+        std::process::exit(0);
+    }
+
     // Save bookmark on normal exit
     if args.resume {
-        if let Ok(bookmark) = bookmark.lock() {
-            if let Err(e) = bookmark.save(&bookmark_path) {
-                error!("Failed to save bookmark: {}", e);
-            } else {
-                info!("Bookmark saved to {:?}", bookmark_path);
+        match bookmark.lock() {
+            Ok(bookmark) => {
+                if let Err(e) = bookmark.save(&bookmark_path) {
+                    error!("Failed to save bookmark: {error}", error = e);
+                } else {
+                    info!("Bookmark saved to {path:?}", path = bookmark_path);
+                }
+            }
+            Err(_) => {
+                error!("Could not acquire bookmark lock (mutex poisoned). Bookmark not saved.");
             }
         }
     }
 
     if let Err(e) = result {
-        error!("Error during parsing: {}", e);
+        error!("Error during parsing: {error}", error = e);
     }
 }
 
@@ -259,14 +284,21 @@ fn parse_single_file(
         }) {
         Ok(reader) => reader,
         Err(e) => {
-            error!("Failed to parse {path:?}: {e}");
+            error!("Failed to parse {path:?}: {error}", path = path, error = e);
             return Ok(());
         }
     };
 
     let total_count = results.len();
     let mut count = 0;
+    let mut max_seen_timestamp: f64 = 0.0;
+
     for row in results {
+        // Track max timestamp seen (including filtered) to advance bookmark
+        if row.time > max_seen_timestamp {
+            max_seen_timestamp = row.time;
+        }
+
         // Skip entries older than bookmark
         let should_process = {
             let bookmark = bookmark.lock().unwrap();
@@ -278,18 +310,22 @@ fn parse_single_file(
         }
 
         if let Err(e) = writer.write_record(&row) {
-            error!("Error writing record: {e}");
+            error!("Error writing record: {error}", error = e);
         } else {
-            let mut bookmark = bookmark.lock().unwrap();
-            bookmark.update_timestamp(row.time);
             count += 1;
         }
     }
 
+    // Update bookmark with max timestamp seen (not just written) to avoid re-scanning
+    if max_seen_timestamp > 0.0 {
+        let mut bookmark = bookmark.lock().unwrap();
+        bookmark.update_timestamp(max_seen_timestamp);
+    }
+
     info!(
-        "Wrote {} new log entries (skipped {} older)",
-        count,
-        total_count - count
+        "Wrote {written} new log entries (skipped {skipped} older)",
+        written = count,
+        skipped = total_count - count
     );
     Ok(())
 }
@@ -361,13 +397,18 @@ fn parse_trace_file(
     let mut log_count = 0;
     let mut skipped_count = 0;
     for mut source in provider.tracev3_files() {
+        // Check for interrupt signal
+        if SIGINT_RECEIVED.load(Ordering::SeqCst) {
+            info!("Interrupted by signal, stopping log parsing");
+            return Err(BrokenPipeError);
+        }
         if Path::new(source.source_path())
             .file_name()
             .is_some_and(|f| f.to_str().unwrap().starts_with("._"))
         {
             continue;
         }
-        info!("Parsing: {}", source.source_path());
+        info!("Parsing: {path}", path = source.source_path());
         match iterate_chunks(
             source.reader(),
             &mut missing_data,
@@ -380,7 +421,11 @@ fn parse_trace_file(
             Ok((new_count, new_skipped)) => {
                 log_count += new_count;
                 skipped_count += new_skipped;
-                debug!("count: {log_count}, skipped: {skipped_count}");
+                debug!(
+                    "count: {count}, skipped: {skipped}",
+                    count = log_count,
+                    skipped = skipped_count
+                );
             }
             Err(BrokenPipeError) => {
                 info!("Broken pipe detected, stopping log parsing");
@@ -389,8 +434,14 @@ fn parse_trace_file(
         }
     }
     let include_missing = false;
-    debug!("Oversize cache size: {}", oversize_strings.oversize.len());
-    debug!("Logs with missing Oversize strings: {}", missing_data.len());
+    debug!(
+        "Oversize cache size: {size}",
+        size = oversize_strings.oversize.len()
+    );
+    debug!(
+        "Logs with missing Oversize strings: {count}",
+        count = missing_data.len()
+    );
     debug!("Checking Oversize cache one more time...");
 
     // Since we have all Oversize entries now. Go through any log entries that we were not able to build before
@@ -402,6 +453,12 @@ fn parse_trace_file(
         // If we fail to find any missing data its probably due to the logs rolling
         // Ex: tracev3A rolls, tracev3B references Oversize entry in tracev3A will trigger missing data since tracev3A is gone
         let (results, _) = build_log(&leftover_data, provider, timesync_data, include_missing);
+
+        // Track max timestamp seen (including filtered) to advance bookmark even if all filtered
+        let max_seen_timestamp = results
+            .iter()
+            .map(|r| r.time)
+            .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
         // Filter results by bookmark
         let filtered_results: Vec<LogData> = results
@@ -422,28 +479,27 @@ fn parse_trace_file(
 
         log_count += filtered_results.len();
 
+        // Update bookmark with max timestamp seen (not just filtered) to avoid re-scanning
+        if let Some(max_time) = max_seen_timestamp {
+            let mut bookmark = bookmark.lock().unwrap();
+            bookmark.update_timestamp(max_time);
+        }
+
         if let Err(err) = output(&filtered_results, writer) {
             if err
                 .downcast_ref::<std::io::Error>()
                 .is_some_and(|e| e.kind() == std::io::ErrorKind::BrokenPipe)
             {
-                // Update bookmark before returning error
-                if let Some(max_time) = filtered_results.iter().map(|r| r.time as u64).max() {
-                    let mut bookmark = bookmark.lock().unwrap();
-                    bookmark.update_timestamp(max_time as f64);
-                }
                 return Err(BrokenPipeError);
             }
             log::error!("Failed to output remaining log data: {err:?}");
-        } else {
-            // Update bookmark with newest timestamp
-            if let Some(max_time) = filtered_results.iter().map(|r| r.time as u64).max() {
-                let mut bookmark = bookmark.lock().unwrap();
-                bookmark.update_timestamp(max_time as f64);
-            }
         }
     }
-    info!("Parsed {log_count} log entries (skipped {skipped_count} older entries)");
+    info!(
+        "Parsed {count} log entries (skipped {skipped} older entries)",
+        count = log_count,
+        skipped = skipped_count
+    );
     Ok(())
 }
 
@@ -475,8 +531,20 @@ fn iterate_chunks(
     let mut count = 0;
     let mut skipped = 0;
     for mut chunk in log_iterator {
+        // Check for interrupt signal
+        if SIGINT_RECEIVED.load(Ordering::SeqCst) {
+            debug!("Interrupted by signal in chunk processing");
+            return Err(BrokenPipeError);
+        }
+
         chunk.oversize.append(&mut oversize_strings.oversize);
         let (results, missing_logs) = build_log(&chunk, provider, timesync_data, exclude_missing);
+
+        // Track max timestamp seen (including filtered) to advance bookmark even if all filtered
+        let max_seen_timestamp = results
+            .iter()
+            .map(|r| r.time)
+            .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
         // Filter results by bookmark timestamp
         let filtered_results: Vec<LogData> = results
@@ -498,27 +566,21 @@ fn iterate_chunks(
         count += filtered_results.len();
         oversize_strings.oversize = chunk.oversize;
 
+        // Update bookmark with max timestamp seen (not just filtered) to avoid re-scanning
+        if let Some(max_time) = max_seen_timestamp {
+            let mut bookmark = bookmark.lock().unwrap();
+            bookmark.update_timestamp(max_time);
+        }
+
         if let Err(err) = output(&filtered_results, writer) {
             if err
                 .downcast_ref::<std::io::Error>()
                 .is_some_and(|e| e.kind() == std::io::ErrorKind::BrokenPipe)
             {
                 debug!("Broken pipe detected, saving bookmark before exit...");
-                // Save bookmark before exiting due to broken pipe
-                if let Some(max_time) = filtered_results.iter().map(|r| r.time as u64).max() {
-                    let mut bookmark = bookmark.lock().unwrap();
-                    bookmark.update_timestamp(max_time as f64);
-                }
-                // Return error to propagate up and trigger normal bookmark save
                 return Err(BrokenPipeError);
             }
             log::error!("Failed to output log data: {err:?}");
-        } else {
-            // Update bookmark with newest timestamp from this batch
-            if let Some(max_time) = filtered_results.iter().map(|r| r.time as u64).max() {
-                let mut bookmark = bookmark.lock().unwrap();
-                bookmark.update_timestamp(max_time as f64);
-            }
         }
 
         if missing_logs.catalog_data.is_empty()

@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 use std::fs;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -16,6 +16,11 @@ use serde::{Deserialize, Serialize};
 pub struct Bookmark {
     pub last_timestamp: f64,
     pub processed_files: HashMap<String, u64>,
+    /// Boot UUID to detect system reboots (resets bookmark if changed)
+    /// TODO: Implement boot UUID checking - currently stored but never compared.
+    /// Should extract boot UUID from first log entry and compare against current
+    /// system boot UUID. If different, reset bookmark since timestamps are only
+    /// valid within a single boot session.
     pub boot_uuid: Option<String>,
     pub last_updated: String,
     /// path for archive/file mode, "live" for live mode
@@ -35,9 +40,7 @@ impl Bookmark {
     }
 
     pub fn load(path: &Path) -> Option<Self> {
-        let mut file = fs::File::open(path).ok()?;
-        let mut contents = String::new();
-        file.read_to_string(&mut contents).ok()?;
+        let contents = fs::read_to_string(path).ok()?;
         serde_json::from_str(&contents).ok()
     }
 
@@ -65,11 +68,24 @@ impl Bookmark {
     }
 
     pub fn default_path(mode: &str) -> PathBuf {
-        let data_dir = dirs::data_dir().unwrap_or_else(|| {
-            dirs::home_dir()
-                .unwrap_or_else(|| PathBuf::from("."))
-                .join(".local/share")
-        });
+        // Get data directory following XDG Base Directory spec
+        // macOS: ~/Library/Application Support/
+        // Linux: ~/.local/share/
+        let data_dir = if cfg!(target_os = "macos") {
+            std::env::var("HOME")
+                .map(|home| PathBuf::from(home).join("Library/Application Support"))
+                .unwrap_or_else(|_| PathBuf::from("."))
+        } else {
+            // Linux/Unix fallback
+            std::env::var("XDG_DATA_HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| {
+                    std::env::var("HOME")
+                        .map(|home| PathBuf::from(home).join(".local/share"))
+                        .unwrap_or_else(|_| PathBuf::from("."))
+                })
+        };
+
         let bookmark_dir = data_dir.join("unifiedlog_iterator");
 
         // Create directory if it doesn't exist
@@ -87,7 +103,6 @@ impl Bookmark {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::NamedTempFile;
 
     #[test]
     fn test_bookmark_filter() {
@@ -107,16 +122,20 @@ mod tests {
         bookmark.boot_uuid = Some("ABC123".to_string());
         bookmark.update_file_offset("/test/file.tracev3", 1024);
 
-        let temp_file = NamedTempFile::new().unwrap();
-        bookmark.save(temp_file.path()).unwrap();
+        // Use a temporary file path in /tmp
+        let temp_path = PathBuf::from(format!("/tmp/test_bookmark_{}.json", std::process::id()));
+        bookmark.save(&temp_path).unwrap();
 
-        let loaded = Bookmark::load(temp_file.path()).unwrap();
+        let loaded = Bookmark::load(&temp_path).unwrap();
         assert_eq!(loaded.last_timestamp, bookmark.last_timestamp);
         assert_eq!(loaded.boot_uuid, bookmark.boot_uuid);
         assert_eq!(
             loaded.processed_files.get("/test/file.tracev3"),
             Some(&1024)
         );
+
+        // Cleanup
+        let _ = std::fs::remove_file(&temp_path);
     }
 
     #[test]
