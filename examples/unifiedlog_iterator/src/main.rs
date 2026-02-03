@@ -9,7 +9,7 @@ use chrono::{SecondsFormat, TimeZone, Utc};
 use log::{debug, error, info, warn, LevelFilter};
 use macos_unifiedlogs::filesystem::{LiveSystemProvider, LogarchiveProvider};
 use macos_unifiedlogs::iterator::UnifiedLogIterator;
-use macos_unifiedlogs::parser::{build_log, collect_timesync, filter_log_data_by_time, parse_log};
+use macos_unifiedlogs::parser::{build_log, collect_timesync, parse_log};
 use macos_unifiedlogs::timesync::TimesyncBoot;
 use macos_unifiedlogs::traits::FileProvider;
 use macos_unifiedlogs::unified_log::{LogData, UnifiedLogData};
@@ -25,7 +25,6 @@ use std::sync::{Arc, Mutex};
 
 use clap::{builder, Parser, ValueEnum};
 use csv::Writer;
-use serde::{Deserialize, Serialize};
 
 /// Global atomic flag to track SIGINT signal
 static SIGINT_RECEIVED: AtomicBool = AtomicBool::new(false);
@@ -35,94 +34,9 @@ extern "C" fn handle_sigint(_sig: libc::c_int) {
     SIGINT_RECEIVED.store(true, Ordering::SeqCst);
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
-struct TimeFilter {
-    start: Option<f64>,
-    end: Option<f64>,
-}
+use crate::bookmark::Bookmark;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-struct Bookmark {
-    last_timestamp: f64,
-    processed_files: HashMap<String, u64>,
-    /// Boot UUID to detect system reboots (resets bookmark if changed)
-    /// TODO: Implement boot UUID checking - currently stored but never compared.
-    /// Should extract boot UUID from first log entry and compare against current
-    /// system boot UUID. If different, reset bookmark since timestamps are only
-    /// valid within a single boot session.
-    boot_uuid: Option<String>,
-    last_updated: String,
-    /// path for archive/file mode, "live" for live mode
-    source_id: String,
-}
-
-impl Bookmark {
-    /// Create a new bookmark for a given source
-    fn new(source_id: String) -> Self {
-        Self {
-            last_timestamp: 0.0,
-            processed_files: HashMap::new(),
-            boot_uuid: None,
-            last_updated: chrono::Utc::now().to_rfc3339(),
-            source_id,
-        }
-    }
-
-    fn load(path: &Path) -> Option<Self> {
-        let contents = fs::read_to_string(path).ok()?;
-        serde_json::from_str(&contents).ok()
-    }
-
-    fn save(&self, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-        let json = serde_json::to_string_pretty(self)?;
-        let mut file = fs::File::create(path)?;
-        file.write_all(json.as_bytes())?;
-        Ok(())
-    }
-
-    fn should_process_entry(&self, timestamp: f64) -> bool {
-        timestamp > self.last_timestamp
-    }
-
-    fn update_timestamp(&mut self, timestamp: f64) {
-        if timestamp > self.last_timestamp {
-            self.last_timestamp = timestamp;
-            self.last_updated = chrono::Utc::now().to_rfc3339();
-        }
-    }
-
-    fn default_path(mode: &str) -> PathBuf {
-        // Get data directory following XDG Base Directory spec
-        // macOS: ~/Library/Application Support/
-        // Linux: ~/.local/share/
-        let data_dir = if cfg!(target_os = "macos") {
-            std::env::var("HOME")
-                .map(|home| PathBuf::from(home).join("Library/Application Support"))
-                .unwrap_or_else(|_| PathBuf::from("."))
-        } else {
-            // Linux/Unix fallback
-            std::env::var("XDG_DATA_HOME")
-                .map(PathBuf::from)
-                .unwrap_or_else(|_| {
-                    std::env::var("HOME")
-                        .map(|home| PathBuf::from(home).join(".local/share"))
-                        .unwrap_or_else(|_| PathBuf::from("."))
-                })
-        };
-
-        let bookmark_dir = data_dir.join("unifiedlog_iterator");
-
-        // Create directory if it doesn't exist
-        if let Err(e) = std::fs::create_dir_all(&bookmark_dir) {
-            eprintln!(
-                "Warning: Failed to create bookmark directory {:?}: {}",
-                bookmark_dir, e
-            );
-        }
-
-        bookmark_dir.join(format!("{}.bookmark", mode))
-    }
-}
+mod bookmark;
 
 struct IterationContext {
     missing_data: Vec<UnifiedLogData>,
@@ -130,49 +44,8 @@ struct IterationContext {
 }
 
 struct ParseContext<'a> {
-    time_filter: TimeFilter,
     bookmark: Arc<Mutex<Bookmark>>,
     context: &'a mut IterationContext,
-}
-
-fn parse_time_filter(from: &Option<String>, to: &Option<String>) -> Result<TimeFilter, String> {
-    let start = match from {
-        Some(value) => Some(parse_rfc3339_to_nanos(value)?),
-        None => None,
-    };
-    let end = match to {
-        Some(value) => Some(parse_rfc3339_to_nanos(value)?),
-        None => None,
-    };
-
-    Ok(TimeFilter { start, end })
-}
-
-fn parse_rfc3339_to_nanos(value: &str) -> Result<f64, String> {
-    let dt = chrono::DateTime::parse_from_rfc3339(value)
-        .map_err(|err| format!("Invalid RFC3339 time '{value}': {err}"))?;
-    let timestamp = dt
-        .timestamp_nanos_opt()
-        .ok_or_else(|| format!("Timestamp out of range for '{value}'"))?;
-    Ok(timestamp as f64)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{parse_rfc3339_to_nanos, parse_time_filter};
-
-    #[test]
-    fn test_parse_time_filter_empty() {
-        let filter = parse_time_filter(&None, &None).unwrap();
-        assert_eq!(filter.start, None);
-        assert_eq!(filter.end, None);
-    }
-
-    #[test]
-    fn test_parse_rfc3339_to_nanos() {
-        let nanos = parse_rfc3339_to_nanos("2026-02-01T00:00:00Z").unwrap();
-        assert!(nanos > 0.0);
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -238,14 +111,6 @@ struct Args {
     /// Path to bookmark file for resuming (defaults to ~/.local/share or ~/Library/Application Support/)
     #[clap(long)]
     bookmark_path: Option<PathBuf>,
-
-    /// Filter logs from this time (RFC3339, ex: 2026-02-03T14:03:04Z)
-    #[clap(long)]
-    from: Option<String>,
-
-    /// Filter logs until this time (RFC3339, ex: 2026-02-03T14:03:04Z)
-    #[clap(long)]
-    to: Option<String>,
 }
 
 #[derive(Parser, Debug, Clone, ValueEnum)]
@@ -291,13 +156,6 @@ fn main() {
 
     let args = Args::parse();
     let output_format = args.format;
-    let time_filter = match parse_time_filter(&args.from, &args.to) {
-        Ok(filter) => filter,
-        Err(message) => {
-            error!("Invalid time filter: {error}", error = message);
-            return;
-        }
-    };
 
     // Determine source ID for bookmark
     let source_id = match (&args.mode, &args.input) {
@@ -316,7 +174,7 @@ fn main() {
     info!("Using bookmark path: {path:?}", path = bookmark_path);
 
     let mut bookmark = if args.resume {
-        Bookmark::load(&bookmark_path).unwrap_or_else(|| {
+        Bookmark::load_bookmark(&bookmark_path).unwrap_or_else(|| {
             info!("Creating new bookmark at {path:?}", path = bookmark_path);
             Bookmark::new(source_id.clone())
         })
@@ -364,12 +222,12 @@ fn main() {
     }
 
     let result = match (args.mode.clone(), args.input.clone()) {
-        (Mode::Live, None) => parse_live_system(&mut writer, Arc::clone(&bookmark), time_filter),
+        (Mode::Live, None) => parse_live_system(&mut writer, Arc::clone(&bookmark)),
         (Mode::LogArchive, Some(path)) => {
-            parse_log_archive(&path, &mut writer, Arc::clone(&bookmark), time_filter)
+            parse_log_archive(&path, &mut writer, Arc::clone(&bookmark))
         }
         (Mode::SingleFile, Some(path)) => {
-            parse_single_file(&path, &mut writer, Arc::clone(&bookmark), time_filter)
+            parse_single_file(&path, &mut writer, Arc::clone(&bookmark))
         }
         _ => {
             error!("log-archive and single-file modes require an --input argument");
@@ -382,7 +240,7 @@ fn main() {
         eprintln!("\nReceived interrupt signal, saving bookmark...");
         match bookmark.lock() {
             Ok(bookmark) => {
-                if let Err(e) = bookmark.save(&bookmark_path) {
+                if let Err(e) = bookmark.save_bookmark(&bookmark_path) {
                     eprintln!("Failed to save bookmark on interrupt: {error}", error = e);
                 } else {
                     eprintln!("Bookmark saved to {path:?}", path = bookmark_path);
@@ -399,7 +257,7 @@ fn main() {
     if args.resume {
         match bookmark.lock() {
             Ok(bookmark) => {
-                if let Err(e) = bookmark.save(&bookmark_path) {
+                if let Err(e) = bookmark.save_bookmark(&bookmark_path) {
                     error!("Failed to save bookmark: {error}", error = e);
                 } else {
                     info!("Bookmark saved to {path:?}", path = bookmark_path);
@@ -420,7 +278,6 @@ fn parse_single_file(
     path: &Path,
     writer: &mut OutputWriter,
     bookmark: Arc<Mutex<Bookmark>>,
-    time_filter: TimeFilter,
 ) -> Result<(), Box<dyn Error>> {
     let mut provider = LogarchiveProvider::new(path);
     let results = match fs::File::open(path)
@@ -445,13 +302,6 @@ fn parse_single_file(
         }
     };
 
-    let results = match filter_log_data_by_time(results, time_filter.start, time_filter.end) {
-        Ok(results) => results,
-        Err(err) => {
-            error!("Invalid time filter: {error}", error = err);
-            return Ok(());
-        }
-    };
     let total_count = results.len();
     let mut count = 0;
     let mut max_seen_timestamp: f64 = 0.0;
@@ -498,7 +348,6 @@ fn parse_log_archive(
     path: &Path,
     writer: &mut OutputWriter,
     bookmark: Arc<Mutex<Bookmark>>,
-    time_filter: TimeFilter,
 ) -> Result<(), Box<dyn Error>> {
     let mut provider = LogarchiveProvider::new(path);
 
@@ -507,7 +356,7 @@ fn parse_log_archive(
 
     // Keep UUID, UUID cache, timesync files in memory while we parse all tracev3 files
     // Allows for faster lookups
-    match parse_trace_file(&timesync_data, &mut provider, writer, bookmark, time_filter) {
+    match parse_trace_file(&timesync_data, &mut provider, writer, bookmark) {
         Ok(()) => {
             info!("Finished parsing Unified Log data.");
             Ok(())
@@ -523,12 +372,11 @@ fn parse_log_archive(
 fn parse_live_system(
     writer: &mut OutputWriter,
     bookmark: Arc<Mutex<Bookmark>>,
-    time_filter: TimeFilter,
 ) -> Result<(), Box<dyn Error>> {
     let mut provider = LiveSystemProvider::default();
     let timesync_data = collect_timesync(&provider).unwrap();
 
-    match parse_trace_file(&timesync_data, &mut provider, writer, bookmark, time_filter) {
+    match parse_trace_file(&timesync_data, &mut provider, writer, bookmark) {
         Ok(()) => {
             info!("Finished parsing Unified Log data.");
             Ok(())
@@ -546,7 +394,6 @@ fn parse_trace_file(
     provider: &mut dyn FileProvider,
     writer: &mut OutputWriter,
     bookmark: Arc<Mutex<Bookmark>>,
-    time_filter: TimeFilter,
 ) -> Result<(), BrokenPipeError> {
     let mut context = IterationContext {
         missing_data: Vec::new(),
@@ -557,7 +404,6 @@ fn parse_trace_file(
         },
     };
     let mut parse_context = ParseContext {
-        time_filter,
         bookmark,
         context: &mut context,
     };
@@ -623,17 +469,6 @@ fn parse_trace_file(
         // If we fail to find any missing data its probably due to the logs rolling
         // Ex: tracev3A rolls, tracev3B references Oversize entry in tracev3A will trigger missing data since tracev3A is gone
         let (results, _) = build_log(&leftover_data, provider, timesync_data, include_missing);
-        let results = match filter_log_data_by_time(
-            results,
-            parse_context.time_filter.start,
-            parse_context.time_filter.end,
-        ) {
-            Ok(results) => results,
-            Err(err) => {
-                error!("Invalid time filter: {error}", error = err);
-                return Err(BrokenPipeError);
-            }
-        };
 
         // Track max timestamp seen (including filtered) to advance bookmark even if all filtered
         let max_seen_timestamp = results
@@ -720,17 +555,6 @@ fn iterate_chunks(
             .oversize
             .append(&mut parse_context.context.oversize_strings.oversize);
         let (results, missing_logs) = build_log(&chunk, provider, timesync_data, exclude_missing);
-        let results = match filter_log_data_by_time(
-            results,
-            parse_context.time_filter.start,
-            parse_context.time_filter.end,
-        ) {
-            Ok(results) => results,
-            Err(err) => {
-                error!("Invalid time filter: {error}", error = err);
-                return Err(BrokenPipeError);
-            }
-        };
 
         // Track max timestamp seen (including filtered) to advance bookmark even if all filtered
         let max_seen_timestamp = results
