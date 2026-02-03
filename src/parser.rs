@@ -93,6 +93,65 @@ pub fn build_log(
     LogData::build_log(unified_data, provider, timesync_data, exclude_missing)
 }
 
+/// Filter log entries by time range (inclusive)
+///
+/// `start` and `end` represent the log entry `time` field (nanoseconds since Unix epoch).
+/// If both are `None`, the input logs are returned unchanged.
+#[derive(Debug)]
+pub enum TimeFilterError {
+    InvalidRange { start: f64, end: f64 },
+}
+
+impl std::fmt::Display for TimeFilterError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TimeFilterError::InvalidRange { start, end } => {
+                write!(f, "start time must be <= end time (start={start}, end={end})")
+            }
+        }
+    }
+}
+
+impl std::error::Error for TimeFilterError {}
+
+pub fn filter_log_data_by_time(
+    logs: Vec<LogData>,
+    start: Option<f64>,
+    end: Option<f64>,
+) -> Result<Vec<LogData>, TimeFilterError> {
+    if start.is_none() && end.is_none() {
+        return Ok(logs);
+    }
+
+    if let (Some(start_time), Some(end_time)) = (start, end)
+        && start_time > end_time
+    {
+        return Err(TimeFilterError::InvalidRange {
+            start: start_time,
+            end: end_time,
+        });
+    }
+
+    let filtered = logs
+        .into_iter()
+        .filter(|log| {
+            if let Some(start_time) = start
+                && log.time < start_time
+            {
+                return false;
+            }
+            if let Some(end_time) = end
+                && log.time > end_time
+            {
+                return false;
+            }
+            true
+        })
+        .collect();
+
+    Ok(filtered)
+}
+
 /// Parse all UUID files in provided directory. The directory should follow the same layout as the live system (ex: path/to/files/\<two character UUID\>/\<remaining UUID name\>)
 pub fn collect_strings(provider: &dyn FileProvider) -> Result<Vec<UUIDText>, ParserError> {
     let mut uuidtext_vec: Vec<UUIDText> = Vec::new();
@@ -154,6 +213,53 @@ pub fn collect_shared_strings(
         };
     }
     Ok(shared_strings_vec)
+}
+
+#[cfg(test)]
+mod time_filter_tests {
+    use super::filter_log_data_by_time;
+    use crate::unified_log::{EventType, LogData, LogType};
+
+    fn make_log(time: f64) -> LogData {
+        LogData {
+            subsystem: String::new(),
+            thread_id: 0,
+            pid: 0,
+            euid: 0,
+            library: String::new(),
+            library_uuid: String::new(),
+            activity_id: 0,
+            time,
+            category: String::new(),
+            event_type: EventType::Log,
+            log_type: LogType::Default,
+            process: String::new(),
+            process_uuid: String::new(),
+            message: String::new(),
+            raw_message: String::new(),
+            boot_uuid: String::new(),
+            timezone_name: String::new(),
+            message_entries: Vec::new(),
+            timestamp: String::new(),
+        }
+    }
+
+    #[test]
+    fn test_filter_log_data_by_time_empty_range() {
+        let logs: Vec<LogData> = Vec::new();
+        let results = filter_log_data_by_time(logs, Some(2.0), Some(1.0));
+        assert!(results.is_err());
+    }
+
+    #[test]
+    fn test_filter_log_data_by_time_inclusive() {
+        let log1 = make_log(100.0);
+        let log2 = make_log(200.0);
+
+        let filtered = filter_log_data_by_time(vec![log1, log2], Some(100.0), Some(200.0)).unwrap();
+        assert_eq!(filtered.len(), 2);
+        assert!(filtered.iter().all(|log| log.time >= 100.0 && log.time <= 200.0));
+    }
 }
 
 /// Parse all timesync files in provided directory

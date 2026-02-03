@@ -7,10 +7,9 @@
 
 use chrono::{SecondsFormat, TimeZone, Utc};
 use log::{debug, error, info, warn, LevelFilter};
-use macos_unifiedlogs::bookmark::Bookmark;
 use macos_unifiedlogs::filesystem::{LiveSystemProvider, LogarchiveProvider};
 use macos_unifiedlogs::iterator::UnifiedLogIterator;
-use macos_unifiedlogs::parser::{build_log, collect_timesync, parse_log};
+use macos_unifiedlogs::parser::{build_log, collect_timesync, filter_log_data_by_time, parse_log};
 use macos_unifiedlogs::timesync::TimesyncBoot;
 use macos_unifiedlogs::traits::FileProvider;
 use macos_unifiedlogs::unified_log::{LogData, UnifiedLogData};
@@ -26,6 +25,7 @@ use std::sync::{Arc, Mutex};
 
 use clap::{builder, Parser, ValueEnum};
 use csv::Writer;
+use serde::{Deserialize, Serialize};
 
 /// Global atomic flag to track SIGINT signal
 static SIGINT_RECEIVED: AtomicBool = AtomicBool::new(false);
@@ -33,6 +33,146 @@ static SIGINT_RECEIVED: AtomicBool = AtomicBool::new(false);
 /// Signal handler function for SIGINT
 extern "C" fn handle_sigint(_sig: libc::c_int) {
     SIGINT_RECEIVED.store(true, Ordering::SeqCst);
+}
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+struct TimeFilter {
+    start: Option<f64>,
+    end: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct Bookmark {
+    last_timestamp: f64,
+    processed_files: HashMap<String, u64>,
+    /// Boot UUID to detect system reboots (resets bookmark if changed)
+    /// TODO: Implement boot UUID checking - currently stored but never compared.
+    /// Should extract boot UUID from first log entry and compare against current
+    /// system boot UUID. If different, reset bookmark since timestamps are only
+    /// valid within a single boot session.
+    boot_uuid: Option<String>,
+    last_updated: String,
+    /// path for archive/file mode, "live" for live mode
+    source_id: String,
+}
+
+impl Bookmark {
+    /// Create a new bookmark for a given source
+    fn new(source_id: String) -> Self {
+        Self {
+            last_timestamp: 0.0,
+            processed_files: HashMap::new(),
+            boot_uuid: None,
+            last_updated: chrono::Utc::now().to_rfc3339(),
+            source_id,
+        }
+    }
+
+    fn load(path: &Path) -> Option<Self> {
+        let contents = fs::read_to_string(path).ok()?;
+        serde_json::from_str(&contents).ok()
+    }
+
+    fn save(&self, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+        let json = serde_json::to_string_pretty(self)?;
+        let mut file = fs::File::create(path)?;
+        file.write_all(json.as_bytes())?;
+        Ok(())
+    }
+
+    fn should_process_entry(&self, timestamp: f64) -> bool {
+        timestamp > self.last_timestamp
+    }
+
+    fn update_timestamp(&mut self, timestamp: f64) {
+        if timestamp > self.last_timestamp {
+            self.last_timestamp = timestamp;
+            self.last_updated = chrono::Utc::now().to_rfc3339();
+        }
+    }
+
+    fn default_path(mode: &str) -> PathBuf {
+        // Get data directory following XDG Base Directory spec
+        // macOS: ~/Library/Application Support/
+        // Linux: ~/.local/share/
+        let data_dir = if cfg!(target_os = "macos") {
+            std::env::var("HOME")
+                .map(|home| PathBuf::from(home).join("Library/Application Support"))
+                .unwrap_or_else(|_| PathBuf::from("."))
+        } else {
+            // Linux/Unix fallback
+            std::env::var("XDG_DATA_HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| {
+                    std::env::var("HOME")
+                        .map(|home| PathBuf::from(home).join(".local/share"))
+                        .unwrap_or_else(|_| PathBuf::from("."))
+                })
+        };
+
+        let bookmark_dir = data_dir.join("unifiedlog_iterator");
+
+        // Create directory if it doesn't exist
+        if let Err(e) = std::fs::create_dir_all(&bookmark_dir) {
+            eprintln!(
+                "Warning: Failed to create bookmark directory {:?}: {}",
+                bookmark_dir, e
+            );
+        }
+
+        bookmark_dir.join(format!("{}.bookmark", mode))
+    }
+}
+
+struct IterationContext {
+    missing_data: Vec<UnifiedLogData>,
+    oversize_strings: UnifiedLogData,
+}
+
+struct ParseContext<'a> {
+    time_filter: TimeFilter,
+    bookmark: Arc<Mutex<Bookmark>>,
+    context: &'a mut IterationContext,
+}
+
+fn parse_time_filter(from: &Option<String>, to: &Option<String>) -> Result<TimeFilter, String> {
+    let start = match from {
+        Some(value) => Some(parse_rfc3339_to_nanos(value)?),
+        None => None,
+    };
+    let end = match to {
+        Some(value) => Some(parse_rfc3339_to_nanos(value)?),
+        None => None,
+    };
+
+    Ok(TimeFilter { start, end })
+}
+
+fn parse_rfc3339_to_nanos(value: &str) -> Result<f64, String> {
+    let dt = chrono::DateTime::parse_from_rfc3339(value)
+        .map_err(|err| format!("Invalid RFC3339 time '{value}': {err}"))?;
+    let timestamp = dt
+        .timestamp_nanos_opt()
+        .ok_or_else(|| format!("Timestamp out of range for '{value}'"))?;
+    Ok(timestamp as f64)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_rfc3339_to_nanos, parse_time_filter};
+
+    #[test]
+    fn test_parse_time_filter_empty() {
+        let filter = parse_time_filter(&None, &None).unwrap();
+        assert_eq!(filter.start, None);
+        assert_eq!(filter.end, None);
+    }
+
+    #[test]
+    fn test_parse_rfc3339_to_nanos() {
+        let nanos = parse_rfc3339_to_nanos("2026-02-01T00:00:00Z").unwrap();
+        assert!(nanos > 0.0);
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -98,6 +238,14 @@ struct Args {
     /// Path to bookmark file for resuming (defaults to ~/.local/share or ~/Library/Application Support/)
     #[clap(long)]
     bookmark_path: Option<PathBuf>,
+
+    /// Filter logs from this time (RFC3339, ex: 2026-02-03T14:03:04Z)
+    #[clap(long)]
+    from: Option<String>,
+
+    /// Filter logs until this time (RFC3339, ex: 2026-02-03T14:03:04Z)
+    #[clap(long)]
+    to: Option<String>,
 }
 
 #[derive(Parser, Debug, Clone, ValueEnum)]
@@ -143,6 +291,13 @@ fn main() {
 
     let args = Args::parse();
     let output_format = args.format;
+    let time_filter = match parse_time_filter(&args.from, &args.to) {
+        Ok(filter) => filter,
+        Err(message) => {
+            error!("Invalid time filter: {error}", error = message);
+            return;
+        }
+    };
 
     // Determine source ID for bookmark
     let source_id = match (&args.mode, &args.input) {
@@ -209,12 +364,12 @@ fn main() {
     }
 
     let result = match (args.mode.clone(), args.input.clone()) {
-        (Mode::Live, None) => parse_live_system(&mut writer, Arc::clone(&bookmark)),
+        (Mode::Live, None) => parse_live_system(&mut writer, Arc::clone(&bookmark), time_filter),
         (Mode::LogArchive, Some(path)) => {
-            parse_log_archive(&path, &mut writer, Arc::clone(&bookmark))
+            parse_log_archive(&path, &mut writer, Arc::clone(&bookmark), time_filter)
         }
         (Mode::SingleFile, Some(path)) => {
-            parse_single_file(&path, &mut writer, Arc::clone(&bookmark))
+            parse_single_file(&path, &mut writer, Arc::clone(&bookmark), time_filter)
         }
         _ => {
             error!("log-archive and single-file modes require an --input argument");
@@ -265,6 +420,7 @@ fn parse_single_file(
     path: &Path,
     writer: &mut OutputWriter,
     bookmark: Arc<Mutex<Bookmark>>,
+    time_filter: TimeFilter,
 ) -> Result<(), Box<dyn Error>> {
     let mut provider = LogarchiveProvider::new(path);
     let results = match fs::File::open(path)
@@ -289,6 +445,13 @@ fn parse_single_file(
         }
     };
 
+    let results = match filter_log_data_by_time(results, time_filter.start, time_filter.end) {
+        Ok(results) => results,
+        Err(err) => {
+            error!("Invalid time filter: {error}", error = err);
+            return Ok(());
+        }
+    };
     let total_count = results.len();
     let mut count = 0;
     let mut max_seen_timestamp: f64 = 0.0;
@@ -335,6 +498,7 @@ fn parse_log_archive(
     path: &Path,
     writer: &mut OutputWriter,
     bookmark: Arc<Mutex<Bookmark>>,
+    time_filter: TimeFilter,
 ) -> Result<(), Box<dyn Error>> {
     let mut provider = LogarchiveProvider::new(path);
 
@@ -343,7 +507,7 @@ fn parse_log_archive(
 
     // Keep UUID, UUID cache, timesync files in memory while we parse all tracev3 files
     // Allows for faster lookups
-    match parse_trace_file(&timesync_data, &mut provider, writer, bookmark) {
+    match parse_trace_file(&timesync_data, &mut provider, writer, bookmark, time_filter) {
         Ok(()) => {
             info!("Finished parsing Unified Log data.");
             Ok(())
@@ -359,11 +523,12 @@ fn parse_log_archive(
 fn parse_live_system(
     writer: &mut OutputWriter,
     bookmark: Arc<Mutex<Bookmark>>,
+    time_filter: TimeFilter,
 ) -> Result<(), Box<dyn Error>> {
     let mut provider = LiveSystemProvider::default();
     let timesync_data = collect_timesync(&provider).unwrap();
 
-    match parse_trace_file(&timesync_data, &mut provider, writer, bookmark) {
+    match parse_trace_file(&timesync_data, &mut provider, writer, bookmark, time_filter) {
         Ok(()) => {
             info!("Finished parsing Unified Log data.");
             Ok(())
@@ -381,18 +546,24 @@ fn parse_trace_file(
     provider: &mut dyn FileProvider,
     writer: &mut OutputWriter,
     bookmark: Arc<Mutex<Bookmark>>,
+    time_filter: TimeFilter,
 ) -> Result<(), BrokenPipeError> {
+    let mut context = IterationContext {
+        missing_data: Vec::new(),
+        oversize_strings: UnifiedLogData {
+            header: Vec::new(),
+            catalog_data: Vec::new(),
+            oversize: Vec::new(),
+        },
+    };
+    let mut parse_context = ParseContext {
+        time_filter,
+        bookmark,
+        context: &mut context,
+    };
     // We need to persist the Oversize log entries (they contain large strings that don't fit in normal log entries)
     // Some log entries have Oversize strings located in different tracev3 files.
     // This is very rare. Seen in ~20 log entries out of ~700,000. Seen in ~700 out of ~18 million
-    let mut oversize_strings = UnifiedLogData {
-        header: Vec::new(),
-        catalog_data: Vec::new(),
-        oversize: Vec::new(),
-    };
-
-    let mut missing_data: Vec<UnifiedLogData> = Vec::new();
-
     // Loop through all tracev3 files in Persist directory
     let mut log_count = 0;
     let mut skipped_count = 0;
@@ -411,12 +582,10 @@ fn parse_trace_file(
         info!("Parsing: {path}", path = source.source_path());
         match iterate_chunks(
             source.reader(),
-            &mut missing_data,
             provider,
             timesync_data,
             writer,
-            &mut oversize_strings,
-            Arc::clone(&bookmark),
+            &mut parse_context,
         ) {
             Ok((new_count, new_skipped)) => {
                 log_count += new_count;
@@ -436,23 +605,35 @@ fn parse_trace_file(
     let include_missing = false;
     debug!(
         "Oversize cache size: {size}",
-        size = oversize_strings.oversize.len()
+        size = parse_context.context.oversize_strings.oversize.len()
     );
     debug!(
         "Logs with missing Oversize strings: {count}",
-        count = missing_data.len()
+        count = parse_context.context.missing_data.len()
     );
     debug!("Checking Oversize cache one more time...");
 
     // Since we have all Oversize entries now. Go through any log entries that we were not able to build before
-    for mut leftover_data in missing_data {
+    let leftover_data = std::mem::take(&mut parse_context.context.missing_data);
+    for mut leftover_data in leftover_data {
         // Add all of our previous oversize data to logs for lookups
-        leftover_data.oversize = oversize_strings.oversize.clone();
+        leftover_data.oversize = parse_context.context.oversize_strings.oversize.clone();
 
         // Exclude_missing = false
         // If we fail to find any missing data its probably due to the logs rolling
         // Ex: tracev3A rolls, tracev3B references Oversize entry in tracev3A will trigger missing data since tracev3A is gone
         let (results, _) = build_log(&leftover_data, provider, timesync_data, include_missing);
+        let results = match filter_log_data_by_time(
+            results,
+            parse_context.time_filter.start,
+            parse_context.time_filter.end,
+        ) {
+            Ok(results) => results,
+            Err(err) => {
+                error!("Invalid time filter: {error}", error = err);
+                return Err(BrokenPipeError);
+            }
+        };
 
         // Track max timestamp seen (including filtered) to advance bookmark even if all filtered
         let max_seen_timestamp = results
@@ -465,7 +646,7 @@ fn parse_trace_file(
             .into_iter()
             .filter(|r| {
                 let should_process = {
-                    let bookmark = bookmark.lock().unwrap();
+                    let bookmark = parse_context.bookmark.lock().unwrap();
                     bookmark.should_process_entry(r.time)
                 };
                 if should_process {
@@ -481,7 +662,7 @@ fn parse_trace_file(
 
         // Update bookmark with max timestamp seen (not just filtered) to avoid re-scanning
         if let Some(max_time) = max_seen_timestamp {
-            let mut bookmark = bookmark.lock().unwrap();
+            let mut bookmark = parse_context.bookmark.lock().unwrap();
             bookmark.update_timestamp(max_time);
         }
 
@@ -505,12 +686,10 @@ fn parse_trace_file(
 
 fn iterate_chunks(
     mut reader: impl Read,
-    missing: &mut Vec<UnifiedLogData>,
     provider: &mut dyn FileProvider,
     timesync_data: &HashMap<String, TimesyncBoot>,
     writer: &mut OutputWriter,
-    oversize_strings: &mut UnifiedLogData,
-    bookmark: Arc<Mutex<Bookmark>>,
+    parse_context: &mut ParseContext,
 ) -> Result<(usize, usize), BrokenPipeError> {
     let mut buf = Vec::new();
 
@@ -537,8 +716,21 @@ fn iterate_chunks(
             return Err(BrokenPipeError);
         }
 
-        chunk.oversize.append(&mut oversize_strings.oversize);
+        chunk
+            .oversize
+            .append(&mut parse_context.context.oversize_strings.oversize);
         let (results, missing_logs) = build_log(&chunk, provider, timesync_data, exclude_missing);
+        let results = match filter_log_data_by_time(
+            results,
+            parse_context.time_filter.start,
+            parse_context.time_filter.end,
+        ) {
+            Ok(results) => results,
+            Err(err) => {
+                error!("Invalid time filter: {error}", error = err);
+                return Err(BrokenPipeError);
+            }
+        };
 
         // Track max timestamp seen (including filtered) to advance bookmark even if all filtered
         let max_seen_timestamp = results
@@ -551,7 +743,7 @@ fn iterate_chunks(
             .into_iter()
             .filter(|r| {
                 let should_process = {
-                    let bookmark = bookmark.lock().unwrap();
+                    let bookmark = parse_context.bookmark.lock().unwrap();
                     bookmark.should_process_entry(r.time)
                 };
                 if should_process {
@@ -564,11 +756,11 @@ fn iterate_chunks(
             .collect();
 
         count += filtered_results.len();
-        oversize_strings.oversize = chunk.oversize;
+        parse_context.context.oversize_strings.oversize = chunk.oversize;
 
         // Update bookmark with max timestamp seen (not just filtered) to avoid re-scanning
         if let Some(max_time) = max_seen_timestamp {
-            let mut bookmark = bookmark.lock().unwrap();
+            let mut bookmark = parse_context.bookmark.lock().unwrap();
             bookmark.update_timestamp(max_time);
         }
 
@@ -590,7 +782,7 @@ fn iterate_chunks(
             continue;
         }
         // Track possible missing log data due to oversize strings being in another file
-        missing.push(missing_logs);
+        parse_context.context.missing_data.push(missing_logs);
     }
 
     Ok((count, skipped))

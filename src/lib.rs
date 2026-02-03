@@ -80,8 +80,6 @@
 //!
 //! ```
 
-/// Bookmark functionality for resuming log parsing
-pub mod bookmark;
 /// Functions to parse catalog information from tracev3 files
 mod catalog;
 mod chunks;
