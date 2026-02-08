@@ -48,6 +48,43 @@ struct ParseContext<'a> {
     context: &'a mut IterationContext,
 }
 
+/// Filter log results by bookmark and update bookmark with max timestamp.
+/// Returns filtered results and count of skipped entries.
+fn filter_and_update_bookmark(
+    results: Vec<LogData>,
+    bookmark: &Arc<Mutex<Bookmark>>,
+) -> (Vec<LogData>, usize) {
+    // Track max timestamp seen (including filtered) to advance bookmark even if all filtered
+    let max_seen_timestamp = results
+        .iter()
+        .map(|r| r.time)
+        .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+    // Filter results by bookmark
+    let mut skipped = 0;
+    let filtered_results: Vec<LogData> = results
+        .into_iter()
+        .filter(|r| {
+            let should_process = bookmark
+                .lock()
+                .is_ok_and(|book| book.should_process_entry(r.time));
+            if should_process {
+                true
+            } else {
+                skipped += 1;
+                false
+            }
+        })
+        .collect();
+
+    // Update bookmark with max timestamp seen (not just filtered) to avoid re-scanning
+    if let Some(max_time) = max_seen_timestamp && let Ok(mut book) = bookmark.lock() {
+        book.update_timestamp(max_time);
+    }
+
+    (filtered_results, skipped)
+}
+
 #[derive(Clone, Debug)]
 enum RuntimeError {
     FileOpen { path: String, message: String },
@@ -306,32 +343,29 @@ fn parse_single_file(
     let mut count = 0;
     let mut max_seen_timestamp: f64 = 0.0;
 
-    for row in results {
-        // Track max timestamp seen (including filtered) to advance bookmark
-        if row.time > max_seen_timestamp {
-            max_seen_timestamp = row.time;
-        }
+    // Lock once outside the loop
+    if let Ok(bookmark_guard) = bookmark.lock() {
+        for row in results {
+            if row.time > max_seen_timestamp {
+                max_seen_timestamp = row.time;
+            }
 
-        // Skip entries older than bookmark
-        let should_process = {
-            let bookmark = bookmark.lock().unwrap();
-            bookmark.should_process_entry(row.time)
-        };
+            if !bookmark_guard.should_process_entry(row.time) {
+                continue;
+            }
 
-        if !should_process {
-            continue;
+            if let Err(e) = writer.write_record(&row) {
+                error!("Error writing record: {error}", error = e);
+            } else {
+                count += 1;
+            }
         }
-
-        if let Err(e) = writer.write_record(&row) {
-            error!("Error writing record: {error}", error = e);
-        } else {
-            count += 1;
-        }
+    } else {
+        error!("Failed to lock bookmark: Mutex is poisoned");
     }
 
     // Update bookmark with max timestamp seen (not just written) to avoid re-scanning
-    if max_seen_timestamp > 0.0 {
-        let mut bookmark = bookmark.lock().unwrap();
+    if max_seen_timestamp > 0.0 && let Ok(mut bookmark) = bookmark.lock() {
         bookmark.update_timestamp(max_seen_timestamp);
     }
 
@@ -470,36 +504,11 @@ fn parse_trace_file(
         // Ex: tracev3A rolls, tracev3B references Oversize entry in tracev3A will trigger missing data since tracev3A is gone
         let (results, _) = build_log(&leftover_data, provider, timesync_data, include_missing);
 
-        // Track max timestamp seen (including filtered) to advance bookmark even if all filtered
-        let max_seen_timestamp = results
-            .iter()
-            .map(|r| r.time)
-            .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-
-        // Filter results by bookmark
-        let filtered_results: Vec<LogData> = results
-            .into_iter()
-            .filter(|r| {
-                let should_process = {
-                    let bookmark = parse_context.bookmark.lock().unwrap();
-                    bookmark.should_process_entry(r.time)
-                };
-                if should_process {
-                    true
-                } else {
-                    skipped_count += 1;
-                    false
-                }
-            })
-            .collect();
-
+        // Filter by bookmark and update bookmark with max timestamp seen
+        let (filtered_results, new_skipped) =
+            filter_and_update_bookmark(results, &parse_context.bookmark);
         log_count += filtered_results.len();
-
-        // Update bookmark with max timestamp seen (not just filtered) to avoid re-scanning
-        if let Some(max_time) = max_seen_timestamp {
-            let mut bookmark = parse_context.bookmark.lock().unwrap();
-            bookmark.update_timestamp(max_time);
-        }
+        skipped_count += new_skipped;
 
         if let Err(err) = output(&filtered_results, writer) {
             if err
@@ -556,37 +565,12 @@ fn iterate_chunks(
             .append(&mut parse_context.context.oversize_strings.oversize);
         let (results, missing_logs) = build_log(&chunk, provider, timesync_data, exclude_missing);
 
-        // Track max timestamp seen (including filtered) to advance bookmark even if all filtered
-        let max_seen_timestamp = results
-            .iter()
-            .map(|r| r.time)
-            .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-
-        // Filter results by bookmark timestamp
-        let filtered_results: Vec<LogData> = results
-            .into_iter()
-            .filter(|r| {
-                let should_process = {
-                    let bookmark = parse_context.bookmark.lock().unwrap();
-                    bookmark.should_process_entry(r.time)
-                };
-                if should_process {
-                    true
-                } else {
-                    skipped += 1;
-                    false
-                }
-            })
-            .collect();
-
+        // Filter by bookmark and update bookmark with max timestamp seen
+        let (filtered_results, new_skipped) =
+            filter_and_update_bookmark(results, &parse_context.bookmark);
+        skipped += new_skipped;
         count += filtered_results.len();
         parse_context.context.oversize_strings.oversize = chunk.oversize;
-
-        // Update bookmark with max timestamp seen (not just filtered) to avoid re-scanning
-        if let Some(max_time) = max_seen_timestamp {
-            let mut bookmark = parse_context.bookmark.lock().unwrap();
-            bookmark.update_timestamp(max_time);
-        }
 
         if let Err(err) = output(&filtered_results, writer) {
             if err

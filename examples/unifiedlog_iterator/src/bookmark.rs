@@ -64,14 +64,19 @@ impl Bookmark {
 
     pub fn default_path(mode: &str) -> PathBuf {
         // Get data directory following XDG Base Directory spec
+        // Windows: %LOCALAPPDATA%
         // macOS: ~/Library/Application Support/
         // Linux: ~/.local/share/
-        let data_dir = if cfg!(target_os = "macos") {
+        let data_dir = if cfg!(target_os = "windows") {
+            std::env::var("LOCALAPPDATA")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| PathBuf::from("."))
+        } else if cfg!(target_os = "macos") {
             std::env::var("HOME")
                 .map(|home| PathBuf::from(home).join("Library/Application Support"))
                 .unwrap_or_else(|_| PathBuf::from("."))
         } else {
-            // Linux/Unix fallback
+            // Linux/Generic Unix fallback
             std::env::var("XDG_DATA_HOME")
                 .map(PathBuf::from)
                 .unwrap_or_else(|_| {
