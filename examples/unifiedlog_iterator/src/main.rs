@@ -151,7 +151,7 @@ fn parse_single_file(path: &Path, writer: &mut OutputWriter) {
             message: e.to_string(),
         })
         .and_then(|mut reader| {
-            parse_log(&mut reader).map_err(|err| RuntimeError::FileParse {
+            parse_log(&mut reader, path.to_str().unwrap_or_default()).map_err(|err| RuntimeError::FileParse {
                 path: path.to_string_lossy().to_string(),
                 message: format!("{err}"),
             })
@@ -210,6 +210,7 @@ fn parse_trace_file(
         header: Vec::new(),
         catalog_data: Vec::new(),
         oversize: Vec::new(),
+        evidence: String::new(),
     };
 
     let mut missing_data: Vec<UnifiedLogData> = Vec::new();
@@ -223,7 +224,8 @@ fn parse_trace_file(
         {
             continue;
         }
-        info!("Parsing: {}", source.source_path());
+        let path = source.source_path().to_string();
+        info!("Parsing: {path}");
         log_count += iterate_chunks(
             source.reader(),
             &mut missing_data,
@@ -231,6 +233,7 @@ fn parse_trace_file(
             timesync_data,
             writer,
             &mut oversize_strings,
+            &path
         );
         debug!("count: {log_count}");
     }
@@ -264,6 +267,7 @@ fn iterate_chunks(
     timesync_data: &HashMap<String, TimesyncBoot>,
     writer: &mut OutputWriter,
     oversize_strings: &mut UnifiedLogData,
+    evidence: &str,
 ) -> usize {
     let mut buf = Vec::new();
 
@@ -275,6 +279,7 @@ fn iterate_chunks(
     let log_iterator = UnifiedLogIterator {
         data: buf,
         header: Vec::new(),
+        evidence: evidence.to_string(),
     };
 
     // Exclude missing data from returned output. Keep separate until we parse all oversize entries.

@@ -12,4 +12,4 @@ chrono = "0.4.43"
 log = "0.4.29"
 serde_json = "1.0.149"
 macos-unifiedlogs = { path = "../../" }
-clap = { version = "4.5.56", features = ["derive"] }
+clap = { version = "4.5.58", features = ["derive"] }

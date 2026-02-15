@@ -52,6 +52,7 @@
 //!        header: Vec::new(),
 //!        catalog_data: Vec::new(),
 //!        oversize: Vec::new(),
+//!        evidence: String::new(),
 //!     };
 //!     for mut entry in provider.tracev3_files() {
 //!         println!("TraceV3 file: {}", entry.source_path());
@@ -60,6 +61,7 @@
 //!         let log_iterator = UnifiedLogIterator {
 //!             data: buf,
 //!             header: Vec::new(),
+//!             evidence: entry.source_path().to_string(),
 //!         };
 //!         // If we exclude entries that are missing strings, we may find them in later log files
 //!         let exclude = true;

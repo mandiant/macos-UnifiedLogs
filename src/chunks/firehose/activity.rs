@@ -261,8 +261,8 @@ mod tests {
         let mut provider = LogarchiveProvider::new(test_path.as_path());
 
         test_path.push("Persist/0000000000000004.tracev3");
-        let handle = std::fs::File::open(test_path).unwrap();
-        let log_data = parse_log(handle).unwrap();
+        let handle = std::fs::File::open(&test_path).unwrap();
+        let log_data = parse_log(handle, test_path.to_str().unwrap()).unwrap();
 
         let activity_type = 0x2;
 

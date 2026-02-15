@@ -18,7 +18,7 @@ use std::io::Read;
 use std::path::PathBuf;
 
 /// Parse a tracev3 file and return the deconstructed log data
-pub fn parse_log(mut reader: impl Read) -> Result<UnifiedLogData, ParserError> {
+pub fn parse_log(mut reader: impl Read, evidence: &str) -> Result<UnifiedLogData, ParserError> {
     let mut buf = Vec::new();
     if let Err(err) = reader.read_to_end(&mut buf) {
         error!("[macos-unifiedlogs] Failed to read the tracev3 file: {err:?}");
@@ -27,7 +27,7 @@ pub fn parse_log(mut reader: impl Read) -> Result<UnifiedLogData, ParserError> {
 
     info!("Read {} bytes from tracev3 file", buf.len());
 
-    let log_data_results = LogData::parse_unified_log(&buf);
+    let log_data_results = LogData::parse_unified_log(&buf, evidence);
     match log_data_results {
         Ok((_, log_data)) => Ok(log_data),
         Err(err) => {
@@ -58,6 +58,7 @@ pub fn parse_log(mut reader: impl Read) -> Result<UnifiedLogData, ParserError> {
 ///        header: Vec::new(),
 ///        catalog_data: Vec::new(),
 ///        oversize: Vec::new(),
+///        evidence: String::new(),
 ///    };
 ///    for mut entry in provider.tracev3_files() {
 ///      println!("TraceV3 file: {}", entry.source_path());
@@ -66,6 +67,7 @@ pub fn parse_log(mut reader: impl Read) -> Result<UnifiedLogData, ParserError> {
 ///      let log_iterator = UnifiedLogIterator {
 ///        data: buf,
 ///        header: Vec::new(),
+///        evidence: entry.source_path().to_string(),
 ///      };
 ///      // If we exclude entries that are missing strings, we may find them in later log files
 ///      let exclude = true;
@@ -377,8 +379,8 @@ mod tests {
         test_path.push("tests/test_data/system_logs_big_sur.logarchive");
 
         test_path.push("Persist/0000000000000002.tracev3");
-        let handle = std::fs::File::open(test_path).unwrap();
-        let log_data = parse_log(handle).unwrap();
+        let handle = std::fs::File::open(&test_path).unwrap();
+        let log_data = parse_log(handle, test_path.to_str().unwrap()).unwrap();
 
         assert_eq!(log_data.catalog_data[0].firehose.len(), 99);
         assert_eq!(log_data.catalog_data[0].simpledump.len(), 0);
@@ -401,7 +403,7 @@ mod tests {
 
         test_path.push("Persist/0000000000000002.tracev3");
         let handle = std::fs::File::open(&test_path).unwrap();
-        let log_data = parse_log(handle).unwrap();
+        let log_data = parse_log(handle, test_path.to_str().unwrap()).unwrap();
 
         let timesync_data = collect_timesync(&provider).unwrap();
 

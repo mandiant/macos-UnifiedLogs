@@ -17,7 +17,10 @@ use regex::Regex;
 fn collect_logs(provider: &dyn FileProvider) -> Vec<UnifiedLogData> {
     provider
         .tracev3_files()
-        .map(|mut file| parse_log(file.reader()).unwrap())
+        .map(|mut file| {
+            let path = file.source_path().to_string();
+            parse_log(file.reader(), &path).unwrap()
+        })
         .collect()
 }
 
@@ -27,8 +30,8 @@ fn test_parse_log_high_sierra() {
     test_path.push("tests/test_data/system_logs_high_sierra.logarchive");
 
     test_path.push("Persist/0000000000000001.tracev3");
-    let handle = File::open(test_path).unwrap();
-    let log_data = parse_log(handle).unwrap();
+    let handle = File::open(&test_path).unwrap();
+    let log_data = parse_log(handle, test_path.to_str().unwrap()).unwrap();
 
     assert_eq!(log_data.catalog_data[0].firehose.len(), 172);
     assert_eq!(log_data.catalog_data[0].simpledump.len(), 0);
@@ -41,6 +44,7 @@ fn test_parse_log_high_sierra() {
         30
     );
     assert_eq!(log_data.catalog_data[0].statedump.len(), 0);
+    assert!(log_data.evidence.ends_with("0000000000000001.tracev3"));
 }
 
 #[test]
@@ -53,8 +57,8 @@ fn test_build_log_high_sierra() {
 
     test_path.push("Persist/0000000000000001.tracev3");
 
-    let handle = File::open(test_path.as_path()).unwrap();
-    let log_data = parse_log(handle).unwrap();
+    let handle = File::open(&test_path.as_path()).unwrap();
+    let log_data = parse_log(handle, test_path.to_str().unwrap()).unwrap();
 
     let exclude_missing = false;
     let (results, _) = build_log(&log_data, &mut provider, &timesync_data, exclude_missing);
@@ -94,8 +98,8 @@ fn test_build_log_complex_format_high_sierra() {
 
     test_path.push("Persist/0000000000000001.tracev3");
 
-    let handle = File::open(test_path.as_path()).unwrap();
-    let log_data = parse_log(handle).unwrap();
+    let handle = File::open(&test_path.as_path()).unwrap();
+    let log_data = parse_log(handle, test_path.to_str().unwrap()).unwrap();
 
     let exclude_missing = false;
     let (results, _) = build_log(&log_data, &mut provider, &timesync_data, exclude_missing);
@@ -152,9 +156,9 @@ fn test_build_log_negative_number_high_sierra() {
     let timesync_data = collect_timesync(&provider).unwrap();
 
     test_path.push("Special/0000000000000003.tracev3");
-    let handle = File::open(test_path.as_path()).unwrap();
+    let handle = File::open(&test_path.as_path()).unwrap();
 
-    let log_data = parse_log(handle).unwrap();
+    let log_data = parse_log(handle, test_path.to_str().unwrap()).unwrap();
 
     let exclude_missing = false;
     let (results, _) = build_log(&log_data, &mut provider, &timesync_data, exclude_missing);
