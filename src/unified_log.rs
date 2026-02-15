@@ -76,6 +76,7 @@ pub struct UnifiedLogData {
     pub catalog_data: Vec<UnifiedLogCatalogData>,
     /// Keep a global cache of oversize string
     pub oversize: Vec<Oversize>,
+    pub evidence: String,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -162,6 +163,7 @@ impl Iterator for LogIterator<'_> {
             header: Vec::new(),
             catalog_data: Vec::new(),
             oversize: Vec::new(),
+            evidence: self.unified_log_data.evidence.clone(),
         };
 
         for (preamble_index, preamble) in catalog_data.firehose.iter().enumerate() {
@@ -216,6 +218,7 @@ impl Iterator for LogIterator<'_> {
                     process_uuid: String::new(),
                     raw_message: String::new(),
                     message_entries: firehose.message.item_info.to_owned(),
+                    evidence: self.unified_log_data.evidence.clone(),
                 };
 
                 // 0x4 - Non-activity log entry. Ex: log default, log error, etc
@@ -560,6 +563,7 @@ impl Iterator for LogIterator<'_> {
                 process_uuid: simpledump.dsc_uuid.to_owned(),
                 raw_message: String::new(),
                 message_entries: Vec::new(),
+                evidence: self.unified_log_data.evidence.clone(),
             };
             log_data_vec.push(log_data);
         }
@@ -632,6 +636,7 @@ impl Iterator for LogIterator<'_> {
                 process_uuid: String::new(),
                 raw_message: String::new(),
                 message_entries: Vec::new(),
+                evidence: self.unified_log_data.evidence.clone(),
             };
             log_data_vec.push(log_data);
         }
@@ -662,15 +667,20 @@ pub struct LogData {
     pub timezone_name: String,
     pub message_entries: Vec<FirehoseItemInfo>,
     pub timestamp: String,
+    pub evidence: String,
 }
 
 impl LogData {
     /// Parse the Unified log data read from a tracev3 file
-    pub fn parse_unified_log(data: &[u8]) -> nom::IResult<&[u8], UnifiedLogData> {
+    pub fn parse_unified_log<'a>(
+        data: &'a [u8],
+        evidence: &str,
+    ) -> nom::IResult<&'a [u8], UnifiedLogData> {
         let mut unified_log_data_true = UnifiedLogData {
             header: Vec::new(),
             catalog_data: Vec::new(),
             oversize: Vec::new(),
+            evidence: evidence.to_string(),
         };
 
         let mut catalog_data = UnifiedLogCatalogData::default();
@@ -770,6 +780,7 @@ impl LogData {
             header: Vec::new(),
             catalog_data: Vec::new(),
             oversize: Vec::new(),
+            evidence: unified_log_data.evidence.clone(),
         };
 
         let Ok(log_iterator) =
@@ -947,9 +958,10 @@ mod tests {
             "tests/test_data/system_logs_big_sur.logarchive/Persist/0000000000000002.tracev3",
         );
 
-        let buffer = fs::read(test_path).unwrap();
+        let buffer = fs::read(&test_path).unwrap();
 
-        let (_, results) = LogData::parse_unified_log(&buffer).unwrap();
+        let (_, results) =
+            LogData::parse_unified_log(&buffer, test_path.to_str().unwrap()).unwrap();
         assert_eq!(results.catalog_data.len(), 56);
         assert_eq!(results.header.len(), 1);
         assert_eq!(results.oversize.len(), 12);
@@ -960,8 +972,9 @@ mod tests {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         test_path.push("tests/test_data/Bad Data/TraceV3/Bad_header_0000000000000005.tracev3");
 
-        let buffer = fs::read(test_path).unwrap();
-        let (_, results) = LogData::parse_unified_log(&buffer).unwrap();
+        let buffer = fs::read(&test_path).unwrap();
+        let (_, results) =
+            LogData::parse_unified_log(&buffer, test_path.to_str().unwrap()).unwrap();
         assert_eq!(results.catalog_data.len(), 36);
         assert_eq!(results.header.len(), 0);
         assert_eq!(results.oversize.len(), 28);
@@ -985,8 +998,8 @@ mod tests {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         test_path.push("tests/test_data/Bad Data/TraceV3/Bad_content_0000000000000005.tracev3");
 
-        let buffer = fs::read(test_path).unwrap();
-        let (_, _) = LogData::parse_unified_log(&buffer).unwrap();
+        let buffer = fs::read(&test_path).unwrap();
+        let (_, _) = LogData::parse_unified_log(&buffer, test_path.to_str().unwrap()).unwrap();
     }
 
     #[test]
@@ -1007,8 +1020,8 @@ mod tests {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         test_path.push("tests/test_data/Bad Data/TraceV3/00.tracev3");
 
-        let buffer = fs::read(test_path).unwrap();
-        let (_, _) = LogData::parse_unified_log(&buffer).unwrap();
+        let buffer = fs::read(&test_path).unwrap();
+        let (_, _) = LogData::parse_unified_log(&buffer, test_path.to_str().unwrap()).unwrap();
     }
 
     #[test]
@@ -1021,8 +1034,8 @@ mod tests {
 
         test_path.push("Persist/0000000000000002.tracev3");
 
-        let reader = std::fs::File::open(test_path).unwrap();
-        let log_data = parse_log(reader).unwrap();
+        let reader = std::fs::File::open(&test_path).unwrap();
+        let log_data = parse_log(reader, test_path.to_str().unwrap()).unwrap();
 
         let exclude_missing = false;
         let (results, _) =
@@ -1086,6 +1099,7 @@ mod tests {
             header: Vec::new(),
             catalog_data: Vec::new(),
             oversize: Vec::new(),
+            evidence: String::new(),
         };
 
         LogData::get_header_data(&test_chunk_header, &mut data);
@@ -1216,14 +1230,15 @@ mod tests {
             header: Vec::new(),
             catalog_data: Vec::new(),
             oversize: Vec::new(),
+            evidence: String::new(),
         };
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         test_path.push(
             "tests/test_data/system_logs_big_sur.logarchive/Persist/0000000000000002.tracev3",
         );
-        let reader = std::fs::File::open(test_path).unwrap();
+        let reader = std::fs::File::open(&test_path).unwrap();
 
-        let log_data = parse_log(reader).unwrap();
+        let log_data = parse_log(reader, test_path.to_str().unwrap()).unwrap();
 
         LogData::add_missing(
             &log_data.catalog_data[0],

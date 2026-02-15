@@ -206,9 +206,9 @@ mod tests {
         let mut provider = LogarchiveProvider::new(test_path.as_path());
 
         test_path.push("logdata.LiveData.tracev3");
-        let handle = std::fs::File::open(test_path).unwrap();
+        let handle = std::fs::File::open(&test_path).unwrap();
 
-        let log_data = parse_log(handle).unwrap();
+        let log_data = parse_log(handle, test_path.to_str().unwrap()).unwrap();
 
         let activity_type = 0x3;
 

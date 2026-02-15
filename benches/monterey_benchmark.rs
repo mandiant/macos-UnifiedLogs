@@ -16,7 +16,7 @@ use macos_unifiedlogs::{
 use std::{collections::HashMap, fs::File, path::PathBuf};
 fn monterey_parse_log(path: &str) {
     let handle = File::open(PathBuf::from(path).as_path()).unwrap();
-    let _ = parse_log(handle).unwrap();
+    let _ = parse_log(handle, path).unwrap();
 }
 
 fn bench_build_log(
@@ -47,9 +47,9 @@ fn monterey_build_log_benchbress(c: &mut Criterion) {
 
     test_path.push("Persist/0000000000000004.tracev3");
     let exclude_missing = false;
-    let handle = File::open(test_path.as_path()).unwrap();
+    let handle = File::open(&test_path.as_path()).unwrap();
 
-    let log_data = parse_log(handle).unwrap();
+    let log_data = parse_log(handle, test_path.to_str().unwrap()).unwrap();
 
     c.bench_function("Benching Building One Monterey Log", |b| {
         b.iter(|| bench_build_log(&log_data, &mut provider, &timesync_data, exclude_missing))

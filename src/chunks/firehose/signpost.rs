@@ -288,7 +288,7 @@ mod tests {
         test_path.push("Signpost/0000000000000001.tracev3");
 
         let handle = std::fs::File::open(&test_path).unwrap();
-        let log_data = parse_log(handle).unwrap();
+        let log_data = parse_log(handle, test_path.to_str().unwrap()).unwrap();
 
         let activity_type = 0x6;
 

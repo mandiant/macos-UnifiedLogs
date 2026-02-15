@@ -12,6 +12,7 @@ use nom::bytes::complete::take;
 pub struct UnifiedLogIterator {
     pub data: Vec<u8>,
     pub header: Vec<HeaderChunk>,
+    pub evidence: String,
 }
 
 impl Iterator for UnifiedLogIterator {
@@ -24,6 +25,7 @@ impl Iterator for UnifiedLogIterator {
             header: self.header.clone(),
             catalog_data: Vec::new(),
             oversize: Vec::new(),
+            evidence: self.evidence.clone(),
         };
 
         let mut catalog_data = UnifiedLogCatalogData::default();
@@ -153,6 +155,7 @@ mod tests {
         let log_iterator = UnifiedLogIterator {
             data: buffer_results,
             header: Vec::new(),
+            evidence: String::from("0000000000000002.tracev3"),
         };
 
         let mut total = 0;
@@ -191,6 +194,7 @@ mod tests {
         let log_iterator = UnifiedLogIterator {
             data: buffer_results,
             header: Vec::new(),
+            evidence: String::from("0000000000000002.tracev3"),
         };
 
         let mut total = 0;
