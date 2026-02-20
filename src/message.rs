@@ -399,12 +399,8 @@ fn parse_formatter<'a>(
         type_data = type_format;
     }
 
-    // Error types map error code to error message string. Currently not mapping to error message string
-    // Ex: open on %s: %m
-    //    "open on /var/folders: No such file or directory"
-    // "No such file or directory" is error code 2
     if ERROR_TYPES.contains(&type_data) {
-        message = format!("Error code: {message}");
+        message = crate::decoders::darwin::errno_codes(&message);
         return Ok(("", message));
     }
 
@@ -1436,6 +1432,29 @@ mod tests {
         let formatted_results =
             format_right(test_format, test_precision, test_type, plus_minus, hashtag);
         assert_eq!(formatted_results, "2");
+    }
+
+    #[test]
+    fn test_errno_format_specifier() {
+        let message_re = Regex::new(r"(%(?:(?:\{[^}]+}?)(?:[-+0#]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*)?)?(?:h|hh|l|ll|w|I|z|t|q|I32|I64)?[cmCdiouxXeEfgGaAnpsSZP@%}]|(?:[-+0 #]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*)?)?(?:h|hh|l||q|t|ll|w|I|z|I32|I64)?[cmCdiouxXeEfgGaAnpsSZP@%]))").unwrap();
+        let message = String::from("open on %s: %m");
+        let items = vec![
+            FirehoseItemInfo {
+                message_strings: String::from("/var/folders"),
+                item_type: 32,
+                item_size: 11,
+            },
+            FirehoseItemInfo {
+                message_strings: String::from("2"),
+                item_type: 0,
+                item_size: 4,
+            },
+        ];
+        let log_string = format_firehose_log_message(message, &items, &message_re);
+        assert_eq!(
+            log_string,
+            "open on /var/folders: No such file or directory"
+        );
     }
 
     #[test]
