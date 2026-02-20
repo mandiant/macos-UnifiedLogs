@@ -22,7 +22,10 @@ pub fn parse_log(mut reader: impl Read, evidence: &str) -> Result<UnifiedLogData
     let mut buf = Vec::new();
     if let Err(err) = reader.read_to_end(&mut buf) {
         error!("[macos-unifiedlogs] Failed to read the tracev3 file: {err:?}");
-        return Err(ParserError::Read);
+        return Err(ParserError::Read {
+            path: evidence.to_string(),
+            source: err,
+        });
     }
 
     info!("Read {} bytes from tracev3 file", buf.len());
@@ -32,7 +35,9 @@ pub fn parse_log(mut reader: impl Read, evidence: &str) -> Result<UnifiedLogData
         Ok((_, log_data)) => Ok(log_data),
         Err(err) => {
             error!("[macos-unifiedlogs] Failed to parse the tracev3 file: {err:?}");
-            Err(ParserError::Tracev3Parse)
+            Err(ParserError::Tracev3Parse {
+                path: evidence.to_string(),
+            })
         }
     }
 }

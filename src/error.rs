@@ -5,31 +5,22 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-use std::fmt;
+use std::io;
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum ParserError {
-    Path,
-    Dir,
-    Tracev3Parse,
-    Read,
-    Timesync,
-    Dsc,
-    UUIDText,
-}
-
-impl std::error::Error for ParserError {}
-
-impl fmt::Display for ParserError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Path => write!(f, "Failed to open file path"),
-            Self::Dir => write!(f, "Failed to open directory path"),
-            Self::Tracev3Parse => write!(f, "Failed to parse tracev3 file"),
-            Self::Read => write!(f, "Failed to read file"),
-            Self::Timesync => write!(f, "Failed to parse timesync file"),
-            Self::Dsc => write!(f, "Failed to parse dsc file"),
-            Self::UUIDText => write!(f, "Failedto parse UUIDtext file"),
-        }
-    }
+    #[error("Failed to open file: {path}")]
+    Path { path: String },
+    #[error("Failed to open directory: {path}")]
+    Dir { path: String },
+    #[error("Failed to parse tracev3 file: {path}")]
+    Tracev3Parse { path: String },
+    #[error("Failed to read file: {path}")]
+    Read { path: String, source: io::Error },
+    #[error("Failed to parse timesync file: {path}")]
+    Timesync { path: String },
+    #[error("Failed to parse DSC file: {path}")]
+    Dsc { path: String },
+    #[error("Failed to parse UUIDText file: {path}")]
+    UUIDText { path: String },
 }
