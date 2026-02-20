@@ -14,6 +14,7 @@ use nom::Parser;
 use nom::branch::alt;
 use nom::bytes::complete::{is_a, is_not, take, take_until};
 use nom::character::complete::digit0;
+use nom::combinator::opt;
 use regex::Regex;
 
 struct FormatAndMessage {
@@ -366,8 +367,12 @@ fn parse_formatter<'a>(
 
     if formatter_message.starts_with('.') {
         let (input, _) = is_a(".")(formatter_message)?;
-        let (input, precision_data) = is_not("hljzZtqLdDiuUoOcCxXfFeEgGaASspPn%@")(input)?;
-        if precision_data != "*" {
+        // precision digit(s) are optional: "%1.f" means width=1, default precision (same as "%.0f")
+        let (input, maybe_precision): (&str, Option<&str>) =
+            opt(is_not("hljzZtqLdDiuUoOcCxXfFeEgGaASspPn%@")).parse(input)?;
+        let precision_data = maybe_precision.unwrap_or("");
+        // empty precision_data means dot with no digit (e.g. "%1.f"), which equals precision 0
+        if precision_data != "*" && !precision_data.is_empty() {
             let precision_results = precision_data.parse::<usize>();
             match precision_results {
                 Ok(value) => precision_value = value,
@@ -1009,7 +1014,7 @@ mod tests {
             item_type: 34,
             item_size: 0,
         }];
-        let message_re = Regex::new(r"(%(?:(?:\{[^}]+}?)(?:[-+0#]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*))?(?:h|hh|l|ll|w|I|z|t|q|I32|I64)?[cmCdiouxXeEfgGaAnpsSZP@%}]|(?:[-+0 #]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*))?(?:h|hh|l||q|t|ll|w|I|z|I32|I64)?[cmCdiouxXeEfgGaAnpsSZP@%]))").unwrap();
+        let message_re = Regex::new(r"(%(?:(?:\{[^}]+}?)(?:[-+0#]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*)?)?(?:h|hh|l|ll|w|I|z|t|q|I32|I64)?[cmCdiouxXeEfgGaAnpsSZP@%}]|(?:[-+0 #]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*)?)?(?:h|hh|l||q|t|ll|w|I|z|I32|I64)?[cmCdiouxXeEfgGaAnpsSZP@%]))").unwrap();
 
         let log_string = format_firehose_log_message(test_data, &item_message, &message_re);
         assert_eq!(log_string, "opendirectoryd (build 796.100) launched...")
@@ -1017,7 +1022,7 @@ mod tests {
 
     #[test]
     fn test_bad_format_options() {
-        let message_re = Regex::new(r"(%(?:(?:\{[^}]+}?)(?:[-+0#]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*))?(?:h|hh|l|ll|w|I|z|t|q|I32|I64)?[cmCdiouxXeEfgGaAnpsSZP@%}]|(?:[-+0 #]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*))?(?:h|hh|l||q|t|ll|w|I|z|I32|I64)?[cmCdiouxXeEfgGaAnpsSZP@%]))").unwrap();
+        let message_re = Regex::new(r"(%(?:(?:\{[^}]+}?)(?:[-+0#]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*)?)?(?:h|hh|l|ll|w|I|z|t|q|I32|I64)?[cmCdiouxXeEfgGaAnpsSZP@%}]|(?:[-+0 #]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*)?)?(?:h|hh|l||q|t|ll|w|I|z|I32|I64)?[cmCdiouxXeEfgGaAnpsSZP@%]))").unwrap();
         let message = String::from(
             "PAVAbstractVideoInterface.cpp::%d] DCPAV[%d] %s::%s Setting %s syncWidth = %u",
         );
@@ -1067,6 +1072,30 @@ mod tests {
             log_string,
             "PAVAbstractVideoInterface.cpp::406] DCPAV[258] DCPAVSimpleVideoInterface::setColorElement Setting 3 syncWidth = 0"
         )
+    }
+
+    #[test]
+    fn test_dot_precision_no_digit() {
+        // %1.f is a valid printf specifier meaning width=1, default precision (same as %.0f)
+        // The regex must match it so items don't shift for subsequent format specifiers.
+        let message_re = Regex::new(r"(%(?:(?:\{[^}]+}?)(?:[-+0#]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*)?)?(?:h|hh|l|ll|w|I|z|t|q|I32|I64)?[cmCdiouxXeEfgGaAnpsSZP@%}]|(?:[-+0 #]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*)?)?(?:h|hh|l||q|t|ll|w|I|z|I32|I64)?[cmCdiouxXeEfgGaAnpsSZP@%]))").unwrap();
+        let message = String::from("hacc, %{public}1.f, src, %{public}s");
+        let items = vec![
+            FirehoseItemInfo {
+                // Float stored as i64 bits: f64::to_bits(12.0) = 4622945017495814144
+                message_strings: String::from("4622945017495814144"),
+                item_type: 0,
+                item_size: 8,
+            },
+            FirehoseItemInfo {
+                message_strings: String::from("als"),
+                item_type: 32,
+                item_size: 3,
+            },
+        ];
+        let log_string = format_firehose_log_message(message, &items, &message_re);
+        // %{public}1.f matches and consumes item 0 (float 12.0), %{public}s gets "als"
+        assert_eq!(log_string, "hacc, 12, src, als")
     }
 
     #[test]
