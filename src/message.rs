@@ -17,8 +17,8 @@ use nom::character::complete::digit0;
 use nom::combinator::opt;
 use regex::Regex;
 
-struct FormatAndMessage {
-    formatter: String,
+struct FormatAndMessage<'a> {
+    formatter: &'a str,
     message: String,
 }
 
@@ -31,12 +31,12 @@ const STRING_TYPES: [&str; 6] = ["c", "s", "@", "S", "C", "P"];
 
 /// Format the Unified Log message entry based on the parsed log items. Formatting follows the C lang prinf formatting process
 pub fn format_firehose_log_message(
-    format_string: String,
-    item_message: &Vec<FirehoseItemInfo>,
+    format_string: &str,
+    item_message: &[FirehoseItemInfo],
     message_re: &Regex,
 ) -> String {
     let mut log_message = format_string;
-    let mut format_and_message_vec: Vec<FormatAndMessage> = Vec::new();
+    let mut format_and_message_vec: Vec<FormatAndMessage<'_>> = Vec::new();
     info!("Unified log base message: {log_message:?}");
     info!("Unified log entry strings: {item_message:?}");
 
@@ -58,7 +58,7 @@ pub fn format_firehose_log_message(
     if log_message.is_empty() {
         return item_message[0].message_strings.to_owned();
     }
-    let results = message_re.find_iter(&log_message);
+    let results = message_re.find_iter(log_message);
 
     let mut item_index = 0;
     for formatter in results {
@@ -68,13 +68,13 @@ pub fn format_firehose_log_message(
         }
 
         let mut format_and_message = FormatAndMessage {
-            formatter: String::new(),
+            formatter: "",
             message: String::new(),
         };
 
         // %% is literal %
         if formatter.as_str() == "%%" {
-            format_and_message.formatter = formatter.as_str().to_string();
+            format_and_message.formatter = formatter.as_str();
             format_and_message.message = String::from("%");
             format_and_message_vec.push(format_and_message);
             continue;
@@ -83,7 +83,7 @@ pub fn format_firehose_log_message(
         // Sometimes the log message does not have all of the message strings
         // Apple labels them: "<decode: missing data>"
         if item_index >= item_message.len() {
-            format_and_message.formatter = formatter.as_str().to_string();
+            format_and_message.formatter = formatter.as_str();
             format_and_message.message = String::from("<Missing message data>");
             format_and_message_vec.push(format_and_message);
             continue;
@@ -95,8 +95,7 @@ pub fn format_firehose_log_message(
         // Ex: RDAlarmNotificationConsumer {identifier: %{public}%@ currentSet: %@, count: %{public}%d}
         //  -> RDAlarmNotificationConsumer {identifier: {public}<private> allowedSet: <private>, count {public}0}
         if formatter_string.starts_with("%{") && formatter_string.ends_with('}') {
-            format_and_message.formatter = formatter_string.to_string();
-            formatter_string.to_string().remove(0);
+            format_and_message.formatter = formatter_string;
             format_and_message.message = formatter_string.to_string();
             format_and_message_vec.push(format_and_message);
             continue;
@@ -117,7 +116,7 @@ pub fn format_firehose_log_message(
         }
 
         if item_index >= item_message.len() {
-            format_and_message.formatter = formatter.as_str().to_string();
+            format_and_message.formatter = formatter.as_str();
             format_and_message.message = String::from("<Missing message data>");
             format_and_message_vec.push(format_and_message);
             continue;
@@ -235,30 +234,34 @@ pub fn format_firehose_log_message(
         }
 
         item_index += 1;
-        format_and_message.formatter = formatter.as_str().to_string();
+        format_and_message.formatter = formatter.as_str();
         format_and_message.message = formatted_log_message;
         format_and_message_vec.push(format_and_message);
     }
 
-    let mut log_message_vec: Vec<String> = Vec::new();
-    for values in format_and_message_vec {
+    let capacity = format_string.len()
+        + format_and_message_vec
+            .iter()
+            .map(|v| v.message.len())
+            .sum::<usize>();
+    let mut result = String::with_capacity(capacity);
+    for values in &format_and_message_vec {
         // Split the values by printf formatter
         // We have to do this instead of using replace because our replacement string may also contain a printf formatter
-        let message_results = log_message.split_once(&values.formatter);
-        match message_results {
-            Some((message_part, remaining_message)) => {
-                log_message_vec.push(message_part.to_string());
-                log_message_vec.push(values.message);
-                log_message = remaining_message.to_string();
+        match log_message.split_once(values.formatter) {
+            Some((prefix, remainder)) => {
+                result.push_str(prefix);
+                result.push_str(&values.message);
+                log_message = remainder;
             }
             None => error!(
                 "Failed to split log message ({log_message}) by printf formatter: {}",
-                &values.formatter
+                values.formatter
             ),
         }
     }
-    log_message_vec.push(log_message);
-    log_message_vec.join("")
+    result.push_str(log_message);
+    result
 }
 
 // Format strings are based on C printf formats. Parse format specification
@@ -1012,7 +1015,7 @@ mod tests {
         }];
         let message_re = Regex::new(r"(%(?:(?:\{[^}]+}?)(?:[-+0#]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*)?)?(?:h|hh|l|ll|w|I|z|t|q|I32|I64)?[cmCdiouxXeEfgGaAnpsSZP@%}]|(?:[-+0 #]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*)?)?(?:h|hh|l||q|t|ll|w|I|z|I32|I64)?[cmCdiouxXeEfgGaAnpsSZP@%]))").unwrap();
 
-        let log_string = format_firehose_log_message(test_data, &item_message, &message_re);
+        let log_string = format_firehose_log_message(&test_data, &item_message, &message_re);
         assert_eq!(log_string, "opendirectoryd (build 796.100) launched...")
     }
 
@@ -1061,7 +1064,7 @@ mod tests {
             },
         ];
 
-        let log_string = format_firehose_log_message(message, &items, &message_re);
+        let log_string = format_firehose_log_message(&message, &items, &message_re);
         // The printf format options are bad/wrong for this message. We log warning and return 0 default
         // Apple records as: <decode: mismatch for [%u] got [STRING sz:3]
         assert_eq!(
@@ -1089,7 +1092,7 @@ mod tests {
                 item_size: 3,
             },
         ];
-        let log_string = format_firehose_log_message(message, &items, &message_re);
+        let log_string = format_firehose_log_message(&message, &items, &message_re);
         // %{public}1.f matches and consumes item 0 (float 12.0), %{public}s gets "als"
         assert_eq!(log_string, "hacc, 12, src, als")
     }
@@ -1450,7 +1453,7 @@ mod tests {
                 item_size: 4,
             },
         ];
-        let log_string = format_firehose_log_message(message, &items, &message_re);
+        let log_string = format_firehose_log_message(&message, &items, &message_re);
         assert_eq!(
             log_string,
             "open on /var/folders: No such file or directory"

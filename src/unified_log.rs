@@ -258,14 +258,14 @@ impl Iterator for LogIterator<'_> {
                                         );
                                         // Format and map the log strings with the message format string found UUIDText or shared string file
                                         format_firehose_log_message(
-                                            results.format_string,
+                                            &results.format_string,
                                             &oversize_strings,
                                             &self.message_re,
                                         )
                                     } else {
                                         // Format and map the log strings with the message format string found UUIDText or shared string file
                                         format_firehose_log_message(
-                                            results.format_string,
+                                            &results.format_string,
                                             &firehose.message.item_info,
                                             &self.message_re,
                                         )
@@ -344,7 +344,7 @@ impl Iterator for LogIterator<'_> {
                                 results.format_string.clone_into(&mut log_data.raw_message);
 
                                 let log_message = format_firehose_log_message(
-                                    results.format_string,
+                                    &results.format_string,
                                     &firehose.message.item_info,
                                     &self.message_re,
                                 );
@@ -408,14 +408,14 @@ impl Iterator for LogIterator<'_> {
                                         );
                                         // Format and map the log strings with the message format string found UUIDText or shared string file
                                         format_firehose_log_message(
-                                            results.format_string,
+                                            &results.format_string,
                                             &oversize_strings,
                                             &self.message_re,
                                         )
                                     } else {
                                         // Format and map the log strings with the message format string found UUIDText or shared string file
                                         format_firehose_log_message(
-                                            results.format_string,
+                                            &results.format_string,
                                             &firehose.message.item_info,
                                             &self.message_re,
                                         )
@@ -488,7 +488,7 @@ impl Iterator for LogIterator<'_> {
                                 log_data.process_uuid = results.process_uuid;
 
                                 let log_message = format_firehose_log_message(
-                                    results.format_string,
+                                    &results.format_string,
                                     &firehose.message.item_info,
                                     &self.message_re,
                                 );
