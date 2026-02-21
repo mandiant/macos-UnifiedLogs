@@ -68,7 +68,11 @@ impl MessageData {
                     // Combine large offset value with current string offset to get the true offset
                     extra_offset_value = format!("{large_offset:X}{string_offset:08X}");
                 } else if formatters.shared_cache {
-                    // Large offset is 8 if shared_cache flag is set
+                    // Large offset is 8 if shared_cache flag is set.
+                    // Note: the old signpost.rs code used string formatting here
+                    // (`format!("{large_offset:X}{string_offset:07X}")`), which produced
+                    // incorrect offsets when string_offset >= 0x10000000.  Arithmetic
+                    // addition (matching activity + nonactivity) is the correct approach.
                     large_offset = 8;
                     let add_offset = 0x10000000 * u64::from(large_offset);
                     extra_offset_value = format!("{:X}", add_offset + string_offset);
