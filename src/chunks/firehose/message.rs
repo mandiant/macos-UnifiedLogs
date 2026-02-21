@@ -23,32 +23,32 @@ pub struct MessageData {
     pub process_uuid: String,
 }
 
+/// Parameters for resolving format-string sources from firehose entries.
+pub(crate) struct StringFormatParams {
+    pub unknown_pc_id: u32,
+    pub string_offset: u64,
+    pub first_proc_id: u64,
+    pub second_proc_id: u32,
+    pub require_large_offset: bool,
+}
+
 // Functions to help extract base format string based on flags associated with log entries
 // Ex: "%s start"
 impl MessageData {
     /// Shared implementation for resolving the format-string source from a `FirehoseFormatters`
     /// struct.  All three firehose entry kinds (activity, non-activity, signpost) follow the same
     /// four-path dispatch; they differ only in the outer shared-cache condition and error labels.
-    ///
-    /// * `require_large_offset` – when `true` the large-shared-cache path also requires
-    ///   `has_large_offset != 0` (activity + signpost).  When `false` `large_shared_cache != 0`
-    ///   alone is sufficient (non-activity).
-    /// * `entry_kind` – label used in error log messages ("activity", "non-activity", "signpost").
-    // The caller structs (FirehoseActivity, FirehoseNonActivity, FirehoseSignpost) pack several of
-    // these fields into a single struct, keeping their own signatures short.  The helper accepts
-    // them individually so a single implementation covers all three callers.
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn get_strings_from_formatters<'a>(
         formatters: &FirehoseFormatters,
-        unknown_pc_id: u32,
+        params: &StringFormatParams,
         provider: &'a mut dyn FileProvider,
-        string_offset: u64,
-        first_proc_id: &u64,
-        second_proc_id: &u32,
         catalogs: &CatalogChunk,
-        require_large_offset: bool,
         entry_kind: &str,
     ) -> nom::IResult<&'a [u8], MessageData> {
+        let string_offset = params.string_offset;
+        let first_proc_id = &params.first_proc_id;
+        let second_proc_id = &params.second_proc_id;
+        let require_large_offset = params.require_large_offset;
         let shared_cache_condition = formatters.shared_cache
             || (formatters.large_shared_cache != 0
                 && (!require_large_offset || formatters.has_large_offset != 0));
@@ -111,8 +111,10 @@ impl MessageData {
             )
         } else {
             if formatters.absolute {
-                let extra_offset_value =
-                    format!("{:X}{:08X}", formatters.main_exe_alt_index, unknown_pc_id,);
+                let extra_offset_value = format!(
+                    "{:X}{:08X}",
+                    formatters.main_exe_alt_index, params.unknown_pc_id,
+                );
                 let offset_result = u64::from_str_radix(&extra_offset_value, 16);
                 match offset_result {
                     Ok(offset) => {

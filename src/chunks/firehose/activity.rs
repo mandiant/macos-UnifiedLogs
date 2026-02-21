@@ -7,7 +7,7 @@
 
 use crate::catalog::CatalogChunk;
 use crate::chunks::firehose::flags::FirehoseFormatters;
-use crate::chunks::firehose::message::MessageData;
+use crate::chunks::firehose::message::{MessageData, StringFormatParams};
 use crate::traits::FileProvider;
 use log::debug;
 use nom::{
@@ -108,15 +108,19 @@ impl FirehoseActivity {
         second_proc_id: &u32,
         catalogs: &CatalogChunk,
     ) -> nom::IResult<&'a [u8], MessageData> {
+        let require_large_offset = true;
+        let params = StringFormatParams {
+            unknown_pc_id: firehose.unknown_pc_id,
+            string_offset,
+            first_proc_id: *first_proc_id,
+            second_proc_id: *second_proc_id,
+            require_large_offset,
+        };
         MessageData::get_strings_from_formatters(
             &firehose.firehose_formatters,
-            firehose.unknown_pc_id,
+            &params,
             provider,
-            string_offset,
-            first_proc_id,
-            second_proc_id,
             catalogs,
-            true, // require_large_offset
             "activity",
         )
     }
