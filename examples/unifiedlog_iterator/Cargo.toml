@@ -11,5 +11,7 @@ csv = "1.4.0"
 chrono = "0.4.43"
 log = "0.4.29"
 serde_json = "1.0.149"
+regex = "1.12.3"
+rusqlite = { version = "0.32", features = ["bundled"] }
 macos-unifiedlogs = { path = "../../" }
 clap = { version = "4.5.58", features = ["derive"] }

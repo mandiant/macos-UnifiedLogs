@@ -82,6 +82,11 @@ impl From<&Path> for LogFileType {
             let parent_s = parent.to_str().unwrap_or_default();
             let filename_s = filename.to_str().unwrap_or_default();
 
+            // macOS resource fork metadata files (AppleDouble format); not real log data
+            if filename_s.starts_with("._") {
+                return Self::Invalid;
+            }
+
             if filename_s == "logdata.LiveData.tracev3"
                 || (filename_s.ends_with(".tracev3") && TRACE_FOLDERS.contains(&parent_s))
             {
@@ -277,15 +282,20 @@ impl FileProvider for LiveSystemProvider {
 
     fn dsc_files(&self) -> Box<dyn Iterator<Item = Box<dyn SourceFile>>> {
         let path = PathBuf::from("/private/var/db/uuidtext/dsc");
-        Box::new(WalkDir::new(path).into_iter().filter_map(|entry| {
-            if !matches!(
-                LogFileType::from(entry.as_ref().ok()?.path()),
-                LogFileType::Dsc
-            ) {
-                return None;
-            }
-            Some(Box::new(LocalFile::new(entry.ok()?.path()).ok()?) as Box<dyn SourceFile>)
-        }))
+        Box::new(
+            WalkDir::new(path)
+                .sort_by(|a, b| a.file_name().cmp(b.file_name()))
+                .into_iter()
+                .filter_map(|entry| {
+                    if !matches!(
+                        LogFileType::from(entry.as_ref().ok()?.path()),
+                        LogFileType::Dsc
+                    ) {
+                        return None;
+                    }
+                    Some(Box::new(LocalFile::new(entry.ok()?.path()).ok()?) as Box<dyn SourceFile>)
+                }),
+        )
     }
 
     fn timesync_files(&self) -> Box<dyn Iterator<Item = Box<dyn SourceFile>>> {
@@ -468,6 +478,7 @@ impl FileProvider for LogarchiveProvider {
     fn dsc_files(&self) -> Box<dyn Iterator<Item = Box<dyn SourceFile>>> {
         Box::new(
             WalkDir::new(&self.base)
+                .sort_by(|a, b| a.file_name().cmp(b.file_name()))
                 .into_iter()
                 .filter_map(|entry| entry.ok())
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::Dsc))
