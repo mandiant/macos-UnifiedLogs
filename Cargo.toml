@@ -22,7 +22,7 @@ base64 = "0.22.1"
 chrono = "0.4.43"
 walkdir = "2.5.0"
 sunlight = "0.1.4"
-thiserror = "2"
+
 
 [dev-dependencies]
 chrono = "0.4.43"

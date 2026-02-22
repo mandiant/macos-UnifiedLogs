@@ -82,6 +82,7 @@ impl From<&Path> for LogFileType {
             let parent_s = parent.to_str().unwrap_or_default();
             let filename_s = filename.to_str().unwrap_or_default();
 
+            // macOS resource fork metadata files (AppleDouble format); not real log data
             if filename_s.starts_with("._") {
                 return Self::Invalid;
             }

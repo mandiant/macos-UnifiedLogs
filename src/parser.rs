@@ -22,10 +22,7 @@ pub fn parse_log(mut reader: impl Read, evidence: &str) -> Result<UnifiedLogData
     let mut buf = Vec::new();
     if let Err(err) = reader.read_to_end(&mut buf) {
         error!("[macos-unifiedlogs] Failed to read the tracev3 file: {err:?}");
-        return Err(ParserError::Read {
-            path: evidence.to_string(),
-            source: err,
-        });
+        return Err(ParserError::Read);
     }
 
     info!("Read {} bytes from tracev3 file", buf.len());
@@ -35,9 +32,7 @@ pub fn parse_log(mut reader: impl Read, evidence: &str) -> Result<UnifiedLogData
         Ok((_, log_data)) => Ok(log_data),
         Err(err) => {
             error!("[macos-unifiedlogs] Failed to parse the tracev3 file: {err:?}");
-            Err(ParserError::Tracev3Parse {
-                path: evidence.to_string(),
-            })
+            Err(ParserError::Tracev3Parse)
         }
     }
 }
@@ -340,16 +335,16 @@ mod tests {
         let provider = LogarchiveProvider::new(test_path.as_path());
         let shared_strings_results = collect_shared_strings(&provider).unwrap();
         assert_eq!(shared_strings_results.len(), 2);
-        assert_eq!(shared_strings_results[1].number_uuids, 1976);
-        assert_eq!(shared_strings_results[1].number_ranges, 2993);
+        assert_eq!(shared_strings_results[0].number_uuids, 1976);
+        assert_eq!(shared_strings_results[0].number_ranges, 2993);
         assert_eq!(
-            shared_strings_results[1].dsc_uuid,
+            shared_strings_results[0].dsc_uuid,
             "80896B329EB13A10A7C5449B15305DE2"
         );
-        assert_eq!(shared_strings_results[1].minor_version, 0);
-        assert_eq!(shared_strings_results[1].major_version, 1);
-        assert_eq!(shared_strings_results[1].ranges.len(), 2993);
-        assert_eq!(shared_strings_results[1].uuids.len(), 1976);
+        assert_eq!(shared_strings_results[0].minor_version, 0);
+        assert_eq!(shared_strings_results[0].major_version, 1);
+        assert_eq!(shared_strings_results[0].ranges.len(), 2993);
+        assert_eq!(shared_strings_results[0].uuids.len(), 1976);
     }
 
     #[test]
