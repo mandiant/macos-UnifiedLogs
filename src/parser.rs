@@ -322,9 +322,9 @@ mod tests {
         use crate::filesystem::LiveSystemProvider;
         let system_provider = LiveSystemProvider::default();
         let shared_strings_results = collect_shared_strings(&system_provider).unwrap();
-        assert!(shared_strings_results[0].ranges.len() > 1);
-        assert!(shared_strings_results[0].uuids.len() > 1);
-        assert!(shared_strings_results[0].number_ranges > 1);
+        assert_eq!(shared_strings_results[0].ranges.len(), 788);
+        assert_eq!(shared_strings_results[0].uuids.len(), 532);
+        assert_eq!(shared_strings_results[0].number_ranges, 788);
         assert!(shared_strings_results[0].number_uuids > 1);
     }
 
@@ -340,9 +340,9 @@ mod tests {
             "522F6217CB113F8FB845C2A1B784C7C2"
         );
         assert_eq!(shared_strings_results[0].number_uuids, 532);
-        assert!(shared_strings_results[0].number_ranges > 1);
-        assert!(shared_strings_results[0].ranges.len() > 1);
-        assert!(shared_strings_results[0].uuids.len() > 1);
+        assert_eq!(shared_strings_results[0].number_ranges, 788);
+        assert_eq!(shared_strings_results[0].ranges.len(), 788);
+        assert_eq!(shared_strings_results[0].uuids.len(), 532);
 
         assert_eq!(shared_strings_results[1].number_uuids, 1976);
         assert_eq!(shared_strings_results[1].number_ranges, 2993);
