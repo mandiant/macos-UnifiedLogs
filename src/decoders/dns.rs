@@ -92,7 +92,7 @@ fn get_dns_header(input: &[u8]) -> IResult<&[u8], DnsHeader> {
         DnsHeader {
             id,
             flags,
-            decoded_flags: decoded_flags,
+            decoded_flags,
             counts,
         },
     ))

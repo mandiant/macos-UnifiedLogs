@@ -6,10 +6,9 @@
 // See the License for the specific language governing permissions and limitations under the License.
 
 use crate::catalog::CatalogChunk;
-use crate::chunks::firehose::firehose_log::{FirehoseItemData, FirehoseItemInfo};
+use crate::chunks::firehose::firehose_log::{FirehoseItemData, FirehoseItemInfo, FirehoseItemValue};
 use crate::chunks::firehose::message::MessageData;
 use crate::traits::FileProvider;
-use crate::{RcString, rc_string};
 use log::{error, warn};
 use nom::bytes::complete::take;
 use nom::number::complete::{be_u8, be_u16, be_u32, be_u64, le_u8, le_u32};
@@ -94,7 +93,7 @@ impl FirehoseTrace {
 
         for entry_size in sizes_count {
             let mut item_info = FirehoseItemInfo {
-                message_strings: rc_string!(""),
+                message_strings: FirehoseItemValue::Empty,
                 item_type: 0,
                 item_size: 0,
             };
@@ -103,26 +102,26 @@ impl FirehoseTrace {
             match entry_size {
                 1 => {
                     let (_, value) = be_u8(message_data)?;
-                    item_info.message_strings = rc_string!(format!("{value}"));
+                    item_info.message_strings = FirehoseItemValue::Number(i64::from(value));
                 }
                 2 => {
                     let (_, value) = be_u16(message_data)?;
-                    item_info.message_strings = rc_string!(format!("{value}"));
+                    item_info.message_strings = FirehoseItemValue::Number(i64::from(value));
                 }
                 4 => {
                     let (_, value) = be_u32(message_data)?;
-                    item_info.message_strings = rc_string!(format!("{value}"));
+                    item_info.message_strings = FirehoseItemValue::Number(i64::from(value));
                 }
                 8 => {
                     let (_, value) = be_u64(message_data)?;
-                    item_info.message_strings = rc_string!(format!("{value}"));
+                    item_info.message_strings = FirehoseItemValue::UNumber(value);
                 }
                 _ => {
                     warn!(
                         "[macos-unifiedlogs] Unhandled size of trace data: {entry_size}. Defaulting to size of one"
                     );
                     let (_, unknown_size) = le_u8(message_data)?;
-                    item_info.message_strings = rc_string!(format!("{unknown_size}"));
+                    item_info.message_strings = FirehoseItemValue::Number(i64::from(unknown_size));
                 }
             }
             remaining_input = input;
@@ -180,7 +179,7 @@ mod tests {
         let mut test_message = vec![200, 0, 0, 0, 0, 0, 0, 0, 8, 1];
         test_message.reverse();
         let (_, results) = FirehoseTrace::parse_trace_message(&test_message).unwrap();
-        assert_eq!(results.item_info[0].message_strings.as_str(), "200");
+        assert_eq!(results.item_info[0].message_strings.as_cow(), "200");
     }
 
     #[test]
@@ -191,10 +190,10 @@ mod tests {
         let (_, results) = FirehoseTrace::parse_trace_message(&test_message).unwrap();
 
         assert_eq!(
-            results.item_info[0].message_strings.as_str(),
+            results.item_info[0].message_strings.as_cow(),
             "140717286580400"
         );
-        assert_eq!(results.item_info[1].message_strings.as_str(), "200");
+        assert_eq!(results.item_info[1].message_strings.as_cow(), "200");
     }
 
     #[test]
@@ -202,7 +201,7 @@ mod tests {
         let mut test_message = vec![200, 0, 0, 0, 0, 0, 0, 0, 8, 1];
         test_message.reverse();
         let results = FirehoseTrace::get_message(&test_message);
-        assert_eq!(results.item_info[0].message_strings.as_str(), "200");
+        assert_eq!(results.item_info[0].message_strings.as_cow(), "200");
     }
 
     #[test]

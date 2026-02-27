@@ -131,7 +131,7 @@ impl Oversize {
 
 #[cfg(test)]
 mod tests {
-    use crate::chunks::firehose::firehose_log::{FirehoseItemData, FirehoseItemInfo};
+    use crate::chunks::firehose::firehose_log::{FirehoseItemData, FirehoseItemInfo, FirehoseItemValue};
     use crate::chunks::oversize::Oversize;
     use crate::rc_string;
     use std::fs;
@@ -328,7 +328,7 @@ mod tests {
         assert_eq!(
             oversize_results.message_items.item_info[0]
                 .message_strings
-                .as_str(),
+                .as_cow(),
             "Sandbox: diskarbitrationd(63) System Policy: deny(5) file-read-metadata /Volumes/VMware Shared Folders\nViolation:       System Policy: deny(5) file-read-metadata /Volumes/VMware Shared Folders \nProcess:         diskarbitrationd [63]\nPath:            /usr/libexec/diskarbitrationd\nLoad Address:    0x107b94000\nIdentifier:      diskarbitrationd\nVersion:         ??? (???)\nCode Type:       x86_64 (Native)\nParent Process:  launchd [1]\nResponsible:     /usr/libexec/diskarbitrationd [63]\nUser ID:         0\n\nDate/Time:       2021-08-17 19:58:49.955 EDT\nOS Version:      Mac OS X 10.13.6 (17G66)\nReport Version:  8\n\n\nMetaData: {\"errno\":5,\"profile-flags\":0,\"target\":\"\\/Volumes\\/VMware Shared Folders\",\"process\":\"diskarbitrationd\",\"path\":\"\\/Volumes\\/VMware Shared Folders\",\"primary-filter\":\"path\",\"normalized_target\":[\"Volumes\",\"VMware Shared Folders\"],\"platform-policy\":true,\"summary\":\"deny(5) file-read-metadata \\/Volumes\\/VMware Shared Folders\",\"platform_binary\":\"yes\",\"operation\":\"file-read-metadata\",\"primary-filter-value\":\"\\/Volumes\\/VMware Shared Folders\",\"uid\":0,\"hardware\":\"Mac\",\"flags\":5,\"process-path\":\"\\/usr\\/libexec\\/diskarbitrationd\",\"pid\":63,\"profile\":\"platform\",\"build\":\"Mac OS X 10.13.6 (17G66)\",\"signing-id\":\"com.apple.diskarbitrationd\",\"action\":\"deny\",\"platform-binary\":true}\n\nThread 0 (id: 542):\n0   libsystem_kernel.dylib        \t0x00007fff693bb236 __getattrlist + 10\n1   diskarbitrationd              \t0x0000000107b97d46\n2   diskarbitrationd              \t0x0000000107ba3160\n3   CoreFoundation                \t0x00007fff4143b56b __CFMachPortPerform + 347\n4   CoreFoundation                \t0x00007fff4143b3f9 __CFRUNLOOP_IS_CALLING_OUT_TO_A_SOURCE1_PERFORM_FUNCTION__ + 41\n5   CoreFoundation                \t0x00007fff4143b345 __CFRunLoopDoSource1 + 533\n6   CoreFoundation                \t0x00007fff41432f00 __CFRunLoopRun + 2848\n7   CoreFoundation                \t0x00007fff41432153 CFRunLoopRunSpecific + 483\n8   CoreFoundation                \t0x00007fff41470be3 CFRunLoopRun + 99\n9   diskarbitrationd              \t0x0000000107b9acb6\n10  libdyld.dylib                 \t0x00007fff6926b015 start + 1\n11  diskarbitrationd              \t0x0000000000000001\n\nThread 1 (id: 687):\n0   libsystem_kernel.dylib        \t0x00007fff693bc28a __workq_kernreturn + 10\n1   libsystem_pthread.dylib       \t0x00007fff69582be9 start_wqthread + 13\n\nThread 2 (id: 1541):\n0   libsystem_kernel.dylib        \t0x00007fff693bc28a __workq_kernreturn + 10\n1   libsystem_pthread.dylib       \t0x00007fff69582be9 start_wqthread + 13\n\nBinary Images:\n       0x107b94000 -        0x107babfff  diskarbitrationd (297.70.1) <190ef73f-c204-31bc-bd51-e1be4deaf90a> /usr/libexec/diskarbitrationd\n    0x7fff413ad000 -     0x7fff4184efef  com.apple.CoreFoundation (6.9 - 1454.90) <e5d594bf-9142-3325-a62d-cf4aaf472642> /System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation\n    0x7fff6926a000 -     0x7fff69287ff7  libdyld.dylib (551.4) <81bf3a82-5719-3b54-aba9-76c82d932cac> /usr/lib/system/libdyld.dylib\n    0x7fff6939f000 -     0x7fff693c5ff7  libsystem_kernel.dylib (4570.71.2) <f22b8d73-69d8-36d7-bf66-7f9ac70c08c2> /usr/lib/system/libsystem_kernel.dylib\n    0x7fff69580000 -     0x7fff6958bfff  libsystem_pthread.dylib (301.50.1) <0e51ccba-91f2-34e1-bf2a-feefd3d321e4> /usr/lib/system/libsystem_pthread.dylib\n\n\n"
         );
     }
@@ -354,7 +354,7 @@ mod tests {
         assert_eq!(
             oversize_results.message_items.item_info[0]
                 .message_strings
-                .as_str(),
+                .as_cow(),
             "updated queuedEvents[4]=(\n    \"FudEvent - Client:(null) Type:114 Filter:com.apple.MobileAccessoryUpdater.EA.app.multiasset.A2015.59 Data:<dictionary: 0x7fdac460fcd0> { count = 5, transaction: 0, voucher = 0x7fdac460e7c0, contents =\\n\\t\\\"Command\\\" => <uint64: 0x2a6f1a5c3cef6b9d>: 114\\n\\t\\\"PluginIdentifier\\\" => <string: 0x7fdac58122c0> { length = 49, contents = \\\"com.apple.MobileAccessoryUpdater.EAUpdaterService\\\" }\\n\\t\\\"_State\\\" => <uint64: 0x2a6f1a5c3ce84b9d>: 0\\n\\t\\\"XPCEventName\\\" => <string: 0x7fdac4507f90> { length = 59, contents = \\\"com.apple.MobileAccessoryUpdater.EA.app.multiasset.A2015.59\\\" }\\n\\t\\\"Notification\\\" => <string: 0x7fdac450a7c0> { length = 44, contents = \\\"com.apple.corespeech.voicetriggerassetchange\\\" }\\n} Options:{\\n}\",\n    \"FudEvent - Client:(null) Type:114 Filter:com.apple.MobileAccessoryUpdater.EA.app.multiasset.A1881.58 Data:<dictionary: 0x7fdac460fdc0> { count = 5, transaction: 0, voucher = 0x7fdac460e7c0, contents =\\n\\t\\\"Command\\\" => <uint64: 0x2a6f1a5c3cef6b9d>: 114\\n\\t\\\"PluginIdentifier\\\" => <string: 0x7fdac5813c40> { length = 49, contents = \\\"com.apple.MobileAccessoryUpdater.EAUpdaterService\\\" }\\n\\t\\\"_State\\\" => <uint64: 0x2a6f1a5c3ce84b9d>: 0\\n\\t\\\"XPCEventName\\\" => <string: 0x7fdac450b380> { length = 59, contents = \\\"com.apple.MobileAccessoryUpdater.EA.app.multiasset.A1881.58\\\" }\\n\\t\\\"Notification\\\" => <string: 0x7fdac4504780> { length = 44, contents = \\\"com.apple.corespeech.voicetriggerassetchange\\\" }\\n} Options:{\\n}\",\n    \"FudEvent - Client:(null) Type:114 Filter:com.apple.MobileAccessoryUpdater.EA.app.multiasset.A2048.57 Data:<dictionary: 0x7fdac460feb0> { count = 5, transaction: 0, voucher = 0x7fdac460e7c0, contents =\\n\\t\\\"Command\\\" => <uint64: 0x2a6f1a5c3cef6b9d>: 114\\n\\t\\\"PluginIdentifier\\\" => <string: 0x7fdac5805eb0> { length = 49, contents = \\\"com.apple.MobileAccessoryUpdater.EAUpdaterService\\\" }\\n\\t\\\"_State\\\" => <uint64: 0x2a6f1a5c3ce84b9d>: 0\\n\\t\\\"XPCEventName\\\" => <string: 0x7fdac4516980> { length = 59, contents = \\\"com.apple.MobileAccessoryUpdater.EA.app.multiasset.A2048.57\\\" }\\n\\t\\\"Notification\\\" => <string: 0x7fdac451eed0> { length = 44, contents = \\\"com.apple.corespeech.voicetriggerassetchange\\\" }\\n} Options:{\\n}\",\n    \"FudEvent - Client:(null) Type:114 Filter:com.apple.MobileAccessoryUpdater.EA.app.multiasset.A2032.61 Data:<dictionary: 0x7fdac46050c0> { count = 5, transaction: 0, voucher = 0x7fdac460e7c0, contents =\\n\\t\\\"Command\\\" => <uint64: 0x2a6f1a5c3cef6b9d>: 114\\n\\t\\\"PluginIdentifier\\\" => <string: 0x7fdac58064e0> { length = 49, contents = \\\"com.apple.MobileAccessoryUpdater.EAUpdaterService\\\" }\\n\\t\\\"_State\\\" => <uint64: 0x2a6f1a5c3ce84b9d>: 0\\n\\t\\\"XPCEventName\\\" => <string: 0x7fdac453ba80> { length = 59, contents = \\\"com.apple.MobileAccessoryUpdater.EA.app.multiasset.A2032.61\\\" }\\n\\t\\\"Notification\\\" => <string: 0x7fdac450d430> { length = 44, contents = \\\"com.apple.corespeech.voicetriggerassetchange\\\" }\\n} Options:{\\n}\"\n)"
         );
     }
@@ -376,14 +376,14 @@ mod tests {
             message_items: FirehoseItemData {
                 item_info: vec![
                     FirehoseItemInfo {
-                        message_strings: rc_string!("system kext collection"),
+                        message_strings: FirehoseItemValue::Str(rc_string!("system kext collection")),
                         item_type: 34,
                         item_size: 0,
                     },
                     FirehoseItemInfo {
-                        message_strings: rc_string!(
+                        message_strings: FirehoseItemValue::Str(rc_string!(
                             "/System/Library/KernelCollections/SystemKernelExtensions.kc"
-                        ),
+                        )),
                         item_type: 34,
                         item_size: 0,
                     },
@@ -397,11 +397,11 @@ mod tests {
         let results =
             Oversize::get_oversize_strings(data_ref, first_proc_id, second_proc_id, &data);
         assert_eq!(
-            results[0].message_strings.as_str(),
+            results[0].message_strings.as_cow(),
             "system kext collection"
         );
         assert_eq!(
-            results[1].message_strings.as_str(),
+            results[1].message_strings.as_cow(),
             "/System/Library/KernelCollections/SystemKernelExtensions.kc"
         );
     }

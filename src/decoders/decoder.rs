@@ -5,6 +5,7 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
+use std::fmt;
 use std::net::IpAddr;
 
 use crate::{
@@ -40,7 +41,6 @@ use crate::{
 use uuid::Uuid;
 
 pub enum Decoded {
-    Other(RcString), // Default value for work in progress, to be removed when all other types are implemented
     Error(RcString),
     Masked(RcString),
     UpBool(bool),
@@ -77,54 +77,61 @@ pub enum Decoded {
     Permission(u8, u8, u8),
 }
 
-impl Decoded {
-    pub fn to_rc_string(&self) -> RcString {
+impl fmt::Display for Decoded {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Other(value) | Self::Error(value) | Self::Masked(value) => value.clone(),
-            Self::UpBool(value) => rc_string!(value.then(|| "NO").unwrap_or("YES")),
-            Self::LoBool(value) => rc_string!(value.then(|| "false").unwrap_or("true")),
-            Self::Uuid(value) => rc_string!(format_uuid(*value)),
-            Self::Errno(value) => rc_string!(value.to_string()),
-            Self::OdError(value) => rc_string!(value.to_string()),
-            Self::MemberIdType(value) => rc_string!(value.to_string()),
-            Self::MemberDetails(value) => rc_string!(value.to_string()),
-            Self::SidDetails(value) => rc_string!(value.to_string()),
-            Self::ClientAuthorizationStatus(value) => rc_string!(value.to_string()),
-            Self::DaemonStatusType(value) => rc_string!(value.to_string()),
-            Self::SubharvesterIdentifier(value) => rc_string!(value.to_string()),
-            Self::SqliteError(value) => rc_string!(value.to_string()),
-            Self::LocationStateTrackerData(value) => rc_string!(value.to_string()),
-            Self::LocationTrackerState(value) => rc_string!(value.to_string()),
-            Self::IpAddr(value) => rc_string!(value.to_string()),
-            Self::SockaddrData(value) => rc_string!(value.to_string()),
-            Self::LocalDateTime(value) => rc_string!(value.to_string()),
-            Self::DnsIdFlags(value) => rc_string!(value.to_string()),
-            Self::DnsHeader(value) => rc_string!(value.to_string()),
-            Self::DnsRecordType(value) => rc_string!(value.to_string()),
-            Self::DnsReason(value) => rc_string!(value.to_string()),
-            Self::DnsProtocol(value) => rc_string!(value.to_string()),
-            Self::DnsCounts(value) => rc_string!(value.to_string()),
-            Self::DnsAddRmv(value) => rc_string!(value.to_string()),
-            Self::DnsYesNo(value) => rc_string!(value.to_string()),
-            Self::DnsAcceptable(value) => rc_string!(value.to_string()),
-            Self::IoMessage(value) | Self::DnsGetAddrInfoOpts(value) => rc_string!(*value),
-            Self::DnsDomainName(value) => rc_string!(value.to_string()),
-            Self::DnsMacAddr(value) => rc_string!(value.to_string()),
-            Self::DnsSvcbRecord(value) => rc_string!(value.to_string()),
+            Self::Error(value) | Self::Masked(value) => f.write_str(value.as_str()),
+            Self::UpBool(value) => f.write_str(if *value { "NO" } else { "YES" }),
+            Self::LoBool(value) => f.write_str(if *value { "false" } else { "true" }),
+            Self::Uuid(value) => f.write_str(&format_uuid(*value)),
+            Self::Errno(value) => write!(f, "{value}"),
+            Self::OdError(value) => write!(f, "{value}"),
+            Self::MemberIdType(value) => write!(f, "{value}"),
+            Self::MemberDetails(value) => write!(f, "{value}"),
+            Self::SidDetails(value) => write!(f, "{value}"),
+            Self::ClientAuthorizationStatus(value) => write!(f, "{value}"),
+            Self::DaemonStatusType(value) => write!(f, "{value}"),
+            Self::SubharvesterIdentifier(value) => write!(f, "{value}"),
+            Self::SqliteError(value) => write!(f, "{value}"),
+            Self::LocationStateTrackerData(value) => write!(f, "{value}"),
+            Self::LocationTrackerState(value) => write!(f, "{value}"),
+            Self::IpAddr(value) => write!(f, "{value}"),
+            Self::SockaddrData(value) => write!(f, "{value}"),
+            Self::LocalDateTime(value) => write!(f, "{value}"),
+            Self::DnsIdFlags(value) => write!(f, "{value}"),
+            Self::DnsHeader(value) => write!(f, "{value}"),
+            Self::DnsRecordType(value) => write!(f, "{value}"),
+            Self::DnsReason(value) => write!(f, "{value}"),
+            Self::DnsProtocol(value) => write!(f, "{value}"),
+            Self::DnsCounts(value) => write!(f, "{value}"),
+            Self::DnsAddRmv(value) => write!(f, "{value}"),
+            Self::DnsYesNo(value) => write!(f, "{value}"),
+            Self::DnsAcceptable(value) => write!(f, "{value}"),
+            Self::IoMessage(value) | Self::DnsGetAddrInfoOpts(value) => f.write_str(value),
+            Self::DnsDomainName(value) => write!(f, "{value}"),
+            Self::DnsMacAddr(value) => write!(f, "{value}"),
+            Self::DnsSvcbRecord(value) => write!(f, "{value}"),
             Self::Permission(user, owner, group) => {
-                rc_string!(format_permission(*user, *owner, *group))
+                f.write_str(&format_permission(*user, *owner, *group))
             }
         }
     }
 }
 
-/// Check if we support one of Apple's custom logging objects
+impl Decoded {
+    pub fn to_rc_string(&self) -> RcString {
+        rc_string!(self.to_string())
+    }
+}
+
+/// Check if we support one of Apple's custom logging objects.
+/// Returns `None` if no decoder matched (the common case for plain `%d`/`%s`).
 pub(crate) fn check_objects(
     format_string: &str,
     message_values: &[FirehoseItemInfo],
     item_type: u8,
     item_index: usize,
-) -> Decoded {
+) -> Option<Decoded> {
     let mut index = item_index;
     const PRECISION_ITEM: u8 = 0x12;
 
@@ -132,32 +139,34 @@ pub(crate) fn check_objects(
     if item_type == PRECISION_ITEM {
         index += 1;
         if index > message_values.len() {
-            return Decoded::Error(rc_string!(format!(
+            return Some(Decoded::Error(rc_string!(format!(
                 "Index out of bounds for FirehoseItemInfo Vec. Got adjusted index {}, Vec size is {}. This should not have happened",
                 index,
                 message_values.len()
-            )));
+            ))));
         }
     }
 
     const MASKED_HASH_TYPE: u8 = 0xf2;
     // Check if the log value is hashed or marked private
+    let message_cow = message_values[index].message_strings.as_cow();
     if (format_string.contains("mask.hash") && message_values[index].item_type == MASKED_HASH_TYPE)
-        || message_values[index].message_strings.as_str() == "<private>"
+        || message_cow.as_ref() == "<private>"
     {
-        return Decoded::Masked(message_values[index].message_strings.clone());
+        return Some(Decoded::Masked(message_values[index].message_strings.to_rc_string()));
     }
 
-    let message_strings = message_values[index].message_strings.as_str();
+    let message_strings = message_cow.as_ref();
 
     // Check if log value contains one the supported decoders
     let message_value = to_decoded_value(format_string, message_strings);
 
     match message_value {
-        Ok(value) => value,
+        Ok(Some(value)) => Some(value),
+        Ok(None) => None,
         Err(e) => {
             log::error!("[macos-unifiedlogs] Failed to decode log object. Error: {e:?}");
-            Decoded::Error(rc_string!(format!("Decoder error: {e:?}")))
+            Some(Decoded::Error(rc_string!(format!("Decoder error: {e:?}"))))
         }
     }
 }
@@ -165,7 +174,7 @@ pub(crate) fn check_objects(
 fn to_decoded_value<'a>(
     format_string: &'a str,
     message_strings: &'a str,
-) -> Result<Decoded, DecoderError<'a>> {
+) -> Result<Option<Decoded>, DecoderError<'a>> {
     let decoded = if format_string.contains("BOOL") {
         Decoded::UpBool(message_strings == "0")
     } else if format_string.contains("bool") {
@@ -235,23 +244,23 @@ fn to_decoded_value<'a>(
     } else if format_string.contains("mdns:rd.svcb") {
         Decoded::DnsSvcbRecord(get_service_binding(&message_strings)?)
     } else {
-        Decoded::Other(rc_string!(""))
+        return Ok(None);
     };
 
-    Ok(decoded)
+    Ok(Some(decoded))
 }
 
 #[cfg(test)]
 mod tests {
     use super::check_objects;
     use super::*;
-    use crate::chunks::firehose::firehose_log::FirehoseItemInfo;
+    use crate::chunks::firehose::firehose_log::{FirehoseItemInfo, FirehoseItemValue};
 
     #[test]
     fn test_check_objects_lowercase_bool() {
         let test_format = "%{bool}d";
         let test_item_info = FirehoseItemInfo {
-            message_strings: rc_string!("1"),
+            message_strings: FirehoseItemValue::Str(rc_string!("1")),
             item_type: 0,
             item_size: 4,
         };
@@ -259,14 +268,14 @@ mod tests {
         let test_index = 0;
 
         let results = check_objects(test_format, &[test_item_info], test_type, test_index);
-        assert_eq!(results.to_rc_string().as_str(), "true")
+        assert_eq!(results.unwrap().to_rc_string().as_str(), "true")
     }
 
     #[test]
     fn test_check_objects_uppercase_bool() {
         let test_format = "%{BOOL}d";
         let test_item_info = FirehoseItemInfo {
-            message_strings: rc_string!("1"),
+            message_strings: FirehoseItemValue::Str(rc_string!("1")),
             item_type: 0,
             item_size: 4,
         };
@@ -274,14 +283,14 @@ mod tests {
         let test_index = 0;
 
         let results = check_objects(test_format, &[test_item_info], test_type, test_index);
-        assert_eq!(results.to_rc_string().as_str(), "YES")
+        assert_eq!(results.unwrap().to_rc_string().as_str(), "YES")
     }
 
     #[test]
     fn test_odtypes() {
         let test_format = "%{odtypes:mbr_details}d";
         let test_item_info = FirehoseItemInfo {
-            message_strings: rc_string!("I/7///8vTG9jYWwvRGVmYXVsdAA="),
+            message_strings: FirehoseItemValue::Str(rc_string!("I/7///8vTG9jYWwvRGVmYXVsdAA=")),
             item_type: 50,
             item_size: 0,
         };
@@ -289,14 +298,14 @@ mod tests {
         let test_index = 0;
 
         let results = check_objects(test_format, &[test_item_info], test_type, test_index);
-        assert_eq!(results.to_rc_string().as_str(), "user: -2@/Local/Default");
+        assert_eq!(results.unwrap().to_rc_string().as_str(), "user: -2@/Local/Default");
     }
 
     #[test]
     fn test_check_objects_uuid() {
         let test_format = "%{public,uuid_t}.16P";
         let test_item_info = FirehoseItemInfo {
-            message_strings: rc_string!("hZV+HTbETtKGqAZXvN3ikw=="),
+            message_strings: FirehoseItemValue::Str(rc_string!("hZV+HTbETtKGqAZXvN3ikw==")),
             item_type: 50,
             item_size: 16,
         };
@@ -305,7 +314,7 @@ mod tests {
 
         let results = check_objects(test_format, &[test_item_info], test_type, test_index);
         assert_eq!(
-            results.to_rc_string().as_str(),
+            results.unwrap().to_rc_string().as_str(),
             "85957E1D36C44ED286A80657BCDDE293"
         )
     }
@@ -314,7 +323,7 @@ mod tests {
     fn test_private() {
         let test_format = "%{public,uuid_t}.16P";
         let test_item_info = FirehoseItemInfo {
-            message_strings: rc_string!("<private>"),
+            message_strings: FirehoseItemValue::Str(rc_string!("<private>")),
             item_type: 50,
             item_size: 16,
         };
@@ -322,14 +331,14 @@ mod tests {
         let test_index = 0;
 
         let results = check_objects(test_format, &[test_item_info], test_type, test_index);
-        assert_eq!(results.to_rc_string().as_str(), "<private>")
+        assert_eq!(results.unwrap().to_rc_string().as_str(), "<private>")
     }
 
     #[test]
     fn test_hash() {
         let test_format = "%{public,mask.hash}.16P";
         let test_item_info = FirehoseItemInfo {
-            message_strings: rc_string!("hash"),
+            message_strings: FirehoseItemValue::Str(rc_string!("hash")),
             item_type: 242,
             item_size: 16,
         };
@@ -337,6 +346,6 @@ mod tests {
         let test_index = 0;
 
         let results = check_objects(test_format, &[test_item_info], test_type, test_index);
-        assert_eq!(results.to_rc_string().as_str(), "hash")
+        assert_eq!(results.unwrap().to_rc_string().as_str(), "hash")
     }
 }

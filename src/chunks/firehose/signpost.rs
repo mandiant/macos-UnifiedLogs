@@ -9,8 +9,7 @@ use crate::catalog::CatalogChunk;
 use crate::chunks::firehose::flags::FirehoseFormatters;
 use crate::chunks::firehose::message::MessageData;
 use crate::traits::FileProvider;
-use log::{debug, error};
-use nom::Needed;
+use log::debug;
 use nom::bytes::complete::take;
 use nom::number::complete::{le_u8, le_u16, le_u32, le_u64};
 use std::mem::size_of;
@@ -141,49 +140,35 @@ impl FirehoseSignpost {
         {
             if firehose.firehose_formatters.has_large_offset != 0 {
                 let mut large_offset = firehose.firehose_formatters.has_large_offset;
-                let extra_offset_value;
                 // large_shared_cache should be double the value of has_large_offset
                 // Ex: has_large_offset = 1, large_shared_cache = 2
                 // If the value do not match then there is an issue with shared string offset
                 // Can recover by using large_shared_cache
                 // Apple records this as an error: "error: ~~> <Invalid shared cache code pointer offset>"
                 //   But is still able to get string formatter
+                let offset;
                 if large_offset != firehose.firehose_formatters.large_shared_cache / 2
                     && !firehose.firehose_formatters.shared_cache
                 {
                     large_offset = firehose.firehose_formatters.large_shared_cache / 2;
                     // Combine large offset value with current string offset to get the true offset
-                    extra_offset_value = format!("{large_offset:X}{string_offset:08X}");
+                    offset = (u64::from(large_offset) << 32) | string_offset;
                 } else if firehose.firehose_formatters.shared_cache {
                     // Large offset is 8 if shared_cache flag is set
                     large_offset = 8;
-                    extra_offset_value = format!("{large_offset:X}{string_offset:07X}");
+                    offset = (u64::from(large_offset) << 28) | string_offset;
                 } else {
-                    extra_offset_value = format!("{large_offset:X}{string_offset:08X}");
+                    offset = (u64::from(large_offset) << 32) | string_offset;
                 }
 
-                // Combine large offset value with current string offset to get the true offset
-                //let extra_offset_value = format!("{:X}{:07X}", large_offset, string_offset);
-                let extra_offset_value_result = u64::from_str_radix(&extra_offset_value, 16);
-                match extra_offset_value_result {
-                    Ok(offset) => {
-                        return MessageData::extract_shared_strings(
-                            provider,
-                            offset,
-                            first_proc_id,
-                            second_proc_id,
-                            catalogs,
-                            string_offset,
-                        );
-                    }
-                    Err(err) => {
-                        // We should not get errors since we are combining two numbers to create the offset
-                        error!(
-                            "Failed to get shared string offset to format string for signpost firehose entry: {err:?}"
-                        );
-                        return Err(nom::Err::Incomplete(Needed::Unknown));
-                    }
-                }
+                return MessageData::extract_shared_strings(
+                    provider,
+                    offset,
+                    first_proc_id,
+                    second_proc_id,
+                    catalogs,
+                    string_offset,
+                );
             }
             MessageData::extract_shared_strings(
                 provider,
@@ -195,32 +180,19 @@ impl FirehoseSignpost {
             )
         } else {
             if firehose.firehose_formatters.absolute {
-                let extra_offset_value = format!(
-                    "{:X}{:08X}",
-                    firehose.firehose_formatters.main_exe_alt_index, firehose.unknown_pc_id,
-                );
+                let offset = (u64::from(firehose.firehose_formatters.main_exe_alt_index)
+                    << 32)
+                    | u64::from(firehose.unknown_pc_id);
 
-                let offset_result = u64::from_str_radix(&extra_offset_value, 16);
-                match offset_result {
-                    Ok(offset) => {
-                        return MessageData::extract_absolute_strings(
-                            provider,
-                            offset,
-                            string_offset,
-                            first_proc_id,
-                            second_proc_id,
-                            catalogs,
-                            string_offset,
-                        );
-                    }
-                    Err(err) => {
-                        // We should not get errors since we are combining two numbers to create the offset
-                        error!(
-                            "Failed to get absolute offset to format string for signpost firehose entry: {err:?}"
-                        );
-                        return Err(nom::Err::Incomplete(Needed::Unknown));
-                    }
-                }
+                return MessageData::extract_absolute_strings(
+                    provider,
+                    offset,
+                    string_offset,
+                    first_proc_id,
+                    second_proc_id,
+                    catalogs,
+                    string_offset,
+                );
             }
             if !firehose.firehose_formatters.uuid_relative.is_nil() {
                 return MessageData::extract_alt_uuid_strings(

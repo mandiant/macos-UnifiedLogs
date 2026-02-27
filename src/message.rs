@@ -7,7 +7,7 @@
 
 use crate::chunks::firehose::firehose_log::FirehoseItemInfo;
 use crate::decoders::decoder;
-use crate::{RcString, rc_string};
+use crate::{RcString, empty_rc_string, missing_data_rc_string, private_rc_string, rc_string};
 use log::{error, info, warn};
 use nom::Parser;
 use nom::branch::alt;
@@ -16,8 +16,8 @@ use nom::character::complete::digit0;
 use regex::Regex;
 use std::mem::size_of;
 
-struct FormatAndMessage {
-    formatter: RcString,
+struct FormatAndMessage<'a> {
+    formatter: &'a str,
     message: RcString,
 }
 
@@ -28,7 +28,7 @@ const OCTAL_TYPES: &[&str] = &["o", "O"];
 const ERROR_TYPES: &[&str] = &["m"];
 const STRING_TYPES: &[&str] = &["c", "s", "@", "S", "C", "P"];
 
-const PLUS: &'static str = "+";
+const PLUS: &str = "+";
 
 #[derive(Debug, Clone, Copy)]
 enum FormatableType {
@@ -62,7 +62,7 @@ pub fn format_firehose_log_message(
     message_re: &Regex,
 ) -> RcString {
     let log_message = format_string;
-    let mut format_and_message_vec: Vec<FormatAndMessage> = Vec::new();
+    let mut format_and_message_vec: Vec<FormatAndMessage<'_>> = Vec::new();
     info!("Unified log base message: {log_message:?}");
     info!("Unified log entry strings: {item_message:?}");
 
@@ -79,10 +79,10 @@ pub fn format_firehose_log_message(
         subsystem:      156 com.apple.calls.telephonyutilities.Default
     */
     if log_message.is_empty() && item_message.is_empty() {
-        return rc_string!("");
+        return empty_rc_string();
     }
     if log_message.is_empty() {
-        return item_message[0].message_strings.clone();
+        return item_message[0].message_strings.to_rc_string();
     }
     let results = message_re.find_iter(&log_message);
 
@@ -94,13 +94,13 @@ pub fn format_firehose_log_message(
         }
 
         let mut format_and_message = FormatAndMessage {
-            formatter: rc_string!(""),
-            message: rc_string!(""),
+            formatter: "",
+            message: empty_rc_string(),
         };
 
         // %% is literal %
         if formatter.as_str() == "%%" {
-            format_and_message.formatter = rc_string!(formatter.as_str());
+            format_and_message.formatter = formatter.as_str();
             format_and_message.message = rc_string!("%");
             format_and_message_vec.push(format_and_message);
             continue;
@@ -109,20 +109,19 @@ pub fn format_firehose_log_message(
         // Sometimes the log message does not have all of the message strings
         // Apple labels them: "<decode: missing data>"
         if item_index >= item_message.len() {
-            format_and_message.formatter = rc_string!(formatter.as_str());
-            format_and_message.message = rc_string!("<Missing message data>");
+            format_and_message.formatter = formatter.as_str();
+            format_and_message.message = missing_data_rc_string();
             format_and_message_vec.push(format_and_message);
             continue;
         }
-        let mut formatted_log_message = item_message[item_index].message_strings.clone();
+        let mut formatted_log_message = item_message[item_index].message_strings.to_rc_string();
         let formatter_string = formatter.as_str();
 
         // If the formatter does not have a type then the entry is the literal foramt
         // Ex: RDAlarmNotificationConsumer {identifier: %{public}%@ currentSet: %@, count: %{public}%d}
         //  -> RDAlarmNotificationConsumer {identifier: {public}<private> allowedSet: <private>, count {public}0}
         if formatter_string.starts_with("%{") && formatter_string.ends_with('}') {
-            format_and_message.formatter = rc_string!(formatter_string);
-            formatter_string.to_string().remove(0);
+            format_and_message.formatter = formatter_string;
             format_and_message.message = rc_string!(formatter_string);
             format_and_message_vec.push(format_and_message);
             continue;
@@ -143,8 +142,8 @@ pub fn format_firehose_log_message(
         }
 
         if item_index >= item_message.len() {
-            format_and_message.formatter = rc_string!(formatter.as_str());
-            format_and_message.message = rc_string!("<Missing message data>");
+            format_and_message.formatter = formatter.as_str();
+            format_and_message.message = missing_data_rc_string();
             format_and_message_vec.push(format_and_message);
             continue;
         }
@@ -208,7 +207,7 @@ pub fn format_firehose_log_message(
                 || (item_message[item_index].item_type == private_number
                     && item_message[item_index].item_size == private_message)
             {
-                formatted_log_message = rc_string!("<private>");
+                formatted_log_message = private_rc_string();
             } else {
                 let results = parse_type_formatter(
                     formatter_string,
@@ -247,7 +246,7 @@ pub fn format_firehose_log_message(
                 || (item_message[item_index].item_type == private_number
                     && item_message[item_index].item_size == private_message)
             {
-                formatted_log_message = rc_string!("<private>");
+                formatted_log_message = private_rc_string();
             } else {
                 let results = parse_formatter(
                     formatter_string,
@@ -265,22 +264,21 @@ pub fn format_firehose_log_message(
         }
 
         item_index += 1;
-        format_and_message.formatter = rc_string!(formatter.as_str());
-        format_and_message.message = rc_string!(formatted_log_message.as_str());
+        format_and_message.formatter = formatter.as_str();
+        format_and_message.message = formatted_log_message;
         format_and_message_vec.push(format_and_message);
     }
 
-    let mut log_message_vec: Vec<&str> = Vec::new();
+    let mut result = String::with_capacity(log_message.len());
     let mut rest = log_message.as_str();
     for values in &format_and_message_vec {
         // Split the values by printf formatter
         // We have to do this instead of using replace because our replacement string may also contain a printf formatter
-
-        let message_results = rest.split_once(values.formatter.as_str());
+        let message_results = rest.split_once(values.formatter);
         match message_results {
             Some((message_part, remaining_message)) => {
-                log_message_vec.push(message_part);
-                log_message_vec.push(values.message.as_str());
+                result.push_str(message_part);
+                result.push_str(values.message.as_str());
                 rest = remaining_message;
             }
             None => error!(
@@ -290,8 +288,8 @@ pub fn format_firehose_log_message(
         }
     }
 
-    log_message_vec.push(rest);
-    rc_string!(log_message_vec.join(""))
+    result.push_str(rest);
+    rc_string!(result)
 }
 
 // Format strings are based on C printf formats. Parse format specification
@@ -318,7 +316,7 @@ fn parse_formatter<'a>(
         }
     }
 
-    let mut message = message_value[index].message_strings.clone();
+    let mut message = message_value[index].message_strings.to_rc_string();
 
     let number_item_type: Vec<u8> = vec![0x0, 0x1, 0x2];
 
@@ -327,7 +325,7 @@ fn parse_formatter<'a>(
     if formatter.to_lowercase().ends_with('c')
         && number_item_type.contains(&message_value[index].item_type)
     {
-        let char_results = message_value[index].message_strings.parse::<u32>();
+        let char_results = message_value[index].message_strings.parse_u32();
         match char_results {
             Ok(char_message) => message = rc_string!((char_message as u8 as char).to_string()),
             Err(err) => {
@@ -384,9 +382,7 @@ fn parse_formatter<'a>(
                     rc_string!("Failed to format precision/dynamic string due index length"),
                 ));
             }
-            message_value[index]
-                .message_strings
-                .clone_into(&mut message);
+            message = message_value[index].message_strings.to_rc_string();
         }
 
         width_value = format!("{precision_value}");
@@ -507,13 +503,10 @@ fn parse_type_formatter<'a>(
 ) -> nom::IResult<&'a str, RcString> {
     let (format, format_type) = take_until("}")(formatter)?;
 
-    let apple_object = decoder::check_objects(format_type, message_value, item_type, item_index);
-    let apple_object = apple_object.to_rc_string();
-
     // If we successfully decoded an apple object, then there is nothing to format.
     // Signpost entries have not been seen with custom objects
-    if !apple_object.is_empty() {
-        return Ok(("", apple_object));
+    if let Some(apple_object) = decoder::check_objects(format_type, message_value, item_type, item_index) {
+        return Ok(("", apple_object.to_rc_string()));
     }
 
     let (_, mut message) = parse_formatter(format, message_value, item_type, item_index)?;
@@ -907,7 +900,7 @@ fn parse_int(message: &str) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chunks::firehose::firehose_log::FirehoseItemInfo;
+    use crate::chunks::firehose::firehose_log::{FirehoseItemInfo, FirehoseItemValue};
     use regex::Regex;
     use test_case::test_case;
 
@@ -917,7 +910,7 @@ mod tests {
     fn test_format_firehose_log_message() {
         let test_data = String::from("opendirectoryd (build %{public}s) launched...");
         let item_message = vec![FirehoseItemInfo {
-            message_strings: rc_string!("796.100"),
+            message_strings: FirehoseItemValue::Str(rc_string!("796.100")),
             item_type: 34,
             item_size: 0,
         }];
@@ -940,37 +933,37 @@ mod tests {
 
         let items = vec![
             FirehoseItemInfo {
-                message_strings: rc_string!("406"),
+                message_strings: FirehoseItemValue::Str(rc_string!("406")),
                 item_type: 0,
                 item_size: 0,
             },
             FirehoseItemInfo {
-                message_strings: rc_string!("258"),
+                message_strings: FirehoseItemValue::Str(rc_string!("258")),
                 item_type: 0,
                 item_size: 0,
             },
             FirehoseItemInfo {
-                message_strings: rc_string!("DCPAVSimpleVideoInterface"),
+                message_strings: FirehoseItemValue::Str(rc_string!("DCPAVSimpleVideoInterface")),
                 item_type: 32,
                 item_size: 25,
             },
             FirehoseItemInfo {
-                message_strings: rc_string!("setColorElement"),
+                message_strings: FirehoseItemValue::Str(rc_string!("setColorElement")),
                 item_type: 32,
                 item_size: 15,
             },
             FirehoseItemInfo {
-                message_strings: rc_string!("3"),
+                message_strings: FirehoseItemValue::Str(rc_string!("3")),
                 item_type: 0,
                 item_size: 0,
             },
             FirehoseItemInfo {
-                message_strings: rc_string!("All"),
+                message_strings: FirehoseItemValue::Str(rc_string!("All")),
                 item_type: 32,
                 item_size: 3,
             },
             FirehoseItemInfo {
-                message_strings: rc_string!("89"),
+                message_strings: FirehoseItemValue::Str(rc_string!("89")),
                 item_type: 0,
                 item_size: 0,
             },
@@ -991,7 +984,7 @@ mod tests {
         let mut test_message = Vec::new();
 
         let test_data = FirehoseItemInfo {
-            message_strings: rc_string!("2"),
+            message_strings: FirehoseItemValue::Str(rc_string!("2")),
             item_type: 2,
             item_size: 2,
         };
@@ -1028,7 +1021,7 @@ mod tests {
         assert_eq!(formatted_results.as_str(), " 0x2");
 
         let test_format = "%#04o";
-        test_message[0].message_strings = rc_string!("100");
+        test_message[0].message_strings = FirehoseItemValue::Str(rc_string!("100"));
         let (_, formatted_results) = parse_formatter(
             test_format,
             &test_message,
@@ -1049,7 +1042,7 @@ mod tests {
         assert_eq!(formatted_results.as_str(), "0000144");
 
         let test_format = "%x";
-        test_message[0].message_strings = rc_string!("10");
+        test_message[0].message_strings = FirehoseItemValue::Str(rc_string!("10"));
         let (_, formatted_results) = parse_formatter(
             test_format,
             &test_message,
@@ -1060,7 +1053,7 @@ mod tests {
         assert_eq!(formatted_results.as_str(), "A");
 
         let test_float = "%+09.4f";
-        test_message[0].message_strings = rc_string!("4570111009880014848");
+        test_message[0].message_strings = FirehoseItemValue::Str(rc_string!("4570111009880014848"));
         let (_, formatted_results) = parse_formatter(
             test_float,
             &test_message,
@@ -1091,7 +1084,7 @@ mod tests {
         assert_eq!(formatted_results.as_str(), "0.0035  ");
 
         let test_float = "%f";
-        test_message[0].message_strings = rc_string!("4614286721111404799");
+        test_message[0].message_strings = FirehoseItemValue::Str(rc_string!("4614286721111404799"));
         let (_, formatted_results) = parse_formatter(
             test_float,
             &test_message,
@@ -1102,7 +1095,7 @@ mod tests {
         assert_eq!(formatted_results.as_str(), "3.154944");
 
         let test_int = "%d";
-        test_message[0].message_strings = rc_string!("-248");
+        test_message[0].message_strings = FirehoseItemValue::Str(rc_string!("-248"));
         let (_, formatted_results) = parse_formatter(
             test_int,
             &test_message,
@@ -1113,7 +1106,7 @@ mod tests {
         assert_eq!(formatted_results.as_str(), "-248");
 
         let test_float = "%f";
-        test_message[0].message_strings = rc_string!("-4611686018427387904");
+        test_message[0].message_strings = FirehoseItemValue::Str(rc_string!("-4611686018427387904"));
         let (_, formatted_results) = parse_formatter(
             test_float,
             &test_message,
@@ -1124,7 +1117,7 @@ mod tests {
         assert_eq!(formatted_results.as_str(), "-2");
 
         let test_float = "%f";
-        test_message[0].message_strings = rc_string!("-4484628366119329180");
+        test_message[0].message_strings = FirehoseItemValue::Str(rc_string!("-4484628366119329180"));
         let (_, formatted_results) = parse_formatter(
             test_float,
             &test_message,
@@ -1135,7 +1128,7 @@ mod tests {
         assert_eq!(formatted_results.as_str(), "-650937839.633862");
 
         let test_string = "%s";
-        test_message[0].message_strings = rc_string!("The big red dog jumped over the crab");
+        test_message[0].message_strings = FirehoseItemValue::Str(rc_string!("The big red dog jumped over the crab"));
         let (_, formatted_results) = parse_formatter(
             test_string,
             &test_message,
@@ -1149,7 +1142,7 @@ mod tests {
         );
 
         let test_string = "%.2@";
-        test_message[0].message_strings = rc_string!("aaabbbb");
+        test_message[0].message_strings = FirehoseItemValue::Str(rc_string!("aaabbbb"));
         let (_, formatted_results) = parse_formatter(
             test_string,
             &test_message,
@@ -1163,7 +1156,7 @@ mod tests {
         test_message[0].item_size = 10;
         test_message[0].item_type = 0x12;
         let test_data2 = FirehoseItemInfo {
-            message_strings: rc_string!("hi"),
+            message_strings: FirehoseItemValue::Str(rc_string!("hi")),
             item_type: 2,
             item_size: 2,
         };
@@ -1184,7 +1177,7 @@ mod tests {
         let mut test_message = Vec::new();
 
         let mut test_data = FirehoseItemInfo {
-            message_strings: rc_string!("test"),
+            message_strings: FirehoseItemValue::Str(rc_string!("test")),
             item_type: 2,
             item_size: 4,
         };
@@ -1204,7 +1197,7 @@ mod tests {
         let mut test_message = Vec::new();
 
         test_data = FirehoseItemInfo {
-            message_strings: rc_string!("1"),
+            message_strings: FirehoseItemValue::Str(rc_string!("1")),
             item_type: 2,
             item_size: 4,
         };

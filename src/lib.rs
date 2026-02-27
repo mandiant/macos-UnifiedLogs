@@ -176,3 +176,20 @@ impl ToRcString for &RcString {
         RcString(self.0.clone())
     }
 }
+
+macro_rules! define_rc_string_constant {
+    ($fn_name:ident, $value:expr) => {
+        pub(crate) fn $fn_name() -> RcString {
+            thread_local! {
+                static VAL: RcString = RcString(Rc::new(String::from($value)));
+            }
+            VAL.with(|v| v.clone())
+        }
+    };
+}
+
+define_rc_string_constant!(empty_rc_string, "");
+define_rc_string_constant!(private_rc_string, "<private>");
+define_rc_string_constant!(null_rc_string, "(null)");
+define_rc_string_constant!(missing_data_rc_string, "<Missing message data>");
+define_rc_string_constant!(percent_s_rc_string, "%s");

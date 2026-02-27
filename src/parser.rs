@@ -95,6 +95,24 @@ pub fn build_log(
     LogData::build_log(unified_data, provider, timesync_data, exclude_missing)
 }
 
+/// Like [`build_log`], but skips message formatting for entries not matching `filter`.
+///
+/// The filter receives a partially-populated [`LogData`] with `pid`, `time`, `log_type`,
+/// `event_type`, `euid`, `thread_id`, and `boot_uuid` already set. Fields like
+/// `message`, `subsystem`, `process`, and `library` are empty at filter time.
+///
+/// Return `true` from the filter to include and fully format the entry.
+/// Return `false` to skip it, avoiding the expensive message formatting.
+pub fn build_log_filtered<'a>(
+    unified_data: &'a UnifiedLogData,
+    provider: &'a mut dyn FileProvider,
+    timesync_data: &'a HashMap<Uuid, TimesyncBoot>,
+    exclude_missing: bool,
+    filter: impl Fn(&LogData) -> bool + 'a,
+) -> (Vec<LogData>, UnifiedLogData) {
+    LogData::build_log_filtered(unified_data, provider, timesync_data, exclude_missing, filter)
+}
+
 /// Parse all UUID files in provided directory. The directory should follow the same layout as the live system (ex: path/to/files/\<two character UUID\>/\<remaining UUID name\>)
 pub fn collect_strings(provider: &dyn FileProvider) -> Result<Vec<UUIDText>, ParserError> {
     let mut uuidtext_vec: Vec<UUIDText> = Vec::new();

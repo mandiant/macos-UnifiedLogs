@@ -499,7 +499,6 @@ pub(crate) fn get_location_tracker_state(
 }
 
 /// Create the location tracker json object
-
 impl Display for LocationTrackerState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(

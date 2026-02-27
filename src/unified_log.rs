@@ -10,7 +10,6 @@
 //! Provides a simple library to parse the macOS Unified Log format.
 
 use std::collections::HashMap;
-use std::rc;
 
 use crate::catalog::CatalogChunk;
 use crate::chunks::firehose::activity::FirehoseActivity;
@@ -31,7 +30,7 @@ use crate::util::{
     encode_standard, extract_string, join_strs, padding_size_8, u64_to_usize,
     unixepoch_to_datetime, unixepoch_to_iso,
 };
-use crate::{RcString, rc_string};
+use crate::{RcString, empty_rc_string, rc_string};
 use chrono::{DateTime, Utc};
 use log::{error, warn};
 use nom::bytes::complete::take;
@@ -99,6 +98,11 @@ struct LogIterator<'a> {
     exclude_missing: bool,
     message_re: Regex,
     catalog_data_iterator_index: usize,
+    timezone_name: RcString,
+    /// Optional filter applied after basic metadata (pid, time, log_type, event_type)
+    /// is populated but before expensive message formatting. Entries where the filter
+    /// returns `false` are skipped, saving the `format_firehose_log_message` cost.
+    filter: Option<Box<dyn Fn(&LogData) -> bool + 'a>>,
 }
 
 impl<'a> LogIterator<'a> {
@@ -107,6 +111,16 @@ impl<'a> LogIterator<'a> {
         provider: &'a mut dyn FileProvider,
         timesync_data: &'a HashMap<Uuid, TimesyncBoot>,
         exclude_missing: bool,
+    ) -> Result<Self, regex::Error> {
+        Self::with_filter(unified_log_data, provider, timesync_data, exclude_missing, None)
+    }
+
+    fn with_filter(
+        unified_log_data: &'a UnifiedLogData,
+        provider: &'a mut dyn FileProvider,
+        timesync_data: &'a HashMap<Uuid, TimesyncBoot>,
+        exclude_missing: bool,
+        filter: Option<Box<dyn Fn(&LogData) -> bool + 'a>>,
     ) -> Result<Self, regex::Error> {
         /*
         Crazy Regex to try to get all log message formatters
@@ -142,6 +156,14 @@ impl<'a> LogIterator<'a> {
             }
         };
 
+        let timezone_name = rc_string!(
+            unified_log_data.header[0]
+                .timezone_path
+                .split('/')
+                .next_back()
+                .unwrap_or("Unknown Timezone Name")
+        );
+
         Ok(LogIterator {
             unified_log_data,
             provider,
@@ -149,6 +171,8 @@ impl<'a> LogIterator<'a> {
             exclude_missing,
             message_re,
             catalog_data_iterator_index: 0,
+            timezone_name,
+            filter,
         })
     }
 }
@@ -189,41 +213,44 @@ impl Iterator for LogIterator<'_> {
 
                 // Our struct format to hold and show the log data
                 let mut log_data = LogData {
-                    subsystem: rc_string!(""),
+                    subsystem: empty_rc_string(),
                     thread_id: firehose.thread_id,
                     pid: catalog_data.catalog.get_pid(
                         preamble.first_number_proc_id,
                         preamble.second_number_proc_id,
                     ),
-                    library: rc_string!(""),
+                    library: empty_rc_string(),
                     activity_id: 0,
                     time: timestamp,
                     timestamp: unixepoch_to_datetime(timestamp as i64),
-                    category: rc_string!(""),
+                    category: empty_rc_string(),
                     log_type: LogData::get_log_type(
                         firehose.unknown_log_type,
                         firehose.unknown_log_activity_type,
                     ),
-                    process: rc_string!(""),
-                    message: rc_string!(""),
+                    process: empty_rc_string(),
+                    message: empty_rc_string(),
                     event_type: LogData::get_event_type(firehose.unknown_log_activity_type),
                     euid: catalog_data.catalog.get_euid(
                         preamble.first_number_proc_id,
                         preamble.second_number_proc_id,
                     ),
                     boot_uuid: self.unified_log_data.header[0].boot_uuid,
-                    timezone_name: rc_string!(
-                        self.unified_log_data.header[0]
-                            .timezone_path
-                            .split('/')
-                            .next_back()
-                            .unwrap_or("Unknown Timezone Name")
-                    ),
+                    timezone_name: self.timezone_name.clone(),
                     library_uuid: Uuid::nil(),
                     process_uuid: Uuid::nil(),
-                    raw_message: rc_string!(""),
+                    raw_message: empty_rc_string(),
                     message_entries: firehose.message.item_info.to_owned(),
                 };
+
+                // If a filter is set, check it before doing expensive message formatting.
+                // The filter has access to pid, time, log_type, event_type, euid, thread_id.
+                // Subsystem/process/library are not yet populated at this point.
+                if let Some(ref filter) = self.filter {
+                    if !filter(&log_data) {
+                        continue;
+                    }
+                }
 
                 // 0x4 - Non-activity log entry. Ex: log default, log error, etc
                 // 0x2 - Activity log entry. Ex: activity create
@@ -578,27 +605,21 @@ impl Iterator for LogIterator<'_> {
                 subsystem: rc_string!(&simpledump.subsystem),
                 thread_id: simpledump.thread_id,
                 pid: simpledump.first_proc_id,
-                library: rc_string!(""),
+                library: empty_rc_string(),
                 activity_id: 0,
                 time: timestamp,
                 timestamp: unixepoch_to_datetime(timestamp as i64),
-                category: rc_string!(""),
+                category: empty_rc_string(),
                 log_type: LogType::Simpledump,
-                process: rc_string!(""),
+                process: empty_rc_string(),
                 message: rc_string!(&simpledump.message_string),
                 event_type: EventType::Simpledump,
                 euid: 0,
                 boot_uuid: self.unified_log_data.header[0].boot_uuid,
-                timezone_name: rc_string!(
-                    self.unified_log_data.header[0]
-                        .timezone_path
-                        .split('/')
-                        .next_back()
-                        .unwrap_or("Unknown Timezone Name")
-                ),
+                timezone_name: self.timezone_name.clone(),
                 library_uuid: simpledump.sender_uuid,
                 process_uuid: simpledump.dsc_uuid,
-                raw_message: rc_string!(""),
+                raw_message: empty_rc_string(),
                 message_entries: Vec::new(),
             };
             log_data_vec.push(log_data);
@@ -646,16 +667,16 @@ impl Iterator for LogIterator<'_> {
                 no_firehose_preamble,
             );
             let log_data = LogData {
-                subsystem: rc_string!(""),
+                subsystem: empty_rc_string(),
                 thread_id: 0,
                 pid: statedump.first_proc_id,
-                library: rc_string!(""),
+                library: empty_rc_string(),
                 activity_id: statedump.activity_id,
                 time: timestamp,
                 timestamp: unixepoch_to_datetime(timestamp as i64),
-                category: rc_string!(""),
+                category: empty_rc_string(),
                 event_type: EventType::Statedump,
-                process: rc_string!(""),
+                process: empty_rc_string(),
                 message: rc_string!(format!(
                     "title: {}\nObject Type: {}\nObject Type: {}\n{data_string}",
                     statedump.title_name, statedump.decoder_library, statedump.decoder_type,
@@ -663,16 +684,10 @@ impl Iterator for LogIterator<'_> {
                 log_type: LogType::Statedump,
                 euid: 0,
                 boot_uuid: self.unified_log_data.header[0].boot_uuid.to_owned(),
-                timezone_name: rc_string!(
-                    self.unified_log_data.header[0]
-                        .timezone_path
-                        .split('/')
-                        .next_back()
-                        .unwrap_or("Unknown Timezone Name")
-                ),
+                timezone_name: self.timezone_name.clone(),
                 library_uuid: Uuid::nil(),
                 process_uuid: Uuid::nil(),
-                raw_message: rc_string!(""),
+                raw_message: empty_rc_string(),
                 message_entries: Vec::new(),
             };
             log_data_vec.push(log_data);
@@ -817,6 +832,51 @@ impl LogData {
         let Ok(log_iterator) =
             LogIterator::new(unified_log_data, provider, timesync_data, exclude_missing)
         else {
+            return (log_data_vec, missing_unified_log_data_vec);
+        };
+        for (mut log_data, mut missing_unified_log) in log_iterator {
+            log_data_vec.append(&mut log_data);
+            missing_unified_log_data_vec
+                .header
+                .append(&mut missing_unified_log.header);
+            missing_unified_log_data_vec
+                .catalog_data
+                .append(&mut missing_unified_log.catalog_data);
+            missing_unified_log_data_vec
+                .oversize
+                .append(&mut missing_unified_log.oversize);
+        }
+
+        (log_data_vec, missing_unified_log_data_vec)
+    }
+
+    /// Like [`build_log`](Self::build_log), but only formats messages for entries matching `filter`.
+    ///
+    /// The filter receives a partially-populated `LogData` with `pid`, `time`, `log_type`,
+    /// `event_type`, `euid`, `thread_id`, and `boot_uuid` set, but `message`, `subsystem`,
+    /// `process`, `library` are empty. Return `true` to include and format the entry,
+    /// `false` to skip it entirely — saving the expensive `format_firehose_log_message` call.
+    pub fn build_log_filtered<'a>(
+        unified_log_data: &'a UnifiedLogData,
+        provider: &'a mut dyn FileProvider,
+        timesync_data: &'a HashMap<Uuid, TimesyncBoot>,
+        exclude_missing: bool,
+        filter: impl Fn(&LogData) -> bool + 'a,
+    ) -> (Vec<LogData>, UnifiedLogData) {
+        let mut log_data_vec: Vec<LogData> = Vec::new();
+        let mut missing_unified_log_data_vec = UnifiedLogData {
+            header: Vec::new(),
+            catalog_data: Vec::new(),
+            oversize: Vec::new(),
+        };
+
+        let Ok(log_iterator) = LogIterator::with_filter(
+            unified_log_data,
+            provider,
+            timesync_data,
+            exclude_missing,
+            Some(Box::new(filter)),
+        ) else {
             return (log_data_vec, missing_unified_log_data_vec);
         };
         for (mut log_data, mut missing_unified_log) in log_iterator {
@@ -1252,7 +1312,7 @@ mod tests {
         assert_eq!(
             unified_log.firehose[0].public_data[0].message.item_info[0]
                 .message_strings
-                .as_str(),
+                .as_cow(),
             "483.700"
         );
         assert_eq!(unified_log.firehose[0].base_continous_time, 0);

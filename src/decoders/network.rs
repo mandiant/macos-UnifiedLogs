@@ -15,7 +15,7 @@ use nom::{
 };
 use std::{
     fmt::Display,
-    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    net::{Ipv4Addr, Ipv6Addr},
 };
 
 /// Parse an IPv6 address

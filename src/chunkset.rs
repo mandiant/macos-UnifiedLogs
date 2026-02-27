@@ -203,7 +203,6 @@ mod tests {
     use super::ChunksetChunk;
     use crate::catalog::CatalogChunk;
     use crate::unified_log::UnifiedLogCatalogData;
-    use std::collections::HashMap;
     use std::fs;
     use std::path::PathBuf;
 
@@ -2208,22 +2207,7 @@ mod tests {
 
         let buffer = fs::read(test_path).unwrap();
         let mut unified_log = UnifiedLogCatalogData {
-            catalog: CatalogChunk {
-                chunk_tag: 0,
-                chunk_sub_tag: 0,
-                chunk_data_size: 0,
-                catalog_subsystem_strings_offset: 0,
-                catalog_process_info_entries_offset: 0,
-                number_process_information_entries: 0,
-                catalog_offset_sub_chunks: 0,
-                number_sub_chunks: 0,
-                unknown: Vec::new(),
-                earliest_firehose_timestamp: 0,
-                catalog_uuids: Vec::new(),
-                catalog_subsystem_strings: Vec::new(),
-                catalog_process_info_entries: HashMap::new(),
-                catalog_subchunks: Vec::new(),
-            },
+            catalog: CatalogChunk::default(),
             firehose: Vec::new(),
             simpledump: Vec::new(),
             statedump: Vec::new(),
@@ -2240,7 +2224,7 @@ mod tests {
         assert_eq!(
             unified_log.firehose[0].public_data[0].message.item_info[0]
                 .message_strings
-                .as_str(),
+                .as_cow(),
             "796.100"
         );
         assert_eq!(unified_log.firehose[0].base_continous_time, 0);
@@ -2257,22 +2241,7 @@ mod tests {
 
         let buffer = fs::read(test_path).unwrap();
         let mut unified_log = UnifiedLogCatalogData {
-            catalog: CatalogChunk {
-                chunk_tag: 0,
-                chunk_sub_tag: 0,
-                chunk_data_size: 0,
-                catalog_subsystem_strings_offset: 0,
-                catalog_process_info_entries_offset: 0,
-                number_process_information_entries: 0,
-                catalog_offset_sub_chunks: 0,
-                number_sub_chunks: 0,
-                unknown: Vec::new(),
-                earliest_firehose_timestamp: 0,
-                catalog_uuids: Vec::new(),
-                catalog_subsystem_strings: Vec::new(),
-                catalog_process_info_entries: HashMap::new(),
-                catalog_subchunks: Vec::new(),
-            },
+            catalog: CatalogChunk::default(),
             firehose: Vec::new(),
             simpledump: Vec::new(),
             statedump: Vec::new(),
@@ -2285,7 +2254,7 @@ mod tests {
         assert_eq!(
             unified_log.firehose[0].public_data[0].message.item_info[0]
                 .message_strings
-                .as_str(),
+                .as_cow(),
             "796.100"
         );
         assert_eq!(unified_log.firehose[0].base_continous_time, 0);
@@ -2309,7 +2278,7 @@ mod tests {
         assert_eq!(
             unified_log.oversize[0].message_items.item_info[0]
                 .message_strings
-                .as_str(),
+                .as_cow(),
             "system kext collection"
         );
         assert_eq!(

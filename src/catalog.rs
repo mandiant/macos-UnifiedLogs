@@ -5,7 +5,7 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-use crate::{RcString, preamble::LogPreamble, rc_string, util::*};
+use crate::{RcString, empty_rc_string, preamble::LogPreamble, rc_string, util::*};
 use log::error;
 use nom::{
     IResult, Parser,
@@ -15,8 +15,11 @@ use nom::{
     multi::many_m_n,
     number::complete::{be_u128, le_u16, le_u32, le_u64},
 };
+use std::cell::RefCell;
 use std::collections::HashMap;
 use uuid::Uuid;
+
+type SubsystemCache = RefCell<HashMap<(u16, u64, u32), (RcString, RcString)>>;
 
 #[derive(Debug, Clone, Default)]
 pub struct CatalogChunk {
@@ -40,6 +43,8 @@ pub struct CatalogChunk {
     pub catalog_subsystem_strings: Vec<u8>,
     pub catalog_process_info_entries: HashMap<CatalogProcessInfoKey, ProcessInfoEntry>,
     pub catalog_subchunks: Vec<CatalogSubchunk>,
+    /// Cache for subsystem lookups, keyed by `(subsystem_value, first_proc_id, second_proc_id)`
+    subsystem_cache: SubsystemCache,
 }
 
 /// First & Second Proc Ids
@@ -187,6 +192,7 @@ impl CatalogChunk {
                 catalog_subsystem_strings,
                 catalog_process_info_entries,
                 catalog_subchunks,
+                subsystem_cache: SubsystemCache::default(),
             },
         ))
     }
@@ -374,18 +380,28 @@ impl CatalogChunk {
         ))
     }
 
-    /// Get subsystem and category based on the log entry `first_proc_id`, `second_proc_id`, log entry subsystem id and the associated Catalog
+    /// Get subsystem and category based on the log entry `first_proc_id`, `second_proc_id`, log entry subsystem id and the associated Catalog.
+    /// Results are cached so repeated lookups for the same key return cheap `Rc` clones.
     pub fn get_subsystem(
         &self,
         subsystem_value: u16,
         first_proc_id: u64,
         second_proc_id: u32,
     ) -> nom::IResult<&[u8], SubsystemInfo> {
-        let mut subsystem_info = SubsystemInfo {
-            subsystem: rc_string!(""),
-            category: rc_string!(""),
-        };
+        let cache_key = (subsystem_value, first_proc_id, second_proc_id);
 
+        // Check the cache first
+        if let Some((subsystem, category)) = self.subsystem_cache.borrow().get(&cache_key) {
+            return Ok((
+                &[],
+                SubsystemInfo {
+                    subsystem: subsystem.clone(),
+                    category: category.clone(),
+                },
+            ));
+        }
+
+        // Cache miss — parse the subsystem strings
         if let Some(entry) = self
             .catalog_process_info_entries
             .get(&CatalogProcessInfoKey(first_proc_id, second_proc_id))
@@ -398,16 +414,39 @@ impl CatalogChunk {
 
                     let (input, _) = take(subsystems.category_offset)(subsystem_data)?;
                     let (_, category_string) = extract_string(input)?;
-                    subsystem_info.subsystem = rc_string!(subsystem_string);
-                    subsystem_info.category = rc_string!(category_string);
-                    return Ok((input, subsystem_info));
+                    let subsystem: RcString = rc_string!(subsystem_string);
+                    let category: RcString = rc_string!(category_string);
+
+                    // Store in cache
+                    self.subsystem_cache
+                        .borrow_mut()
+                        .insert(cache_key, (subsystem.clone(), category.clone()));
+
+                    return Ok((
+                        input,
+                        SubsystemInfo {
+                            subsystem,
+                            category,
+                        },
+                    ));
                 }
             }
         }
 
-        //log::warn!("[macos-unifiedlogs] Did not find subsystem in log entry");
-        subsystem_info.subsystem = rc_string!("Unknown subsystem");
-        Ok((&[], subsystem_info))
+        // Not found — cache the "unknown" result too
+        let subsystem: RcString = rc_string!("Unknown subsystem");
+        let category = empty_rc_string();
+        self.subsystem_cache
+            .borrow_mut()
+            .insert(cache_key, (subsystem.clone(), category.clone()));
+
+        Ok((
+            &[],
+            SubsystemInfo {
+                subsystem,
+                category,
+            },
+        ))
     }
 
     /// Get the actual Process ID associated with log entry

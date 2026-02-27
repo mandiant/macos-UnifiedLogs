@@ -9,7 +9,7 @@ use crate::catalog::CatalogProcessInfoKey;
 use crate::traits::FileProvider;
 use crate::util::{extract_string, format_uuid};
 use crate::uuidtext::UUIDTextEntry;
-use crate::{RcString, rc_string};
+use crate::{RcString, empty_rc_string, percent_s_rc_string, rc_string};
 use crate::{catalog::CatalogChunk, util::u64_to_usize};
 use log::{debug, error, info, warn};
 use nom::bytes::complete::take;
@@ -70,7 +70,7 @@ impl MessageData {
             shared_string.uuids[ranges.unknown_uuid_index as usize]
                 .uuid
                 .clone_into(&mut message_data.library_uuid);
-            message_data.format_string = rc_string!("%s");
+            message_data.format_string = percent_s_rc_string();
             message_data.process_uuid = main_uuid;
 
             // Extract image path from second UUIDtext file
@@ -216,7 +216,7 @@ impl MessageData {
                 MessageData::uuidtext_image_path(footer_data, &data.entry_descriptors)?;
             message_data.process = rc_string!(process_string);
             message_data.library = rc_string!(process_string);
-            message_data.format_string = rc_string!("%s");
+            message_data.format_string = percent_s_rc_string();
 
             return Ok((&[], message_data));
         }
@@ -329,9 +329,9 @@ impl MessageData {
         let (_, main_uuid) = MessageData::get_catalog_dsc(catalogs, first_proc_id, second_proc_id);
 
         let mut message_data = MessageData {
-            library: rc_string!(""),
-            format_string: rc_string!(""),
-            process: rc_string!(""),
+            library: empty_rc_string(),
+            format_string: empty_rc_string(),
+            process: empty_rc_string(),
             library_uuid: uuid,
             process_uuid: main_uuid,
         };
@@ -368,7 +368,7 @@ impl MessageData {
             let (_, process_string) =
                 MessageData::get_uuid_image_path(message_data.process_uuid, provider)?;
             message_data.process = rc_string!(process_string);
-            message_data.format_string = rc_string!("%s");
+            message_data.format_string = percent_s_rc_string();
 
             return Ok((&[], message_data));
         }
@@ -481,9 +481,9 @@ impl MessageData {
         let (_, main_uuid) = MessageData::get_catalog_dsc(catalogs, first_proc_id, second_proc_id);
 
         let mut message_data = MessageData {
-            library: rc_string!(""),
-            format_string: rc_string!(""),
-            process: rc_string!(""),
+            library: empty_rc_string(),
+            format_string: empty_rc_string(),
+            process: empty_rc_string(),
             library_uuid: uuid,
             process_uuid: main_uuid,
         };
@@ -520,7 +520,7 @@ impl MessageData {
             let (_, process_string) =
                 MessageData::get_uuid_image_path(message_data.process_uuid, provider)?;
             message_data.process = rc_string!(process_string);
-            message_data.format_string = rc_string!("%s");
+            message_data.format_string = percent_s_rc_string();
 
             return Ok((&[], message_data));
         }
