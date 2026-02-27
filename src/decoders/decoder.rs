@@ -5,7 +5,7 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::IpAddr;
 
 use crate::{
     RcString,
@@ -14,9 +14,11 @@ use crate::{
         DecoderError,
         darwin::{Errno, errno_codes, format_permission, permission},
         dns::{
-            DnsHeader, DnsIdFlags, dns_acceptable, dns_addrmv, dns_counts, dns_getaddrinfo_opts,
-            dns_idflags, dns_ip_addr, dns_protocol, dns_reason, dns_records, dns_yes_no,
-            get_dns_mac_addr, get_domain_name, get_service_binding, parse_dns_header,
+            DnsAcceptable, DnsAddRmv, DnsCounts, DnsDomainName, DnsHeader, DnsIdFlags, DnsMacAddr,
+            DnsProtocol, DnsReason, DnsRecordType, DnsSvcbRecord, DnsYesNo, dns_acceptable,
+            dns_addrmv, dns_counts, dns_getaddrinfo_opts, dns_idflags, dns_ip_addr, dns_protocol,
+            dns_reason, dns_records, dns_yes_no, get_dns_mac_addr, get_domain_name,
+            get_service_binding, parse_dns_header,
         },
         location::{
             ClientAuthorizationStatus, DaemonStatusType, LocationStateTrackerData,
@@ -60,6 +62,18 @@ pub enum Decoded {
     LocalDateTime(LocalDateTime),
     DnsIdFlags(DnsIdFlags),
     DnsHeader(DnsHeader),
+    DnsRecordType(DnsRecordType),
+    DnsReason(DnsReason),
+    DnsProtocol(DnsProtocol),
+    DnsCounts(DnsCounts),
+    DnsAddRmv(DnsAddRmv),
+    DnsYesNo(DnsYesNo),
+    DnsAcceptable(DnsAcceptable),
+    IoMessage(&'static str),
+    DnsGetAddrInfoOpts(&'static str),
+    DnsDomainName(DnsDomainName),
+    DnsMacAddr(DnsMacAddr),
+    DnsSvcbRecord(DnsSvcbRecord),
     Permission(u8, u8, u8),
 }
 
@@ -86,6 +100,17 @@ impl Decoded {
             Self::LocalDateTime(value) => rc_string!(value.to_string()),
             Self::DnsIdFlags(value) => rc_string!(value.to_string()),
             Self::DnsHeader(value) => rc_string!(value.to_string()),
+            Self::DnsRecordType(value) => rc_string!(value.to_string()),
+            Self::DnsReason(value) => rc_string!(value.to_string()),
+            Self::DnsProtocol(value) => rc_string!(value.to_string()),
+            Self::DnsCounts(value) => rc_string!(value.to_string()),
+            Self::DnsAddRmv(value) => rc_string!(value.to_string()),
+            Self::DnsYesNo(value) => rc_string!(value.to_string()),
+            Self::DnsAcceptable(value) => rc_string!(value.to_string()),
+            Self::IoMessage(value) | Self::DnsGetAddrInfoOpts(value) => rc_string!(*value),
+            Self::DnsDomainName(value) => rc_string!(value.to_string()),
+            Self::DnsMacAddr(value) => rc_string!(value.to_string()),
+            Self::DnsSvcbRecord(value) => rc_string!(value.to_string()),
             Self::Permission(user, owner, group) => {
                 rc_string!(format_permission(*user, *owner, *group))
             }
@@ -183,38 +208,34 @@ fn to_decoded_value<'a>(
         Decoded::DnsIdFlags(dns_idflags(&message_strings)?)
     } else if format_string.contains("mdns:dnshdr") {
         Decoded::DnsHeader(parse_dns_header(&message_strings)?)
+    } else if format_string.contains("mdns:rrtype") {
+        Decoded::DnsRecordType(dns_records(&message_strings)?)
+    } else if format_string.contains("mdns:nreason") {
+        Decoded::DnsReason(dns_reason(&message_strings)?)
+    } else if format_string.contains("mdns:protocol") {
+        Decoded::DnsProtocol(dns_protocol(&message_strings)?)
+    } else if format_string.contains("mdns:dns.counts") {
+        Decoded::DnsCounts(dns_counts(&message_strings)?)
+    } else if format_string.contains("mdns:addrmv") {
+        Decoded::DnsAddRmv(dns_addrmv(&message_strings))
+    } else if format_string.contains("mdns:yesno") {
+        Decoded::DnsYesNo(dns_yes_no(&message_strings))
+    } else if format_string.contains("mdns:acceptable") {
+        Decoded::DnsAcceptable(dns_acceptable(&message_strings))
+    } else if format_string.contains("location:IOMessage") {
+        Decoded::IoMessage(io_message(&message_strings)?)
+    } else if format_string.contains("mdns:gaiopts") {
+        Decoded::DnsGetAddrInfoOpts(dns_getaddrinfo_opts(&message_strings)?)
+    } else if format_string.contains("mdnsresponder:domain_name") {
+        Decoded::DnsDomainName(get_domain_name(&message_strings)?)
+    } else if format_string.contains("mdnsresponder:mac_addr") {
+        Decoded::DnsMacAddr(get_dns_mac_addr(&message_strings)?)
+    } else if format_string.contains("mdnsresponder:ip_addr") {
+        Decoded::IpAddr(dns_ip_addr(&message_strings)?)
+    } else if format_string.contains("mdns:rd.svcb") {
+        Decoded::DnsSvcbRecord(get_service_binding(&message_strings)?)
     } else {
-        let ok = if format_string.contains("mdns:rd.svcb") {
-            get_service_binding(&message_strings)?
-        } else if format_string.contains("location:IOMessage") {
-            io_message(&message_strings)?.to_string()
-        } else if format_string.contains("mdnsresponder:domain_name") {
-            get_domain_name(&message_strings)?
-        } else if format_string.contains("mdnsresponder:mac_addr") {
-            get_dns_mac_addr(&message_strings)?
-        } else if format_string.contains("mdnsresponder:ip_addr") {
-            dns_ip_addr(&message_strings)?
-        } else if format_string.contains("mdns:addrmv") {
-            dns_addrmv(&message_strings)
-        } else if format_string.contains("mdns:rrtype") {
-            dns_records(&message_strings)?.to_string()
-        } else if format_string.contains("mdns:nreason") {
-            dns_reason(&message_strings)?.to_string()
-        } else if format_string.contains("mdns:protocol") {
-            dns_protocol(&message_strings)?.to_string()
-        } else if format_string.contains("mdns:dns.counts") {
-            dns_counts(&message_strings)?.to_string()
-        } else if format_string.contains("mdns:yesno") {
-            dns_yes_no(&message_strings)
-        } else if format_string.contains("mdns:acceptable") {
-            dns_acceptable(&message_strings)
-        } else if format_string.contains("mdns:gaiopts") {
-            dns_getaddrinfo_opts(&message_strings)?.to_string()
-        } else {
-            String::new()
-        };
-
-        Decoded::Other(rc_string!(ok))
+        Decoded::Other(rc_string!(""))
     };
 
     Ok(decoded)

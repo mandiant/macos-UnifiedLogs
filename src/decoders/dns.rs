@@ -23,7 +23,7 @@ use nom::{
 use std::{
     fmt::{Display, Write},
     mem::size_of,
-    net::{Ipv4Addr, Ipv6Addr},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
 };
 
 /// Parse the DNS header
@@ -191,8 +191,16 @@ fn get_dns_flags(input: &[u8]) -> IResult<(&[u8], usize), DnsFlags> {
     Ok(((input, 0), flags))
 }
 
+pub struct DnsDomainName(pub String);
+
+impl Display for DnsDomainName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
 /// Base64 decode the domain name. This is normally masked, but may be shown if private data is enabled
-pub(crate) fn get_domain_name(input: &str) -> Result<String, DecoderError<'_>> {
+pub(crate) fn get_domain_name(input: &str) -> Result<DnsDomainName, DecoderError<'_>> {
     let decoded_data = decode_standard(input).map_err(|_| DecoderError::Parse {
         input: input.as_bytes(),
         parser_name: "dns domain name",
@@ -215,11 +223,68 @@ pub(crate) fn get_domain_name(input: &str) -> Result<String, DecoderError<'_>> {
         }
         clean_domain.push_str(&String::from(unicode));
     }
-    Ok(clean_domain)
+    Ok(DnsDomainName(clean_domain))
+}
+
+pub enum DnsSvcbRecord {
+    Url(String),
+    Rdata {
+        id: u16,
+        alpn: DnsSvcbAlpn,
+        ip_hints: DnsSvcbIpHints,
+    },
+}
+
+impl Display for DnsSvcbRecord {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Url(url) => f.write_str(url),
+            Self::Rdata { id, alpn, ip_hints } => {
+                write!(f, "rdata: {id} . {alpn} {ip_hints}")
+            }
+        }
+    }
+}
+
+pub struct DnsSvcbAlpn(pub Vec<String>);
+
+impl Display for DnsSvcbAlpn {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("alpn=")?;
+        for entry in &self.0 {
+            write!(f, "{entry},")?;
+        }
+        Ok(())
+    }
+}
+
+pub struct DnsSvcbIpHints {
+    pub ipv4s: Vec<Ipv4Addr>,
+    pub ipv6s: Vec<Ipv6Addr>,
+}
+
+impl Display for DnsSvcbIpHints {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ipv4 hint:")?;
+        for (i, ip) in self.ipv4s.iter().enumerate() {
+            if i > 0 {
+                f.write_str(",")?;
+            }
+            write!(f, "{ip}")?;
+        }
+        f.write_str(", ipv6 hint:")?;
+        for (i, ip) in self.ipv6s.iter().enumerate() {
+            if i > 0 {
+                f.write_str(",")?;
+            }
+            write!(f, "{ip}")?;
+        }
+        Ok(())
+    }
 }
 
 /// Parse DNS Service Binding record type
-pub(crate) fn get_service_binding(input: &str) -> Result<String, DecoderError<'_>> {
+pub(crate) fn get_service_binding(input: &str) -> Result<DnsSvcbRecord, DecoderError<'_>> {
     let decoded_data = decode_standard(input).map_err(|_| DecoderError::Parse {
         input: input.as_bytes(),
         parser_name: "dns service binding",
@@ -235,10 +300,8 @@ pub(crate) fn get_service_binding(input: &str) -> Result<String, DecoderError<'_
     Ok(result)
 }
 
-struct DnsSvcBindingRecord {}
-
 /// Parse DNS SVC Binding record
-fn parse_svcb(input: &[u8]) -> nom::IResult<&[u8], String> {
+fn parse_svcb(input: &[u8]) -> nom::IResult<&[u8], DnsSvcbRecord> {
     // Format/documentation found at https://datatracker.ietf.org/doc/draft-ietf-dnsop-svcb-https/00/?include_text=1
     let (input, id) = be_u16(input)?;
     let (input, unknown_type) = be_u32(input)?;
@@ -246,42 +309,41 @@ fn parse_svcb(input: &[u8]) -> nom::IResult<&[u8], String> {
     const DNS_OVER_HTTPS: u32 = 0x800000;
     if unknown_type == DNS_OVER_HTTPS {
         let (input, url_size) = be_u8(input)?;
-        return extract_string_size(input, url_size.into());
+        let (input, url) = extract_string_size(input, url_size.into())?;
+        return Ok((input, DnsSvcbRecord::Url(url)));
     }
 
     // ALPN = Application Layer Protocol Negotation
     let (input, alpn_size) = be_u8(input)?;
-    let (input, alpn_message) = map_parser(take(alpn_size), parse_svcb_alpn).parse(input)?;
-    let (input, ip_message) = parse_svcb_ip(input)?;
+    let (input, alpn) = map_parser(take(alpn_size), parse_svcb_alpn).parse(input)?;
+    let (input, ip_hints) = parse_svcb_ip(input)?;
 
-    let message = format!("rdata: {id} . {alpn_message} {ip_message}");
-    Ok((input, message))
+    Ok((input, DnsSvcbRecord::Rdata { id, alpn, ip_hints }))
 }
 
 /// Parse the Application Layer Protocol Negotation
-fn parse_svcb_alpn(mut input: &[u8]) -> nom::IResult<&[u8], String> {
-    let mut message = String::from("alpn=");
+fn parse_svcb_alpn(mut input: &[u8]) -> nom::IResult<&[u8], DnsSvcbAlpn> {
+    let mut entries = Vec::new();
     while !input.is_empty() {
         let (i, alpn_entry_size) = be_u8(input)?;
         let (i, alpn_entry) = take(alpn_entry_size)(i)?;
         let (_, alpn_name) = extract_string(alpn_entry)?;
         input = i;
-        message.push_str(&alpn_name);
-        message.push(',')
+        entries.push(alpn_name.to_string());
     }
-    Ok((input, message))
+    Ok((input, DnsSvcbAlpn(entries)))
 }
 
 /// Parse the IPs
-fn parse_svcb_ip(mut input: &[u8]) -> nom::IResult<&[u8], String> {
+fn parse_svcb_ip(mut input: &[u8]) -> nom::IResult<&[u8], DnsSvcbIpHints> {
     const IPV4: u16 = 4;
     const IPV6: u16 = 6;
 
     let ipv4_parser = || map(be_u32, Ipv4Addr::from);
     let ipv6_parser = || map(be_u128, Ipv6Addr::from);
 
-    let mut ipv4s = String::with_capacity(2 * 16); // let's reserve max space for 2 IPV4 addresses
-    let mut ipv6s = String::with_capacity(2 * 40); // let's reserve max space for 2 IPV6 addresses
+    let mut ipv4s = Vec::new();
+    let mut ipv6s = Vec::new();
 
     // IPs can either be IPv4 or/and IPv6
     while !input.is_empty() {
@@ -293,30 +355,31 @@ fn parse_svcb_ip(mut input: &[u8]) -> nom::IResult<&[u8], String> {
         if ip_version == IPV4 {
             let mut iter = iterator(ip_data, ipv4_parser());
             for ip in iter.by_ref() {
-                if !ipv4s.is_empty() {
-                    ipv4s.push(',');
-                }
-                write!(ipv4s, "{ip}").ok(); // ignore errors on write in String
+                ipv4s.push(ip);
             }
             iter.finish()?;
         } else if ip_version == IPV6 {
             let mut iter = iterator(ip_data, ipv6_parser());
             for ip in iter.by_ref() {
-                if !ipv6s.is_empty() {
-                    ipv6s.push(',');
-                }
-                write!(ipv6s, "{ip}").ok(); // ignore errors on write in String
+                ipv6s.push(ip);
             }
             iter.finish()?;
         }
     }
 
-    let message = format!("ipv4 hint:{ipv4s}, ipv6 hint:{ipv6s}");
-    Ok((input, message))
+    Ok((input, DnsSvcbIpHints { ipv4s, ipv6s }))
+}
+
+pub struct DnsMacAddr(pub String);
+
+impl Display for DnsMacAddr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
 }
 
 /// Get the MAC Address from the log data
-pub(crate) fn get_dns_mac_addr(input: &str) -> Result<String, DecoderError<'_>> {
+pub(crate) fn get_dns_mac_addr(input: &str) -> Result<DnsMacAddr, DecoderError<'_>> {
     let decoded_data = decode_standard(input).map_err(|_| DecoderError::Parse {
         input: input.as_bytes(),
         parser_name: "dns mac address",
@@ -329,7 +392,7 @@ pub(crate) fn get_dns_mac_addr(input: &str) -> Result<String, DecoderError<'_>> 
         message: "Failed to parse DNS mac address data",
     })?;
 
-    Ok(message_results)
+    Ok(DnsMacAddr(message_results))
 }
 
 /// Parse the MAC Address
@@ -349,7 +412,7 @@ fn parse_mac_addr(input: &[u8]) -> nom::IResult<&[u8], String> {
 }
 
 /// Get IP Address info from log data
-pub(crate) fn dns_ip_addr(input: &str) -> Result<String, DecoderError<'_>> {
+pub(crate) fn dns_ip_addr(input: &str) -> Result<IpAddr, DecoderError<'_>> {
     let decoded_data = decode_standard(input).map_err(|_| DecoderError::Parse {
         input: input.as_bytes(),
         parser_name: "dns ip address",
@@ -366,14 +429,14 @@ pub(crate) fn dns_ip_addr(input: &str) -> Result<String, DecoderError<'_>> {
 }
 
 /// Parse IP Address data
-fn parse_dns_ip_addr(data: &[u8]) -> nom::IResult<&[u8], String> {
+fn parse_dns_ip_addr(data: &[u8]) -> nom::IResult<&[u8], IpAddr> {
     let (data, ip_version) = le_u32(data)?;
     const IPV4: u32 = 4;
     const IPV6: u32 = 6;
     if ip_version == IPV4 {
-        get_ip_four(data).map(|(data, result)| (data, result.to_string()))
+        get_ip_four(data).map(|(data, result)| (data, IpAddr::from(result)))
     } else if ip_version == IPV6 {
-        get_ip_six(data).map(|(data, result)| (data, result.to_string()))
+        get_ip_six(data).map(|(data, result)| (data, IpAddr::from(result)))
     } else {
         Err(nom::Err::Error(nom::error::Error {
             input: data,
@@ -382,12 +445,20 @@ fn parse_dns_ip_addr(data: &[u8]) -> nom::IResult<&[u8], String> {
     }
 }
 
+#[derive(Debug, PartialEq, strum::Display)]
+pub enum DnsAddRmv {
+    #[strum(to_string = "add")]
+    Add,
+    #[strum(to_string = "rmv")]
+    Rmv,
+}
+
 /// Translate DNS add/rmv log values
-pub(crate) fn dns_addrmv(data: &str) -> String {
+pub(crate) fn dns_addrmv(data: &str) -> DnsAddRmv {
     if data == "1" {
-        return String::from("add");
+        return DnsAddRmv::Add;
     }
-    String::from("rmv")
+    DnsAddRmv::Rmv
 }
 
 #[derive(Debug, PartialEq, strum::Display)]
@@ -717,7 +788,7 @@ pub(crate) fn dns_counts(input: &str) -> Result<DnsCounts, DecoderError<'_>> {
 }
 
 #[derive(Debug, PartialEq)]
-pub(crate) struct DnsCounts {
+pub struct DnsCounts {
     question: u16,
     answer: u16,
     authority: u16,
@@ -750,20 +821,36 @@ fn parse_counts(data: &[u8]) -> nom::IResult<&[u8], DnsCounts> {
     ))
 }
 
+#[derive(Debug, PartialEq, strum::Display)]
+pub enum DnsYesNo {
+    #[strum(to_string = "yes")]
+    Yes,
+    #[strum(to_string = "no")]
+    No,
+}
+
 /// Translate DNS yes/no log values
-pub(crate) fn dns_yes_no(data: &str) -> String {
+pub(crate) fn dns_yes_no(data: &str) -> DnsYesNo {
     if data == "0" {
-        return String::from("no");
+        return DnsYesNo::No;
     }
-    String::from("yes")
+    DnsYesNo::Yes
+}
+
+#[derive(Debug, PartialEq, strum::Display)]
+pub enum DnsAcceptable {
+    #[strum(to_string = "acceptable")]
+    Acceptable,
+    #[strum(to_string = "unacceptable")]
+    Unacceptable,
 }
 
 /// Translate DNS acceptable log values
-pub(crate) fn dns_acceptable(data: &str) -> String {
+pub(crate) fn dns_acceptable(data: &str) -> DnsAcceptable {
     if data == "0" {
-        return String::from("unacceptable");
+        return DnsAcceptable::Unacceptable;
     }
-    String::from("acceptable")
+    DnsAcceptable::Acceptable
 }
 
 /// Translate DNS getaddrinfo log values
@@ -823,7 +910,7 @@ mod tests {
     fn test_get_domain_name() {
         let test_data = "AzE0NAMxMDEDMTY4AzE5Mgdpbi1hZGRyBGFycGEA";
         let result = get_domain_name(test_data).unwrap();
-        assert_eq!(result, ".144.101.168.192.in-addr.arpa");
+        assert_eq!(result.to_string(), ".144.101.168.192.in-addr.arpa");
     }
 
     #[test]
@@ -832,7 +919,7 @@ mod tests {
             "AAEAAAEAAwJoMgAEAAhoEJRAaBCVQAAGACAmBkcAAAAAAAAAAABoEJRAJgZHAAAAAAAAAAAAaBCVQA==";
         let result = get_service_binding(test_data).unwrap();
         assert_eq!(
-            result,
+            result.to_string(),
             "rdata: 1 . alpn=h2, ipv4 hint:104.16.148.64,104.16.149.64, ipv6 hint:2606:4700::6810:9440,2606:4700::6810:9540"
         );
     }
@@ -845,7 +932,7 @@ mod tests {
 
         let (_, result) = parse_svcb(&decoded_data_result).unwrap();
         assert_eq!(
-            result,
+            result.to_string(),
             "rdata: 1 . alpn=h2, ipv4 hint:104.16.148.64,104.16.149.64, ipv6 hint:2606:4700::6810:9440,2606:4700::6810:9540"
         );
     }
@@ -855,7 +942,7 @@ mod tests {
         let test_data = [2, 104, 50];
 
         let (_, result) = parse_svcb_alpn(&test_data).unwrap();
-        assert_eq!(result, "alpn=h2,");
+        assert_eq!(result.to_string(), "alpn=h2,");
     }
 
     #[test]
@@ -867,7 +954,7 @@ mod tests {
 
         let (_, result) = parse_svcb_ip(&test_data).unwrap();
         assert_eq!(
-            result,
+            result.to_string(),
             "ipv4 hint:104.16.148.64,104.16.149.64, ipv6 hint:2606:4700::6810:9440,2606:4700::6810:9540"
         );
     }
@@ -897,7 +984,7 @@ mod tests {
         let test_data = "AAAAAAAA";
 
         let result = get_dns_mac_addr(test_data).unwrap();
-        assert_eq!(result, "00:00:00:00:00:00");
+        assert_eq!(result.to_string(), "00:00:00:00:00:00");
     }
 
     #[test]
@@ -913,7 +1000,7 @@ mod tests {
         let test_data = "BAAAAMCoZZAAAAAAAAAAAAAAAAA=";
 
         let result = dns_ip_addr(test_data).unwrap();
-        assert_eq!(result, "192.168.101.144");
+        assert_eq!(result.to_string(), "192.168.101.144");
     }
 
     #[test]
@@ -923,7 +1010,7 @@ mod tests {
         ];
 
         let (_, result) = parse_dns_ip_addr(&test_data).unwrap();
-        assert_eq!(result, "192.168.101.144");
+        assert_eq!(result.to_string(), "192.168.101.144");
     }
 
     #[test]
@@ -931,7 +1018,7 @@ mod tests {
         let test_data = "1";
 
         let result = dns_addrmv(test_data);
-        assert_eq!(result, "add");
+        assert_eq!(result, DnsAddRmv::Add);
     }
 
     #[test]
@@ -1016,7 +1103,7 @@ mod tests {
         let test_data = "0";
 
         let result = dns_yes_no(test_data);
-        assert_eq!(result, "no");
+        assert_eq!(result, DnsYesNo::No);
     }
 
     #[test]
@@ -1024,7 +1111,7 @@ mod tests {
         let test_data = "0";
 
         let result = dns_acceptable(test_data);
-        assert_eq!(result, "unacceptable");
+        assert_eq!(result, DnsAcceptable::Unacceptable);
     }
 
     #[test]
