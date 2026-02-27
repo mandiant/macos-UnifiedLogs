@@ -7,9 +7,7 @@
 
 use log::{debug, error};
 use nom::Needed;
-use nom::bytes::complete::take;
 use nom::number::complete::{be_u128, le_u16};
-use std::mem::size_of;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Default)]
@@ -57,16 +55,14 @@ impl<'a> FirehoseFormatters {
         match firehose_flags & flag_check {
             0x20 => {
                 debug!("[macos-unifiedlogs] Firehose flag: has_large_offset");
-                let (firehose_input, lo_data) = take(size_of::<u16>())(input)?;
-                let (_, val) = le_u16(lo_data)?;
+                let (firehose_input, val) = le_u16(input)?;
                 has_large_offset = val;
                 input = firehose_input;
                 if (firehose_flags & large_shared_cache_flag) != 0 {
                     debug!(
                         "[macos-unifiedlogs] Firehose flag: large_shared_cache and has_large_offset"
                     );
-                    let (firehose_input, lsc_data) = take(size_of::<u16>())(firehose_input)?;
-                    let (_, val) = le_u16(lsc_data)?;
+                    let (firehose_input, val) = le_u16(input)?;
                     large_shared_cache = val;
                     input = firehose_input;
                 }
@@ -74,14 +70,12 @@ impl<'a> FirehoseFormatters {
             0xc => {
                 debug!("[macos-unifiedlogs] Firehose flag: large_shared_cache");
                 if (firehose_flags & large_offset_flag) != 0 {
-                    let (firehose_input, lo_data) = take(size_of::<u16>())(input)?;
-                    let (_, val) = le_u16(lo_data)?;
+                    let (firehose_input, val) = le_u16(input)?;
                     has_large_offset = val;
                     input = firehose_input;
                 }
 
-                let (firehose_input, lsc_data) = take(size_of::<u16>())(input)?;
-                let (_, val) = le_u16(lsc_data)?;
+                let (firehose_input, val) = le_u16(input)?;
                 large_shared_cache = val;
                 input = firehose_input;
             }
@@ -90,8 +84,7 @@ impl<'a> FirehoseFormatters {
                 absolute = true;
                 if (firehose_flags & message_strings_uuid) == 0 {
                     debug!("[macos-unifiedlogs] Firehose flag: alt index absolute flag");
-                    let (firehose_input, uuid_file_index) = take(size_of::<u16>())(input)?;
-                    let (_, val) = le_u16(uuid_file_index)?;
+                    let (firehose_input, val) = le_u16(input)?;
                     main_exe_alt_index = val;
                     input = firehose_input;
                 }
@@ -104,16 +97,14 @@ impl<'a> FirehoseFormatters {
                 debug!("[macos-unifiedlogs] Firehose flag: shared_cache");
                 shared_cache = true;
                 if (firehose_flags & large_offset_flag) != 0 {
-                    let (firehose_input, lo_data) = take(size_of::<u16>())(input)?;
-                    let (_, val) = le_u16(lo_data)?;
+                    let (firehose_input, val) = le_u16(input)?;
                     has_large_offset = val;
                     input = firehose_input;
                 }
             }
             0xa => {
                 debug!("[macos-unifiedlogs] Firehose flag: uuid_relative");
-                let (firehose_input, uuid_data) = take(size_of::<u128>())(input)?;
-                let (_, val) = be_u128(uuid_data)?;
+                let (firehose_input, val) = be_u128(input)?;
                 uuid_relative = Uuid::from_u128(val);
                 input = firehose_input;
             }

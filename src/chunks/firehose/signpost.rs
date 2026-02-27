@@ -43,10 +43,8 @@ impl FirehoseSignpost {
         let activity_id_current: u16 = 0x1; // has_current_aid flag
         if (firehose_flags & activity_id_current) != 0 {
             debug!("[macos-unifiedlogs] Signpost Firehose has has_current_aid flag");
-            let (firehose_input, aid) = take(size_of::<u32>())(input)?;
-            let (firehose_input, sent) = take(size_of::<u32>())(firehose_input)?;
-            let (_, val) = le_u32(aid)?;
-            let (_, sval) = le_u32(sent)?;
+            let (firehose_input, val) = le_u32(input)?;
+            let (firehose_input, sval) = le_u32(firehose_input)?;
             unknown_activity_id = val;
             unknown_sentinel = sval;
             input = firehose_input;
@@ -58,18 +56,15 @@ impl FirehoseSignpost {
         // Entry has private string data. The private data is found after parsing all the public data first
         if (firehose_flags & private_string_range) != 0 {
             debug!("[macos-unifiedlogs] Signpost Firehose has has_private_data flag");
-            let (firehose_input, pso) = take(size_of::<u16>())(input)?;
-            let (firehose_input, pss) = take(size_of::<u16>())(firehose_input)?;
-            let (_, val) = le_u16(pso)?;
-            let (_, sval) = le_u16(pss)?;
+            let (firehose_input, val) = le_u16(input)?;
+            let (firehose_input, sval) = le_u16(firehose_input)?;
             // Offset points to private string values found after parsing the public data. Size is the data size
             private_strings_offset = val;
             private_strings_size = sval;
             input = firehose_input;
         }
 
-        let (input, pc_id_data) = take(size_of::<u32>())(input)?;
-        let (_, unknown_pc_id) = le_u32(pc_id_data)?;
+        let (input, unknown_pc_id) = le_u32(input)?;
 
         // Check for flags related to base string format location (shared string file (dsc) or UUID file)
         let (mut input, firehose_formatters) =
@@ -79,21 +74,18 @@ impl FirehoseSignpost {
         let subsystem_flag: u16 = 0x200; // has_subsystem flag. In Signpost log entries this is the subsystem flag
         if (firehose_flags & subsystem_flag) != 0 {
             debug!("[macos-unifiedlogs] Signpost Firehose log chunk has has_subsystem flag");
-            let (firehose_input, sub) = take(size_of::<u16>())(input)?;
-            let (_, val) = le_u16(sub)?;
+            let (firehose_input, val) = le_u16(input)?;
             subsystem = val;
             input = firehose_input;
         }
 
-        let (mut input, signpost_id_data) = take(size_of::<u64>())(input)?;
-        let (_, signpost_id) = le_u64(signpost_id_data)?;
+        let (mut input, signpost_id) = le_u64(input)?;
 
         let mut ttl_value: u8 = 0;
         let has_rules: u16 = 0x400; // has_rules flag
         if (firehose_flags & has_rules) != 0 {
             debug!("[macos-unifiedlogs] Signpost Firehose log chunk has has_rules flag");
-            let (firehose_input, ttl_data) = take(size_of::<u8>())(input)?;
-            let (_, val) = le_u8(ttl_data)?;
+            let (firehose_input, val) = le_u8(input)?;
             ttl_value = val;
             input = firehose_input;
         }
@@ -102,8 +94,7 @@ impl FirehoseSignpost {
         let data_ref: u16 = 0x800; // has_oversize flag
         if (firehose_flags & data_ref) != 0 {
             debug!("[macos-unifiedlogs] Signpost Firehose log chunk has has_oversize flag");
-            let (firehose_input, dref) = take(size_of::<u32>())(input)?;
-            let (_, val) = le_u32(dref)?;
+            let (firehose_input, val) = le_u32(input)?;
             data_ref_value = val;
             input = firehose_input;
         }
@@ -112,8 +103,7 @@ impl FirehoseSignpost {
         let has_name = 0x8000;
         if (firehose_flags & has_name) != 0 {
             debug!("[macos-unifiedlogs] Signpost Firehose log chunk has has_name flag");
-            let (firehose_input, name_data) = take(size_of::<u32>())(input)?;
-            let (_, val) = le_u32(name_data)?;
+            let (firehose_input, val) = le_u32(input)?;
             signpost_name = val;
             input = firehose_input;
             // If the signpost log has large_shared_cache flag

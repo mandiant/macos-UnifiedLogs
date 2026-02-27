@@ -5,8 +5,6 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-use std::mem::size_of;
-
 use log::{error, warn};
 use lz4_flex::decompress;
 use nom::{
@@ -37,17 +35,11 @@ pub struct ChunksetChunk {
 impl ChunksetChunk {
     /// Parse the Chunkset data that contains the actual log entries
     pub fn parse_chunkset(data: &[u8]) -> nom::IResult<&[u8], ChunksetChunk> {
-        let (input, chunk_tag) = take(size_of::<u32>())(data)?;
-        let (input, chunk_sub_tag) = take(size_of::<u32>())(input)?;
-        let (input, chunk_data_size) = take(size_of::<u64>())(input)?;
-        let (input, signature) = take(size_of::<u32>())(input)?;
-        let (input, uncompress_size) = take(size_of::<u32>())(input)?;
-
-        let (_, chunk_tag) = le_u32(chunk_tag)?;
-        let (_, chunk_sub_tag) = le_u32(chunk_sub_tag)?;
-        let (_, chunk_data_size) = le_u64(chunk_data_size)?;
-        let (_, signature) = le_u32(signature)?;
-        let (_, uncompress_size) = le_u32(uncompress_size)?;
+        let (input, chunk_tag) = le_u32(data)?;
+        let (input, chunk_sub_tag) = le_u32(input)?;
+        let (input, chunk_data_size) = le_u64(input)?;
+        let (input, signature) = le_u32(input)?;
+        let (input, uncompress_size) = le_u32(input)?;
 
         let bv41 = 825521762; // bv41 signature
         let bv41_uncompressed = 758412898; // bv41- signature
@@ -55,8 +47,7 @@ impl ChunksetChunk {
         // Data is already decompressed (Observed in tracev3 files in /var/db/diagnostics/Special)
         if signature == bv41_uncompressed {
             let (input, uncompressed_data) = take(uncompress_size)(input)?;
-            let (input, footer) = take(size_of::<u32>())(input)?;
-            let (_, footer) = le_u32(footer)?;
+            let (input, footer) = le_u32(input)?;
             return Ok((
                 input,
                 ChunksetChunk {
@@ -80,8 +71,7 @@ impl ChunksetChunk {
             return Err(nom::Err::Incomplete(Needed::Unknown));
         }
 
-        let (input, block_size) = take(size_of::<u32>())(input)?;
-        let (_, block_size) = le_u32(block_size)?;
+        let (input, block_size) = le_u32(input)?;
 
         let (input, compressed_data) = take(block_size)(input)?;
         let decompressed_data = match decompress(compressed_data, uncompress_size as usize) {
@@ -92,8 +82,7 @@ impl ChunksetChunk {
             }
         };
 
-        let (input, footer) = take(size_of::<u32>())(input)?;
-        let (_, footer) = le_u32(footer)?;
+        let (input, footer) = le_u32(input)?;
 
         Ok((
             input,

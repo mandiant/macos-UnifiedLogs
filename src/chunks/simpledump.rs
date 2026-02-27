@@ -70,37 +70,22 @@ impl<'a> SimpleDumpStr<'a> {
 impl<'a> SimpleDumpStr<'a> {
     /// Parse Simpledump log entry.  Introduced in macOS Monterey (12)
     pub fn parse_simpledump(data: &'a [u8]) -> nom::IResult<&'a [u8], Self> {
-        let (input, chunk_tag) = take(size_of::<u32>())(data)?;
-        let (input, chunk_sub_tag) = take(size_of::<u32>())(input)?;
-        let (input, chunk_data_size) = take(size_of::<u64>())(input)?;
-        let (input, first_number_proc_id) = take(size_of::<u64>())(input)?;
-        let (input, second_number_proc_id) = take(size_of::<u64>())(input)?;
+        let (input, chunk_tag) = le_u32(data)?;
+        let (input, chunk_subtag) = le_u32(input)?;
+        let (input, chunk_data_size) = le_u64(input)?;
+        let (input, first_proc_id) = le_u64(input)?;
+        let (input, second_proc_id) = le_u64(input)?;
 
-        let (input, continous_time) = take(size_of::<u64>())(input)?;
-        let (input, thread_id) = take(size_of::<u64>())(input)?;
-        let (input, unknown_offset) = take(size_of::<u32>())(input)?;
-        let (input, unknown_ttl) = take(size_of::<u16>())(input)?;
-        let (input, unknown_type) = take(size_of::<u16>())(input)?;
+        let (input, continous_time) = le_u64(input)?;
+        let (input, thread_id) = le_u64(input)?;
+        let (input, unknown_offset) = le_u32(input)?;
+        let (input, unknown_ttl) = le_u16(input)?;
+        let (input, unknown_type) = le_u16(input)?;
         let (input, sender_uuid_raw) = take(size_of::<u128>())(input)?;
         let (input, dsc_uuid_raw) = take(size_of::<u128>())(input)?;
-        let (input, unknown_number_message_strings) = take(size_of::<u32>())(input)?;
-        let (input, unknown_size_subsystem_string) = take(size_of::<u32>())(input)?;
-        let (input, unknown_size_message_string) = take(size_of::<u32>())(input)?;
-
-        let (_, chunk_tag) = le_u32(chunk_tag)?;
-        let (_, chunk_subtag) = le_u32(chunk_sub_tag)?;
-        let (_, chunk_data_size) = le_u64(chunk_data_size)?;
-        let (_, first_proc_id) = le_u64(first_number_proc_id)?;
-        let (_, second_proc_id) = le_u64(second_number_proc_id)?;
-
-        let (_, continous_time) = le_u64(continous_time)?;
-        let (_, thread_id) = le_u64(thread_id)?;
-        let (_, unknown_offset) = le_u32(unknown_offset)?;
-        let (_, unknown_ttl) = le_u16(unknown_ttl)?;
-        let (_, unknown_type) = le_u16(unknown_type)?;
-        let (_, unknown_number_message_strings) = le_u32(unknown_number_message_strings)?;
-        let (_, unknown_size_subsystem_string) = le_u32(unknown_size_subsystem_string)?;
-        let (_, unknown_size_message_string) = le_u32(unknown_size_message_string)?;
+        let (input, unknown_number_message_strings) = le_u32(input)?;
+        let (input, unknown_size_subsystem_string) = le_u32(input)?;
+        let (input, unknown_size_message_string) = le_u32(input)?;
 
         let sender_uuid = clean_uuid(&format!("{sender_uuid_raw:02X?}"));
         let dsc_uuid = clean_uuid(&format!("{dsc_uuid_raw:02X?}"));

@@ -7,10 +7,8 @@
 
 use log::error;
 use nom::Needed;
-use nom::bytes::complete::take;
 use nom::number::complete::le_u32;
 use serde::{Deserialize, Serialize};
-use std::mem::size_of;
 use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -32,8 +30,7 @@ impl UUIDText {
     /// Parse the UUID files in uuidinfo directory. Contains the base log message string
     pub fn parse_uuidtext(data: &[u8]) -> nom::IResult<&[u8], UUIDText> {
         let expected_uuidtext_signature = 0x66778899;
-        let (input, signature) = take(size_of::<u32>())(data)?;
-        let (_, signature) = le_u32(signature)?;
+        let (input, signature) = le_u32(data)?;
 
         if expected_uuidtext_signature != signature {
             error!(
@@ -42,22 +39,15 @@ impl UUIDText {
             return Err(nom::Err::Incomplete(Needed::Unknown));
         }
 
-        let (input, unknown_major_version) = take(size_of::<u32>())(input)?;
-        let (input, unknown_minor_version) = take(size_of::<u32>())(input)?;
-        let (mut input, number_entries) = take(size_of::<u32>())(input)?;
-
-        let (_, unknown_major_version) = le_u32(unknown_major_version)?;
-        let (_, unknown_minor_version) = le_u32(unknown_minor_version)?;
-        let (_, number_entries) = le_u32(number_entries)?;
+        let (input, unknown_major_version) = le_u32(input)?;
+        let (input, unknown_minor_version) = le_u32(input)?;
+        let (mut input, number_entries) = le_u32(input)?;
 
         let mut entry_descriptors = Vec::new();
         let mut count = 0;
         while count < number_entries {
-            let (entry_input, range_start_offset) = take(size_of::<u32>())(input)?;
-            let (entry_input, entry_size) = take(size_of::<u32>())(entry_input)?;
-
-            let (_, range_start_offset) = le_u32(range_start_offset)?;
-            let (_, entry_size) = le_u32(entry_size)?;
+            let (entry_input, range_start_offset) = le_u32(input)?;
+            let (entry_input, entry_size) = le_u32(entry_input)?;
 
             entry_descriptors.push(UUIDTextEntry {
                 range_start_offset,

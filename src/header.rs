@@ -91,24 +91,24 @@ impl<'a> HeaderChunkStr<'a> {
 impl<'a> HeaderChunkStr<'a> {
     /// Parse the Unified Log tracev3 header data
     pub fn parse_header(data: &'a [u8]) -> nom::IResult<&'a [u8], Self> {
-        let (input, chunk_tag) = take(size_of::<u32>())(data)?;
-        let (input, chunk_sub_tag) = take(size_of::<u32>())(input)?;
-        let (input, chunk_data_size) = take(size_of::<u64>())(input)?;
-        let (input, mach_time_numerator) = take(size_of::<u32>())(input)?;
-        let (input, mach_time_denominator) = take(size_of::<u32>())(input)?;
-        let (input, continous_time) = take(size_of::<u64>())(input)?;
-        let (input, unknown_time) = take(size_of::<u64>())(input)?;
-        let (input, unknown) = take(size_of::<u32>())(input)?;
-        let (input, bias_min) = take(size_of::<u32>())(input)?;
-        let (input, daylight_savings) = take(size_of::<u32>())(input)?;
-        let (input, unknown_flags) = take(size_of::<u32>())(input)?;
-        let (input, sub_chunk_tag) = take(size_of::<u32>())(input)?;
-        let (input, sub_chunk_data_size) = take(size_of::<u32>())(input)?;
-        let (input, sub_chunk_continous_time) = take(size_of::<u64>())(input)?;
-        let (input, sub_chunk_tag_2) = take(size_of::<u32>())(input)?;
-        let (input, sub_chunk_tag_data_size_2) = take(size_of::<u32>())(input)?;
-        let (input, unknown_2) = take(size_of::<u32>())(input)?;
-        let (input, unknown_3) = take(size_of::<u32>())(input)?;
+        let (input, chunk_tag) = le_u32(data)?;
+        let (input, chunk_sub_tag) = le_u32(input)?;
+        let (input, chunk_data_size) = le_u64(input)?;
+        let (input, mach_time_numerator) = le_u32(input)?;
+        let (input, mach_time_denominator) = le_u32(input)?;
+        let (input, continous_time) = le_u64(input)?;
+        let (input, unknown_time) = le_u64(input)?;
+        let (input, unknown) = le_u32(input)?;
+        let (input, bias_min) = le_u32(input)?;
+        let (input, daylight_savings) = le_u32(input)?;
+        let (input, unknown_flags) = le_u32(input)?;
+        let (input, sub_chunk_tag) = le_u32(input)?;
+        let (input, sub_chunk_data_size) = le_u32(input)?;
+        let (input, sub_chunk_continous_time) = le_u64(input)?;
+        let (input, sub_chunk_tag_2) = le_u32(input)?;
+        let (input, sub_chunk_tag_data_size_2) = le_u32(input)?;
+        let (input, unknown_2) = le_u32(input)?;
+        let (input, unknown_3) = le_u32(input)?;
         let (input, build_version_string) = take(size_of::<u128>())(input)?;
         let build_version_string = from_utf8(build_version_string)
             .inspect_err(|err| {
@@ -127,13 +127,14 @@ impl<'a> HeaderChunkStr<'a> {
             .map(|s| s.trim_end_matches('\0'))
             .unwrap_or(INVALID_UTF8);
 
-        let (input, sub_chunk_tag_3) = take(size_of::<u32>())(input)?;
-        let (input, sub_chunk_tag_data_size_3) = take(size_of::<u32>())(input)?;
-        let (input, boot_uuid) = take(size_of::<u128>())(input)?;
-        let (input, logd_pid) = take(size_of::<u32>())(input)?;
-        let (input, logd_exit_status) = take(size_of::<u32>())(input)?;
-        let (input, sub_chunk_tag_4) = take(size_of::<u32>())(input)?;
-        let (input, sub_chunk_tag_data_size_4) = take(size_of::<u32>())(input)?;
+        let (input, sub_chunk_tag_3) = le_u32(input)?;
+        let (input, sub_chunk_tag_data_size_3) = le_u32(input)?;
+        let (input, boot_uuid_raw) = be_u128(input)?;
+        let boot_uuid = Uuid::from_u128(boot_uuid_raw);
+        let (input, logd_pid) = le_u32(input)?;
+        let (input, logd_exit_status) = le_u32(input)?;
+        let (input, sub_chunk_tag_4) = le_u32(input)?;
+        let (input, sub_chunk_tag_data_size_4) = le_u32(input)?;
 
         let timezone_path_size: u8 = 48;
         let (input, timezone_path) = take(timezone_path_size)(input)?;
@@ -143,34 +144,6 @@ impl<'a> HeaderChunkStr<'a> {
             })
             .map(|s| s.trim_end_matches('\0'))
             .unwrap_or(INVALID_UTF8);
-
-        let (_, chunk_tag) = le_u32(chunk_tag)?;
-        let (_, chunk_sub_tag) = le_u32(chunk_sub_tag)?;
-        let (_, chunk_data_size) = le_u64(chunk_data_size)?;
-        let (_, mach_time_numerator) = le_u32(mach_time_numerator)?;
-        let (_, mach_time_denominator) = le_u32(mach_time_denominator)?;
-        let (_, continous_time) = le_u64(continous_time)?;
-        let (_, unknown_time) = le_u64(unknown_time)?;
-        let (_, unknown) = le_u32(unknown)?;
-        let (_, bias_min) = le_u32(bias_min)?;
-        let (_, daylight_savings) = le_u32(daylight_savings)?;
-        let (_, unknown_flags) = le_u32(unknown_flags)?;
-        let (_, sub_chunk_tag) = le_u32(sub_chunk_tag)?;
-        let (_, sub_chunk_data_size) = le_u32(sub_chunk_data_size)?;
-        let (_, sub_chunk_continous_time) = le_u64(sub_chunk_continous_time)?;
-        let (_, sub_chunk_tag_2) = le_u32(sub_chunk_tag_2)?;
-        let (_, sub_chunk_tag_data_size_2) = le_u32(sub_chunk_tag_data_size_2)?;
-        let (_, unknown_2) = le_u32(unknown_2)?;
-        let (_, unknown_3) = le_u32(unknown_3)?;
-        let (_, sub_chunk_tag_3) = le_u32(sub_chunk_tag_3)?;
-        let (_, sub_chunk_tag_data_size_3) = le_u32(sub_chunk_tag_data_size_3)?;
-        let (_, logd_pid) = le_u32(logd_pid)?;
-        let (_, logd_exit_status) = le_u32(logd_exit_status)?;
-        let (_, sub_chunk_tag_4) = le_u32(sub_chunk_tag_4)?;
-        let (_, sub_chunk_tag_data_size_4) = le_u32(sub_chunk_tag_data_size_4)?;
-
-        let (_, boot_uuid_be) = be_u128(boot_uuid)?;
-        let boot_uuid = Uuid::from_u128(boot_uuid_be);
 
         let header_chunk = HeaderChunk {
             chunk_tag,

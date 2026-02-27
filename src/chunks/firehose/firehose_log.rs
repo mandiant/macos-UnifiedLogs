@@ -27,7 +27,6 @@ use nom::{
 use serde::Serialize;
 use std::borrow::Cow;
 use std::fmt;
-use std::mem::size_of;
 
 #[derive(Debug, Clone, Default)]
 pub struct FirehosePreamble {
@@ -202,7 +201,7 @@ impl FirehosePreamble {
         let (input, ttl) = le_u8(input)?;
         let (input, collapsed) = le_u8(input)?;
 
-        let (input, unknown) = take(size_of::<u16>())(input)?;
+        let (input, unknown) = take(2usize)(input)?;
         let unknown = unknown.to_vec();
 
         let (input, public_data_size) = le_u16(input)?;

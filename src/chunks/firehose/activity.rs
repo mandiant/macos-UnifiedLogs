@@ -10,11 +10,7 @@ use crate::chunks::firehose::flags::FirehoseFormatters;
 use crate::chunks::firehose::message::MessageData;
 use crate::traits::FileProvider;
 use log::debug;
-use nom::{
-    bytes::complete::take,
-    number::complete::{le_u32, le_u64},
-};
-use std::mem::size_of;
+use nom::number::complete::{le_u32, le_u64};
 
 #[derive(Debug, Clone, Default)]
 pub struct FirehoseActivity {
@@ -46,10 +42,8 @@ impl FirehoseActivity {
         let useraction: u8 = 0x3;
         // Get first activity_id (if not useraction type)
         if firehose_log_type != &useraction {
-            let (firehose_input, aid) = take(size_of::<u32>())(data)?;
-            let (firehose_input, sentinel) = take(size_of::<u32>())(firehose_input)?;
-            let (_, val) = le_u32(aid)?;
-            let (_, sval) = le_u32(sentinel)?;
+            let (firehose_input, val) = le_u32(data)?;
+            let (firehose_input, sval) = le_u32(firehose_input)?;
             unknown_activity_id = val;
             unknown_sentinal = sval;
             input = firehose_input;
@@ -59,8 +53,7 @@ impl FirehoseActivity {
         let unique_pid_flag: u16 = 0x10; // has_unique_pid flag
         if (firehose_flags & unique_pid_flag) != 0 {
             debug!("[macos-unifiedlogs] Activity Firehose log chunk has unique_pid flag");
-            let (firehose_input, upid) = take(size_of::<u64>())(input)?;
-            let (_, val) = le_u64(upid)?;
+            let (firehose_input, val) = le_u64(input)?;
             pid = val;
             input = firehose_input;
         }
@@ -70,10 +63,8 @@ impl FirehoseActivity {
         let activity_id_current: u16 = 0x1; // has_current_aid flag
         if (firehose_flags & activity_id_current) != 0 {
             debug!("[macos-unifiedlogs] Activity Firehose log chunk has has_current_aid flag");
-            let (firehose_input, aid) = take(size_of::<u32>())(input)?;
-            let (firehose_input, sentinel) = take(size_of::<u32>())(firehose_input)?;
-            let (_, val) = le_u32(aid)?;
-            let (_, sval) = le_u32(sentinel)?;
+            let (firehose_input, val) = le_u32(input)?;
+            let (firehose_input, sval) = le_u32(firehose_input)?;
             unknown_activity_id_2 = val;
             unknown_sentinal_2 = sval;
             input = firehose_input;
@@ -86,17 +77,14 @@ impl FirehoseActivity {
             debug!(
                 "[macos-unifiedlogs] Activity Firehose log chunk has has_other_current_aid flag"
             );
-            let (firehose_input, aid) = take(size_of::<u32>())(input)?;
-            let (firehose_input, sentinel) = take(size_of::<u32>())(firehose_input)?;
-            let (_, val) = le_u32(aid)?;
-            let (_, sval) = le_u32(sentinel)?;
+            let (firehose_input, val) = le_u32(input)?;
+            let (firehose_input, sval) = le_u32(firehose_input)?;
             unknown_activity_id_3 = val;
             unknown_sentinal_3 = sval;
             input = firehose_input;
         }
 
-        let (input, pc_id_data) = take(size_of::<u32>())(input)?;
-        let (_, unknown_pc_id) = le_u32(pc_id_data)?;
+        let (input, unknown_pc_id) = le_u32(input)?;
 
         // Check for flags related to base string format location (shared string file (dsc) or UUID file)
         let (input, firehose_formatters) =

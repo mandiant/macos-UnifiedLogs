@@ -72,33 +72,21 @@ impl<'a> StatedumpStr<'a> {
 impl<'a> StatedumpStr<'a> {
     /// Parse Statedump log entry. Statedumps are special log entries that may contain a plist file, custom object, or protocol buffer
     pub fn parse_statedump(data: &'a [u8]) -> nom::IResult<&'a [u8], Self> {
-        let (input, chunk_tag) = take(size_of::<u32>())(data)?;
-        let (input, chunk_sub_tag) = take(size_of::<u32>())(input)?;
-        let (input, chunk_data_size) = take(size_of::<u64>())(input)?;
-        let (input, first_number_proc_id) = take(size_of::<u64>())(input)?;
-        let (input, second_number_proc_id) = take(size_of::<u32>())(input)?;
+        let (input, chunk_tag) = le_u32(data)?;
+        let (input, chunk_subtag) = le_u32(input)?;
+        let (input, chunk_data_size) = le_u64(input)?;
+        let (input, first_proc_id) = le_u64(input)?;
+        let (input, second_proc_id) = le_u32(input)?;
 
-        let (input, ttl) = take(size_of::<u8>())(input)?;
+        let (input, ttl) = le_u8(input)?;
         let unknown_reserved_size: u8 = 3;
         let (input, unknown_reserved) = take(unknown_reserved_size)(input)?;
-        let (input, continuous_time) = take(size_of::<u64>())(input)?;
-        let (input, activity_id) = take(size_of::<u64>())(input)?;
+        let (input, continuous_time) = le_u64(input)?;
+        let (input, activity_id) = le_u64(input)?;
         let (input, uuid_raw) = take(size_of::<u128>())(input)?;
-        let (input, unknown_data_type) = take(size_of::<u32>())(input)?;
+        let (input, unknown_data_type) = le_u32(input)?;
 
-        let (_, chunk_tag) = le_u32(chunk_tag)?;
-        let (_, chunk_subtag) = le_u32(chunk_sub_tag)?;
-        let (_, chunk_data_size) = le_u64(chunk_data_size)?;
-        let (_, first_proc_id) = le_u64(first_number_proc_id)?;
-        let (_, second_proc_id) = le_u32(second_number_proc_id)?;
-
-        let (_, ttl) = le_u8(ttl)?;
-        let (_, continuous_time) = le_u64(continuous_time)?;
-        let (_, activity_id) = le_u64(activity_id)?;
-        let (_, unknown_data_type) = le_u32(unknown_data_type)?;
-
-        let (mut input, unknown_data_size) = take(size_of::<u32>())(input)?;
-        let (_, unknown_data_size) = le_u32(unknown_data_size)?;
+        let (mut input, unknown_data_size) = le_u32(input)?;
 
         let custom_decoder = 3;
         let string_size: u8 = 64;

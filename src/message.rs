@@ -14,7 +14,6 @@ use nom::branch::alt;
 use nom::bytes::complete::{is_a, is_not, take, take_until};
 use nom::character::complete::digit0;
 use regex::Regex;
-use std::mem::size_of;
 
 struct FormatAndMessage<'a> {
     formatter: &'a str,
@@ -387,7 +386,7 @@ fn parse_formatter<'a>(
 
         width_value = format!("{precision_value}");
         width = width_value.as_str();
-        let (input, _) = take(size_of::<u8>())(formatter_message)?;
+        let (input, _) = take(1u8)(formatter_message)?;
         formatter_message = input;
     }
 
