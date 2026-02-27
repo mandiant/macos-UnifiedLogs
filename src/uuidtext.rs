@@ -31,15 +31,13 @@ pub struct UUIDTextEntry {
 impl UUIDText {
     /// Parse the UUID files in uuidinfo directory. Contains the base log message string
     pub fn parse_uuidtext(data: &[u8]) -> nom::IResult<&[u8], UUIDText> {
-        let mut uuidtext_data = UUIDText::default();
-
         let expected_uuidtext_signature = 0x66778899;
         let (input, signature) = take(size_of::<u32>())(data)?;
-        let (_, uuidtext_signature) = le_u32(signature)?;
+        let (_, signature) = le_u32(signature)?;
 
-        if expected_uuidtext_signature != uuidtext_signature {
+        if expected_uuidtext_signature != signature {
             error!(
-                "[macos-unifiedlogs] Incorrect UUIDText header signature. Expected {expected_uuidtext_signature}. Got: {uuidtext_signature}"
+                "[macos-unifiedlogs] Incorrect UUIDText header signature. Expected {expected_uuidtext_signature}. Got: {signature}"
             );
             return Err(nom::Err::Incomplete(Needed::Unknown));
         }
@@ -48,34 +46,40 @@ impl UUIDText {
         let (input, unknown_minor_version) = take(size_of::<u32>())(input)?;
         let (mut input, number_entries) = take(size_of::<u32>())(input)?;
 
-        let (_, uuidtext_unknown_major_version) = le_u32(unknown_major_version)?;
-        let (_, uuidtext_unknown_minor_version) = le_u32(unknown_minor_version)?;
-        let (_, uuidtext_number_entries) = le_u32(number_entries)?;
+        let (_, unknown_major_version) = le_u32(unknown_major_version)?;
+        let (_, unknown_minor_version) = le_u32(unknown_minor_version)?;
+        let (_, number_entries) = le_u32(number_entries)?;
 
-        uuidtext_data.signature = uuidtext_signature;
-        uuidtext_data.unknown_major_version = uuidtext_unknown_major_version;
-        uuidtext_data.unknown_minor_version = uuidtext_unknown_minor_version;
-        uuidtext_data.number_entries = uuidtext_number_entries;
-
+        let mut entry_descriptors = Vec::new();
         let mut count = 0;
-        while count < uuidtext_number_entries {
+        while count < number_entries {
             let (entry_input, range_start_offset) = take(size_of::<u32>())(input)?;
             let (entry_input, entry_size) = take(size_of::<u32>())(entry_input)?;
 
-            let (_, uuidtext_range_start_offset) = le_u32(range_start_offset)?;
-            let (_, uuidtext_entry_size) = le_u32(entry_size)?;
+            let (_, range_start_offset) = le_u32(range_start_offset)?;
+            let (_, entry_size) = le_u32(entry_size)?;
 
-            let entry_data = UUIDTextEntry {
-                range_start_offset: uuidtext_range_start_offset,
-                entry_size: uuidtext_entry_size,
-            };
-            uuidtext_data.entry_descriptors.push(entry_data);
+            entry_descriptors.push(UUIDTextEntry {
+                range_start_offset,
+                entry_size,
+            });
 
             input = entry_input;
             count += 1;
         }
-        uuidtext_data.footer_data = input.to_vec();
-        Ok((input, uuidtext_data))
+        let footer_data = input.to_vec();
+        Ok((
+            input,
+            UUIDText {
+                uuid: Uuid::default(),
+                signature,
+                unknown_major_version,
+                unknown_minor_version,
+                number_entries,
+                entry_descriptors,
+                footer_data,
+            },
+        ))
     }
 }
 

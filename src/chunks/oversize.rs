@@ -30,8 +30,6 @@ pub struct Oversize {
 impl Oversize {
     /// Parse the oversize log entry. Oversize entries contain strings that are too large to fit in a normal Firehose log entry
     pub fn parse_oversize(data: &[u8]) -> nom::IResult<&[u8], Oversize> {
-        let mut oversize_results = Oversize::default();
-
         let (input, chunk_tag) = take(size_of::<u32>())(data)?;
         let (input, chunk_sub_tag) = take(size_of::<u32>())(input)?;
         let (input, chunk_data_size) = take(size_of::<u64>())(input)?;
@@ -46,32 +44,20 @@ impl Oversize {
         let (input, public_data_size) = take(size_of::<u16>())(input)?;
         let (input, private_data_size) = take(size_of::<u16>())(input)?;
 
-        let (_, oversize_chunk_tag) = le_u32(chunk_tag)?;
-        let (_, oversize_chunk_sub_tag) = le_u32(chunk_sub_tag)?;
-        let (_, oversize_chunk_data_size) = le_u64(chunk_data_size)?;
-        let (_, oversize_first_proc_id) = le_u64(first_number_proc_id)?;
-        let (_, oversize_second_proc_id) = le_u32(second_number_proc_id)?;
+        let (_, chunk_tag) = le_u32(chunk_tag)?;
+        let (_, chunk_subtag) = le_u32(chunk_sub_tag)?;
+        let (_, chunk_data_size) = le_u64(chunk_data_size)?;
+        let (_, first_proc_id) = le_u64(first_number_proc_id)?;
+        let (_, second_proc_id) = le_u32(second_number_proc_id)?;
 
-        let (_, oversize_ttl) = le_u8(ttl)?;
-        let (_, oversize_continous_time) = le_u64(continuous_time)?;
-        let (_, oversize_data_ref_index) = le_u32(data_ref_index)?;
-        let (_, oversize_public_data_size) = le_u16(public_data_size)?;
-        let (_, oversize_private_data_size) = le_u16(private_data_size)?;
+        let (_, ttl) = le_u8(ttl)?;
+        let (_, continuous_time) = le_u64(continuous_time)?;
+        let (_, data_ref_index) = le_u32(data_ref_index)?;
+        let (_, public_data_size) = le_u16(public_data_size)?;
+        let (_, private_data_size) = le_u16(private_data_size)?;
+        let unknown_reserved = unknown_reserved.to_vec();
 
-        oversize_results.chunk_tag = oversize_chunk_tag;
-        oversize_results.chunk_subtag = oversize_chunk_sub_tag;
-        oversize_results.chunk_data_size = oversize_chunk_data_size;
-        oversize_results.first_proc_id = oversize_first_proc_id;
-        oversize_results.second_proc_id = oversize_second_proc_id;
-        oversize_results.ttl = oversize_ttl;
-        oversize_results.continuous_time = oversize_continous_time;
-        oversize_results.data_ref_index = oversize_data_ref_index;
-        oversize_results.public_data_size = oversize_public_data_size;
-        oversize_results.private_data_size = oversize_private_data_size;
-        oversize_results.unknown_reserved = unknown_reserved.to_vec();
-
-        let mut oversize_data_size =
-            (oversize_results.public_data_size + oversize_results.private_data_size) as usize;
+        let mut oversize_data_size = (public_data_size + private_data_size) as usize;
 
         // Contains item data like firehose (ex: 0x42)
         if oversize_data_size > input.len() {
@@ -88,12 +74,28 @@ impl Oversize {
 
         let empty_flags = 0;
         // Grab all message items from oversize data
-        let (oversize_private_data, mut firehose_item_data) =
+        let (oversize_private_data, mut message_items) =
             FirehosePreamble::collect_items(message_data, &oversize_item_count, &empty_flags)?;
         let (_, _) =
-            FirehosePreamble::parse_private_data(oversize_private_data, &mut firehose_item_data)?;
-        oversize_results.message_items = firehose_item_data;
-        Ok((input, oversize_results))
+            FirehosePreamble::parse_private_data(oversize_private_data, &mut message_items)?;
+
+        Ok((
+            input,
+            Oversize {
+                chunk_tag,
+                chunk_subtag,
+                chunk_data_size,
+                first_proc_id,
+                second_proc_id,
+                ttl,
+                unknown_reserved,
+                continuous_time,
+                data_ref_index,
+                public_data_size,
+                private_data_size,
+                message_items,
+            },
+        ))
     }
 
     /// Function to get the firehose item info from the oversize log entry based on oversize (data ref) id, first proc id, and second proc id
@@ -131,7 +133,9 @@ impl Oversize {
 
 #[cfg(test)]
 mod tests {
-    use crate::chunks::firehose::firehose_log::{FirehoseItemData, FirehoseItemInfo, FirehoseItemValue};
+    use crate::chunks::firehose::firehose_log::{
+        FirehoseItemData, FirehoseItemInfo, FirehoseItemValue,
+    };
     use crate::chunks::oversize::Oversize;
     use crate::rc_string;
     use std::fs;
@@ -376,7 +380,9 @@ mod tests {
             message_items: FirehoseItemData {
                 item_info: vec![
                     FirehoseItemInfo {
-                        message_strings: FirehoseItemValue::Str(rc_string!("system kext collection")),
+                        message_strings: FirehoseItemValue::Str(rc_string!(
+                            "system kext collection"
+                        )),
                         item_type: 34,
                         item_size: 0,
                     },

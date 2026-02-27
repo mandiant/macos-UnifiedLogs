@@ -112,7 +112,13 @@ impl<'a> LogIterator<'a> {
         timesync_data: &'a HashMap<Uuid, TimesyncBoot>,
         exclude_missing: bool,
     ) -> Result<Self, regex::Error> {
-        Self::with_filter(unified_log_data, provider, timesync_data, exclude_missing, None)
+        Self::with_filter(
+            unified_log_data,
+            provider,
+            timesync_data,
+            exclude_missing,
+            None,
+        )
     }
 
     fn with_filter(

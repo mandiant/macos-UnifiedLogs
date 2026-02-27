@@ -37,75 +37,90 @@ impl FirehoseNonActivity {
         data: &'a [u8],
         firehose_flags: &u16,
     ) -> nom::IResult<&'a [u8], FirehoseNonActivity> {
-        let mut non_activity = FirehoseNonActivity::default();
-
         let mut input = data;
-        let activity_id_current: u16 = 0x1; // has_current_aid flag
 
+        let mut unknown_activity_id: u32 = 0;
+        let mut unknown_sentinal: u32 = 0;
+        let activity_id_current: u16 = 0x1; // has_current_aid flag
         if (firehose_flags & activity_id_current) != 0 {
             debug!("[macos-unifiedlogs] Non-Activity Firehose log chunk has has_current_aid flag");
-            let (firehose_input, unknown_activity_id) = take(size_of::<u32>())(input)?;
-            let (firehose_input, unknown_sentinel) = take(size_of::<u32>())(firehose_input)?;
-            let (_, firehose_unknown_activity_id) = le_u32(unknown_activity_id)?;
-            let (_, firehose_unknown_sentinel) = le_u32(unknown_sentinel)?;
-            non_activity.unknown_activity_id = firehose_unknown_activity_id;
-            non_activity.unknown_sentinal = firehose_unknown_sentinel;
+            let (firehose_input, aid) = take(size_of::<u32>())(input)?;
+            let (firehose_input, sentinel) = take(size_of::<u32>())(firehose_input)?;
+            let (_, val) = le_u32(aid)?;
+            let (_, sval) = le_u32(sentinel)?;
+            unknown_activity_id = val;
+            unknown_sentinal = sval;
             input = firehose_input;
         }
 
+        let mut private_strings_offset: u16 = 0;
+        let mut private_strings_size: u16 = 0;
         let private_string_range: u16 = 0x100; // has_private_data flag
         // Entry has private string data. The private data is found after parsing all the public data first
         if (firehose_flags & private_string_range) != 0 {
             debug!("[macos-unifiedlogs] Non-Activity Firehose log chunk has has_private_data flag");
-            let (firehose_input, private_strings_offset) = take(size_of::<u16>())(input)?;
-            let (firehose_input, private_strings_size) = take(size_of::<u16>())(firehose_input)?;
-
-            let (_, firehose_private_strings_offset) = le_u16(private_strings_offset)?;
-            let (_, firehose_private_strings_size) = le_u16(private_strings_size)?;
-
+            let (firehose_input, pso) = take(size_of::<u16>())(input)?;
+            let (firehose_input, pss) = take(size_of::<u16>())(firehose_input)?;
+            let (_, val) = le_u16(pso)?;
+            let (_, sval) = le_u16(pss)?;
             // Offset points to private string values found after parsing the public data. Size is the data size
-            non_activity.private_strings_offset = firehose_private_strings_offset;
-            non_activity.private_strings_size = firehose_private_strings_size;
+            private_strings_offset = val;
+            private_strings_size = sval;
             input = firehose_input;
         }
 
-        let (input, unknown_pc_id) = take(size_of::<u32>())(input)?;
-        let (_, firehose_unknown_pc_id) = le_u32(unknown_pc_id)?;
-        non_activity.unknown_pc_id = firehose_unknown_pc_id;
+        let (input, pc_id_data) = take(size_of::<u32>())(input)?;
+        let (_, unknown_pc_id) = le_u32(pc_id_data)?;
 
         // Check for flags related to base string format location (shared string file (dsc) or UUID file)
-        let (mut input, formatters) =
+        let (mut input, firehose_formatters) =
             FirehoseFormatters::firehose_formatter_flags(input, firehose_flags)?;
-        non_activity.firehose_formatters = formatters;
 
-        let subsystem: u16 = 0x200; // has_subsystem flag. In Non-Activity log entries this is the subsystem flag
-        if (firehose_flags & subsystem) != 0 {
+        let mut subsystem_value: u16 = 0;
+        let subsystem_flag: u16 = 0x200; // has_subsystem flag. In Non-Activity log entries this is the subsystem flag
+        if (firehose_flags & subsystem_flag) != 0 {
             debug!("[macos-unifiedlogs] Non-Activity Firehose log chunk has has_subsystem flag");
             let (firehose_input, subsystem) = take(size_of::<u16>())(input)?;
-            let (_, firehose_subsystem) = le_u16(subsystem)?;
-            non_activity.subsystem_value = firehose_subsystem;
+            let (_, val) = le_u16(subsystem)?;
+            subsystem_value = val;
             input = firehose_input;
         }
 
+        let mut ttl_value: u8 = 0;
         let ttl: u16 = 0x400; // has_rules flag
         if (firehose_flags & ttl) != 0 {
             debug!("[macos-unifiedlogs] Non-Activity Firehose log chunk has has_rules flag");
             let (firehose_input, ttl_data) = take(size_of::<u8>())(input)?;
-            let (_, firehose_ttl) = le_u8(ttl_data)?;
-            non_activity.ttl_value = firehose_ttl;
+            let (_, val) = le_u8(ttl_data)?;
+            ttl_value = val;
             input = firehose_input;
         }
 
+        let mut data_ref_value: u32 = 0;
         let data_ref: u16 = 0x800; // has_oversize flag
         if (firehose_flags & data_ref) != 0 {
             debug!("[macos-unifiedlogs] Non-Activity Firehose log chunk has has_oversize flag");
-            let (firehose_input, data_ref_value) = take(size_of::<u32>())(input)?;
-            let (_, firehose_data_ref) = le_u32(data_ref_value)?;
-            non_activity.data_ref_value = firehose_data_ref;
+            let (firehose_input, dref) = take(size_of::<u32>())(input)?;
+            let (_, val) = le_u32(dref)?;
+            data_ref_value = val;
             input = firehose_input;
         }
 
-        Ok((input, non_activity))
+        Ok((
+            input,
+            FirehoseNonActivity {
+                unknown_activity_id,
+                unknown_sentinal,
+                private_strings_offset,
+                private_strings_size,
+                unknown_message_string_ref: 0,
+                subsystem_value,
+                ttl_value,
+                data_ref_value,
+                unknown_pc_id,
+                firehose_formatters,
+            },
+        ))
     }
 
     /// Get base log message string formatter from shared cache strings (dsc) or UUID text file for firehose non-activity log entries (chunks)
@@ -138,8 +153,7 @@ impl FirehoseNonActivity {
                 } else if firehose.firehose_formatters.shared_cache {
                     // Large offset is 8 if shared_cache flag is set
                     large_offset = 8;
-                    offset =
-                        0x1000_0000_u64 * u64::from(large_offset) + string_offset;
+                    offset = 0x1000_0000_u64 * u64::from(large_offset) + string_offset;
                 } else {
                     offset = (u64::from(large_offset) << 32) | string_offset;
                 }
@@ -163,8 +177,7 @@ impl FirehoseNonActivity {
             )
         } else {
             if firehose.firehose_formatters.absolute {
-                let offset = (u64::from(firehose.firehose_formatters.main_exe_alt_index)
-                    << 32)
+                let offset = (u64::from(firehose.firehose_formatters.main_exe_alt_index) << 32)
                     | u64::from(firehose.unknown_pc_id);
 
                 return MessageData::extract_absolute_strings(

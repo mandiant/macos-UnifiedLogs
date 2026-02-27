@@ -37,69 +37,77 @@ pub struct ChunksetChunk {
 impl ChunksetChunk {
     /// Parse the Chunkset data that contains the actual log entries
     pub fn parse_chunkset(data: &[u8]) -> nom::IResult<&[u8], ChunksetChunk> {
-        let mut chunkset_chunk = ChunksetChunk::default();
-
         let (input, chunk_tag) = take(size_of::<u32>())(data)?;
         let (input, chunk_sub_tag) = take(size_of::<u32>())(input)?;
         let (input, chunk_data_size) = take(size_of::<u64>())(input)?;
         let (input, signature) = take(size_of::<u32>())(input)?;
         let (input, uncompress_size) = take(size_of::<u32>())(input)?;
 
-        let (_, chunkset_chunk_tag) = le_u32(chunk_tag)?;
-        let (_, chunkset_chunk_sub_tag) = le_u32(chunk_sub_tag)?;
-        let (_, chunkset_chunk_data_size) = le_u64(chunk_data_size)?;
-        let (_, chunkset_sig) = le_u32(signature)?;
-        let (_, chunkset_uncompress_size) = le_u32(uncompress_size)?;
+        let (_, chunk_tag) = le_u32(chunk_tag)?;
+        let (_, chunk_sub_tag) = le_u32(chunk_sub_tag)?;
+        let (_, chunk_data_size) = le_u64(chunk_data_size)?;
+        let (_, signature) = le_u32(signature)?;
+        let (_, uncompress_size) = le_u32(uncompress_size)?;
 
         let bv41 = 825521762; // bv41 signature
         let bv41_uncompressed = 758412898; // bv41- signature
 
         // Data is already decompressed (Observed in tracev3 files in /var/db/diagnostics/Special)
-        if chunkset_sig == bv41_uncompressed {
-            let (input, uncompressed_data) = take(chunkset_uncompress_size)(input)?;
-            chunkset_chunk.decompressed_data = uncompressed_data.to_vec();
+        if signature == bv41_uncompressed {
+            let (input, uncompressed_data) = take(uncompress_size)(input)?;
             let (input, footer) = take(size_of::<u32>())(input)?;
-            let (_, chunkset_footer) = le_u32(footer)?;
-            chunkset_chunk.footer = chunkset_footer;
-            return Ok((input, chunkset_chunk));
+            let (_, footer) = le_u32(footer)?;
+            return Ok((
+                input,
+                ChunksetChunk {
+                    chunk_tag,
+                    chunk_sub_tag,
+                    chunk_data_size,
+                    signature,
+                    uncompress_size,
+                    block_size: 0,
+                    decompressed_data: uncompressed_data.to_vec(),
+                    footer,
+                },
+            ));
         }
 
         // Compressed data signatue should be bv41
-        if chunkset_sig != bv41 {
+        if signature != bv41 {
             error!(
-                "[macos-unifiedlogs] Incorrect compression signature expected bv41, got: {chunkset_sig:?}"
+                "[macos-unifiedlogs] Incorrect compression signature expected bv41, got: {signature:?}"
             );
             return Err(nom::Err::Incomplete(Needed::Unknown));
         }
 
         let (input, block_size) = take(size_of::<u32>())(input)?;
-        let (_, chunkset_block_size) = le_u32(block_size)?;
+        let (_, block_size) = le_u32(block_size)?;
 
-        chunkset_chunk.chunk_tag = chunkset_chunk_tag;
-        chunkset_chunk.chunk_sub_tag = chunkset_chunk_sub_tag;
-        chunkset_chunk.chunk_data_size = chunkset_chunk_data_size;
-        chunkset_chunk.signature = chunkset_sig;
-        chunkset_chunk.uncompress_size = chunkset_uncompress_size;
-        chunkset_chunk.block_size = chunkset_block_size;
-
-        let (input, compressed_data) = take(chunkset_block_size)(input)?;
-        let decompress_data_results =
-            decompress(compressed_data, chunkset_uncompress_size as usize);
-
-        // The decompressed data contains multiple log entries
-        match decompress_data_results {
-            Ok(decompress_data) => chunkset_chunk.decompressed_data = decompress_data,
+        let (input, compressed_data) = take(block_size)(input)?;
+        let decompressed_data = match decompress(compressed_data, uncompress_size as usize) {
+            Ok(data) => data,
             Err(err) => {
                 error!("[macos-unifiedlogs] Failed to decompress log data: {err:?}");
                 return Err(nom::Err::Incomplete(Needed::Unknown));
             }
-        }
+        };
 
         let (input, footer) = take(size_of::<u32>())(input)?;
-        let (_, chunkset_footer) = le_u32(footer)?;
-        chunkset_chunk.footer = chunkset_footer;
+        let (_, footer) = le_u32(footer)?;
 
-        Ok((input, chunkset_chunk))
+        Ok((
+            input,
+            ChunksetChunk {
+                chunk_tag,
+                chunk_sub_tag,
+                chunk_data_size,
+                signature,
+                uncompress_size,
+                block_size,
+                decompressed_data,
+                footer,
+            },
+        ))
     }
 
     /// Parse each log (chunk) in the decompressed Chunkset data

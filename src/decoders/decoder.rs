@@ -153,7 +153,9 @@ pub(crate) fn check_objects(
     if (format_string.contains("mask.hash") && message_values[index].item_type == MASKED_HASH_TYPE)
         || message_cow.as_ref() == "<private>"
     {
-        return Some(Decoded::Masked(message_values[index].message_strings.to_rc_string()));
+        return Some(Decoded::Masked(
+            message_values[index].message_strings.to_rc_string(),
+        ));
     }
 
     let message_strings = message_cow.as_ref();
@@ -298,7 +300,10 @@ mod tests {
         let test_index = 0;
 
         let results = check_objects(test_format, &[test_item_info], test_type, test_index);
-        assert_eq!(results.unwrap().to_rc_string().as_str(), "user: -2@/Local/Default");
+        assert_eq!(
+            results.unwrap().to_rc_string().as_str(),
+            "user: -2@/Local/Default"
+        );
     }
 
     #[test]

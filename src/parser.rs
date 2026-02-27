@@ -110,7 +110,13 @@ pub fn build_log_filtered<'a>(
     exclude_missing: bool,
     filter: impl Fn(&LogData) -> bool + 'a,
 ) -> (Vec<LogData>, UnifiedLogData) {
-    LogData::build_log_filtered(unified_data, provider, timesync_data, exclude_missing, filter)
+    LogData::build_log_filtered(
+        unified_data,
+        provider,
+        timesync_data,
+        exclude_missing,
+        filter,
+    )
 }
 
 /// Parse all UUID files in provided directory. The directory should follow the same layout as the live system (ex: path/to/files/\<two character UUID\>/\<remaining UUID name\>)

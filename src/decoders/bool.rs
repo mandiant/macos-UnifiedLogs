@@ -17,7 +17,6 @@ pub(crate) fn bool_from_int(integer: impl Into<u32>) -> bool {
     integer.into() != FALSE_BOOL
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -32,5 +31,4 @@ mod tests {
         results = uppercase_bool(test_data);
         assert_eq!(results, "YES");
     }
-
 }

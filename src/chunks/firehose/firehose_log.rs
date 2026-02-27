@@ -15,8 +15,6 @@ use crate::util::{
 };
 use crate::{RcString, empty_rc_string, null_rc_string, private_rc_string, rc_string};
 use log::{debug, error, warn};
-use std::borrow::Cow;
-use std::fmt;
 use nom::Parser;
 use nom::bytes::complete::take_while;
 use nom::combinator::map;
@@ -27,6 +25,8 @@ use nom::{
     number::complete::{le_u8, le_u16, le_u32, le_u64},
 };
 use serde::Serialize;
+use std::borrow::Cow;
+use std::fmt;
 use std::mem::size_of;
 
 #[derive(Debug, Clone, Default)]
@@ -194,44 +194,29 @@ impl FirehosePreamble {
     pub fn parse_firehose_preamble(
         firehose_input_data: &[u8],
     ) -> nom::IResult<&[u8], FirehosePreamble> {
-        let mut firehose_data = FirehosePreamble::default();
-
         let (input, chunk_tag) = le_u32(firehose_input_data)?;
         let (input, chunk_sub_tag) = le_u32(input)?;
         let (input, chunk_data_size) = le_u64(input)?;
-        let (input, first_proc_id) = le_u64(input)?;
-        let (input, second_proc_id) = le_u32(input)?;
+        let (input, first_number_proc_id) = le_u64(input)?;
+        let (input, second_number_proc_id) = le_u32(input)?;
         let (input, ttl) = le_u8(input)?;
         let (input, collapsed) = le_u8(input)?;
 
         let (input, unknown) = take(size_of::<u16>())(input)?;
+        let unknown = unknown.to_vec();
 
         let (input, public_data_size) = le_u16(input)?;
         let (input, private_data_virtual_offset) = le_u16(input)?;
-        let (input, unknown2) = le_u16(input)?;
+        let (input, unkonwn2) = le_u16(input)?;
         let (input, unknown3) = le_u16(input)?;
         let (log_data, base_continous_time) = le_u64(input)?;
-
-        firehose_data.chunk_tag = chunk_tag;
-        firehose_data.chunk_sub_tag = chunk_sub_tag;
-        firehose_data.chunk_data_size = chunk_data_size;
-        firehose_data.first_number_proc_id = first_proc_id;
-        firehose_data.second_number_proc_id = second_proc_id;
-        firehose_data.collapsed = collapsed;
-        firehose_data.ttl = ttl;
-
-        firehose_data.unknown = unknown.to_vec();
-
-        firehose_data.public_data_size = public_data_size;
-        firehose_data.private_data_virtual_offset = private_data_virtual_offset;
-        firehose_data.unkonwn2 = unknown2;
-        firehose_data.unknown3 = unknown3;
-        firehose_data.base_continous_time = base_continous_time;
 
         // firehose_public_data_size includes the 16 bytes before the public data offset
         let public_data_size_offset = 16;
         let (mut input, mut public_data) =
             take(public_data_size - public_data_size_offset)(log_data)?;
+
+        let mut public_data_vec: Vec<Firehose> = Vec::new();
 
         // Go through all the public data associated with log Firehose entry
         while !public_data.is_empty() {
@@ -284,10 +269,10 @@ impl FirehosePreamble {
                         }
                     }
                 }
-                firehose_data.public_data.push(firehose_public_data);
+                public_data_vec.push(firehose_public_data);
                 break;
             }
-            firehose_data.public_data.push(firehose_public_data);
+            public_data_vec.push(firehose_public_data);
         }
 
         // If there is private data, go through and update any logs that have private data items
@@ -298,11 +283,11 @@ impl FirehosePreamble {
 
             // if we nom the rest of the data (all zeros) then the private data is actually zeros
             // Or if the firehose data is collapsed, then there was no padding
-            if private_input.is_empty() || firehose_data.collapsed == 1 {
+            if private_input.is_empty() || collapsed == 1 {
                 private_input = input;
             }
 
-            for data in &mut firehose_data.public_data {
+            for data in &mut public_data_vec {
                 // Only non-activity firehose entries appears to have private strings
                 if data.firehose_non_activity.private_strings_size == 0 {
                     continue;
@@ -316,7 +301,25 @@ impl FirehosePreamble {
             }
             input = private_input;
         }
-        Ok((input, firehose_data))
+        Ok((
+            input,
+            FirehosePreamble {
+                chunk_tag,
+                chunk_sub_tag,
+                chunk_data_size,
+                first_number_proc_id,
+                second_number_proc_id,
+                ttl,
+                collapsed,
+                unknown,
+                public_data_size,
+                private_data_virtual_offset,
+                unkonwn2,
+                unknown3,
+                base_continous_time,
+                public_data: public_data_vec,
+            },
+        ))
     }
 
     /// Collect all the Firehose items (log message entries) in the log entry (chunk)
@@ -333,7 +336,7 @@ impl FirehosePreamble {
         let mut items_data: Vec<FirehoseItemType> = Vec::new();
 
         let mut firehose_input = data;
-        let mut firehose_item_data = FirehoseItemData::default();
+        let mut backtrace_strings: Vec<RcString> = Vec::new();
 
         // Firehose number item values
         let number_item_type: Vec<u8> = vec![0x0, 0x2];
@@ -389,7 +392,7 @@ impl FirehosePreamble {
             let (backtrace_input, backtrace_data) =
                 FirehosePreamble::get_backtrace_data(firehose_input)?;
             firehose_input = backtrace_input;
-            firehose_item_data.backtrace_strings = backtrace_data;
+            backtrace_strings = backtrace_data;
         } else if firehose_input.len() > backtrace_signature_size {
             let backtrace_signature = [1, 0, 18];
             let (_, backtrace_sig) = take(backtrace_signature_size)(firehose_input)?;
@@ -397,7 +400,7 @@ impl FirehosePreamble {
                 let (backtrace_input, backtrace_data) =
                     FirehosePreamble::get_backtrace_data(firehose_input)?;
                 firehose_input = backtrace_input;
-                firehose_item_data.backtrace_strings = backtrace_data;
+                backtrace_strings = backtrace_data;
             }
         }
 
@@ -450,15 +453,22 @@ impl FirehosePreamble {
 
         // We now have all of the firehose items and the data
         // Go through and append to vec
-        for item in items_data {
-            let item_info = FirehoseItemInfo {
+        let item_info = items_data
+            .into_iter()
+            .map(|item| FirehoseItemInfo {
                 message_strings: item.message_strings,
                 item_type: item.item_type,
                 item_size: item.message_string_size,
-            };
-            firehose_item_data.item_info.push(item_info);
-        }
-        Ok((firehose_input, firehose_item_data))
+            })
+            .collect();
+
+        Ok((
+            firehose_input,
+            FirehoseItemData {
+                item_info,
+                backtrace_strings,
+            },
+        ))
     }
 
     /// Parse any private firehose data and update any firehose items that use private data
@@ -528,8 +538,6 @@ impl FirehosePreamble {
 
     /// Parse all the different types of Firehose data (activity, non-activity, loss, trace, signpost)
     fn parse_firehose(data: &[u8]) -> nom::IResult<&[u8], Firehose> {
-        let mut firehose_results = Firehose::default();
-
         let (input, unknown_log_activity_type) = le_u8(data)?;
         let (input, unknown_log_type) = le_u8(input)?;
         let (input, flags) = le_u16(input)?;
@@ -537,18 +545,9 @@ impl FirehosePreamble {
 
         let (input, thread_id) = le_u64(input)?;
 
-        let (input, continous_delta) = le_u32(input)?;
-        let (input, continous_delta_upper) = le_u16(input)?;
+        let (input, continous_time_delta) = le_u32(input)?;
+        let (input, continous_time_delta_upper) = le_u16(input)?;
         let (input, data_size) = le_u16(input)?;
-
-        firehose_results.unknown_log_activity_type = unknown_log_activity_type;
-        firehose_results.unknown_log_type = unknown_log_type;
-        firehose_results.flags = flags;
-        firehose_results.format_string_location = format_string_location;
-        firehose_results.thread_id = thread_id;
-        firehose_results.continous_time_delta_upper = continous_delta_upper;
-        firehose_results.continous_time_delta = continous_delta;
-        firehose_results.data_size = data_size;
 
         let (mut input, mut firehose_input) = take(data_size)(input)?;
 
@@ -562,33 +561,51 @@ impl FirehosePreamble {
         // Unknown types
         let unknown_remnant_data = 0x0; // 0x0 appears to be remnant data or garbage data (log command does not parse it either)
 
+        let mut firehose_activity = FirehoseActivity::default();
+        let mut firehose_non_activity = FirehoseNonActivity::default();
+        let mut firehose_signpost = FirehoseSignpost::default();
+        let mut firehose_loss = FirehoseLoss::default();
+        let mut firehose_trace = FirehoseTrace::default();
+        let mut message = FirehoseItemData::default();
+
         if unknown_log_activity_type == activity {
-            let (activity_data, activity) =
+            let (activity_data, parsed) =
                 FirehoseActivity::parse_activity(firehose_input, &flags, &unknown_log_type)?;
             firehose_input = activity_data;
-            firehose_results.firehose_activity = activity;
+            firehose_activity = parsed;
         } else if unknown_log_activity_type == nonactivity {
-            let (non_activity_data, non_activity) =
+            let (non_activity_data, parsed) =
                 FirehoseNonActivity::parse_non_activity(firehose_input, &flags)?;
             firehose_input = non_activity_data;
-            firehose_results.firehose_non_activity = non_activity;
+            firehose_non_activity = parsed;
         } else if unknown_log_activity_type == signpost {
-            let (process_data, firehose_signpost) =
-                FirehoseSignpost::parse_signpost(firehose_input, &flags)?;
+            let (process_data, parsed) = FirehoseSignpost::parse_signpost(firehose_input, &flags)?;
             firehose_input = process_data;
-            firehose_results.firehose_signpost = firehose_signpost;
+            firehose_signpost = parsed;
         } else if unknown_log_activity_type == loss {
-            let (loss_data, firehose_loss) = FirehoseLoss::parse_firehose_loss(firehose_input)?;
-            firehose_results.firehose_loss = firehose_loss;
+            let (loss_data, parsed) = FirehoseLoss::parse_firehose_loss(firehose_input)?;
+            firehose_loss = parsed;
             firehose_input = loss_data;
         } else if unknown_log_activity_type == trace {
-            let (trace_data, firehose_trace) = FirehoseTrace::parse_firehose_trace(firehose_input)?;
-            firehose_results.firehose_trace = firehose_trace;
+            let (trace_data, parsed) = FirehoseTrace::parse_firehose_trace(firehose_input)?;
+            firehose_trace = parsed;
             firehose_input = trace_data;
-
-            firehose_results.message = firehose_results.firehose_trace.message_data.clone();
+            message = firehose_trace.message_data.clone();
         } else if unknown_log_activity_type == unknown_remnant_data {
-            return Ok((input, firehose_results));
+            return Ok((
+                input,
+                Firehose {
+                    unknown_log_activity_type,
+                    unknown_log_type,
+                    flags,
+                    format_string_location,
+                    thread_id,
+                    continous_time_delta,
+                    continous_time_delta_upper,
+                    data_size,
+                    ..Default::default()
+                },
+            ));
         } else {
             warn!(
                 "[macos-unifiedlogs] Unknown log activity type: {} -  {} bytes left",
@@ -596,8 +613,24 @@ impl FirehosePreamble {
                 input.len()
             );
             debug!("[macos-unifiedlogs] Firehose data: {data:X?}");
-            return Ok((input, firehose_results));
+            return Ok((
+                input,
+                Firehose {
+                    unknown_log_activity_type,
+                    unknown_log_type,
+                    flags,
+                    format_string_location,
+                    thread_id,
+                    continous_time_delta,
+                    continous_time_delta_upper,
+                    data_size,
+                    ..Default::default()
+                },
+            ));
         }
+
+        let mut unknown_item: u8 = 0;
+        let mut number_items: u8 = 0;
 
         let minimum_item_size = 6;
         if firehose_input.len() < minimum_item_size {
@@ -605,41 +638,61 @@ impl FirehosePreamble {
             let (remaining_data, _) = take_while(|b: u8| b == 0)(input)?;
 
             input = remaining_data;
-            return Ok((input, firehose_results));
+        } else {
+            let (fi, ui) = le_u8(firehose_input)?;
+            let (fi, ni) = le_u8(fi)?;
+            unknown_item = ui;
+            number_items = ni;
+
+            let (_, firehose_item_data) =
+                FirehosePreamble::collect_items(fi, &number_items, &flags)?;
+
+            message = firehose_item_data;
+
+            // Nom any zero padding
+            let (remaining_data, taken_data) = take_while(|b: u8| b == 0)(input)?;
+
+            // Verify we did not nom into remnant/junk data
+            let padding_data = padding_size_8(data_size.into());
+            let padding_data = match u64_to_usize(padding_data) {
+                Some(p) => p,
+                None => {
+                    error!("[macos-unifiedlogs] u64 is bigger than system usize");
+                    return Err(nom::Err::Error(nom::error::Error::new(
+                        input,
+                        nom::error::ErrorKind::TooLarge,
+                    )));
+                }
+            };
+            let (padded_input, _) = take(padding_data)(input)?;
+            input = if (padding_data as usize) > taken_data.len() {
+                remaining_data
+            } else {
+                padded_input
+            };
         }
 
-        let (firehose_input, unknown_item) = le_u8(firehose_input)?;
-        let (firehose_input, number_items) = le_u8(firehose_input)?;
-
-        firehose_results.unknown_item = unknown_item;
-        firehose_results.number_items = number_items;
-
-        let (_, firehose_item_data) =
-            FirehosePreamble::collect_items(firehose_input, &number_items, &flags)?;
-
-        firehose_results.message = firehose_item_data;
-
-        // Nom any zero padding
-        let (remaining_data, taken_data) = take_while(|b: u8| b == 0)(input)?;
-
-        // Verify we did not nom into remnant/junk data
-        let padding_data = padding_size_8(data_size.into());
-        let padding_data = match u64_to_usize(padding_data) {
-            Some(p) => p,
-            None => {
-                error!("[macos-unifiedlogs] u64 is bigger than system usize");
-                return Err(nom::Err::Error(nom::error::Error::new(
-                    input,
-                    nom::error::ErrorKind::TooLarge,
-                )));
-            }
-        };
-        let (mut input, _) = take(padding_data)(input)?;
-        if (padding_data as usize) > taken_data.len() {
-            input = remaining_data;
-        }
-
-        Ok((input, firehose_results))
+        Ok((
+            input,
+            Firehose {
+                unknown_log_activity_type,
+                unknown_log_type,
+                flags,
+                format_string_location,
+                thread_id,
+                continous_time_delta,
+                continous_time_delta_upper,
+                data_size,
+                firehose_activity,
+                firehose_non_activity,
+                firehose_loss,
+                firehose_signpost,
+                firehose_trace,
+                unknown_item,
+                number_items,
+                message,
+            },
+        ))
     }
 
     /// Parse Backtrace data for log entry (chunk). This only exists if `has_context_data` flag is set

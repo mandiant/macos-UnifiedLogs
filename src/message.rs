@@ -505,7 +505,9 @@ fn parse_type_formatter<'a>(
 
     // If we successfully decoded an apple object, then there is nothing to format.
     // Signpost entries have not been seen with custom objects
-    if let Some(apple_object) = decoder::check_objects(format_type, message_value, item_type, item_index) {
+    if let Some(apple_object) =
+        decoder::check_objects(format_type, message_value, item_type, item_index)
+    {
         return Ok(("", apple_object.to_rc_string()));
     }
 
@@ -1106,7 +1108,8 @@ mod tests {
         assert_eq!(formatted_results.as_str(), "-248");
 
         let test_float = "%f";
-        test_message[0].message_strings = FirehoseItemValue::Str(rc_string!("-4611686018427387904"));
+        test_message[0].message_strings =
+            FirehoseItemValue::Str(rc_string!("-4611686018427387904"));
         let (_, formatted_results) = parse_formatter(
             test_float,
             &test_message,
@@ -1117,7 +1120,8 @@ mod tests {
         assert_eq!(formatted_results.as_str(), "-2");
 
         let test_float = "%f";
-        test_message[0].message_strings = FirehoseItemValue::Str(rc_string!("-4484628366119329180"));
+        test_message[0].message_strings =
+            FirehoseItemValue::Str(rc_string!("-4484628366119329180"));
         let (_, formatted_results) = parse_formatter(
             test_float,
             &test_message,
@@ -1128,7 +1132,8 @@ mod tests {
         assert_eq!(formatted_results.as_str(), "-650937839.633862");
 
         let test_string = "%s";
-        test_message[0].message_strings = FirehoseItemValue::Str(rc_string!("The big red dog jumped over the crab"));
+        test_message[0].message_strings =
+            FirehoseItemValue::Str(rc_string!("The big red dog jumped over the crab"));
         let (_, formatted_results) = parse_formatter(
             test_string,
             &test_message,

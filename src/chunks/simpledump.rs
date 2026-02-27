@@ -70,8 +70,6 @@ impl<'a> SimpleDumpStr<'a> {
 impl<'a> SimpleDumpStr<'a> {
     /// Parse Simpledump log entry.  Introduced in macOS Monterey (12)
     pub fn parse_simpledump(data: &'a [u8]) -> nom::IResult<&'a [u8], Self> {
-        let mut simpledump_resuls = SimpleDump::default();
-
         let (input, chunk_tag) = take(size_of::<u32>())(data)?;
         let (input, chunk_sub_tag) = take(size_of::<u32>())(input)?;
         let (input, chunk_data_size) = take(size_of::<u64>())(input)?;
@@ -83,61 +81,66 @@ impl<'a> SimpleDumpStr<'a> {
         let (input, unknown_offset) = take(size_of::<u32>())(input)?;
         let (input, unknown_ttl) = take(size_of::<u16>())(input)?;
         let (input, unknown_type) = take(size_of::<u16>())(input)?;
-        let (input, sender_uuid) = take(size_of::<u128>())(input)?;
-        let (input, dsc_uuid) = take(size_of::<u128>())(input)?;
+        let (input, sender_uuid_raw) = take(size_of::<u128>())(input)?;
+        let (input, dsc_uuid_raw) = take(size_of::<u128>())(input)?;
         let (input, unknown_number_message_strings) = take(size_of::<u32>())(input)?;
         let (input, unknown_size_subsystem_string) = take(size_of::<u32>())(input)?;
         let (input, unknown_size_message_string) = take(size_of::<u32>())(input)?;
 
-        let (_, simpledump_chunk_tag) = le_u32(chunk_tag)?;
-        let (_, simpledump_chunk_sub_tag) = le_u32(chunk_sub_tag)?;
-        let (_, simpledump_chunk_data_size) = le_u64(chunk_data_size)?;
-        let (_, simpledump_first_proc_id) = le_u64(first_number_proc_id)?;
-        let (_, simpledump_second_proc_id) = le_u64(second_number_proc_id)?;
+        let (_, chunk_tag) = le_u32(chunk_tag)?;
+        let (_, chunk_subtag) = le_u32(chunk_sub_tag)?;
+        let (_, chunk_data_size) = le_u64(chunk_data_size)?;
+        let (_, first_proc_id) = le_u64(first_number_proc_id)?;
+        let (_, second_proc_id) = le_u64(second_number_proc_id)?;
 
-        let (_, simpledump_continous_time) = le_u64(continous_time)?;
-        let (_, simpledump_thread_id) = le_u64(thread_id)?;
-        let (_, simpledump_unknown_offset) = le_u32(unknown_offset)?;
-        let (_, simpledump_unknown_ttl) = le_u16(unknown_ttl)?;
-        let (_, simpledump_unknown_type) = le_u16(unknown_type)?;
-        let (_, simpledump_unknown_number_message_strings) =
-            le_u32(unknown_number_message_strings)?;
-        let (_, simpledump_unknown_size_subsystem_string) = le_u32(unknown_size_subsystem_string)?;
-        let (_, simpledump_unknown_size_message_string) = le_u32(unknown_size_message_string)?;
-        let sender_uuid_string = format!("{sender_uuid:02X?}");
-        let dsc_uuid_string = format!("{dsc_uuid:02X?}");
+        let (_, continous_time) = le_u64(continous_time)?;
+        let (_, thread_id) = le_u64(thread_id)?;
+        let (_, unknown_offset) = le_u32(unknown_offset)?;
+        let (_, unknown_ttl) = le_u16(unknown_ttl)?;
+        let (_, unknown_type) = le_u16(unknown_type)?;
+        let (_, unknown_number_message_strings) = le_u32(unknown_number_message_strings)?;
+        let (_, unknown_size_subsystem_string) = le_u32(unknown_size_subsystem_string)?;
+        let (_, unknown_size_message_string) = le_u32(unknown_size_message_string)?;
 
-        simpledump_resuls.chunk_tag = simpledump_chunk_tag;
-        simpledump_resuls.chunk_subtag = simpledump_chunk_sub_tag;
-        simpledump_resuls.chunk_data_size = simpledump_chunk_data_size;
-        simpledump_resuls.continous_time = simpledump_continous_time;
-        simpledump_resuls.first_proc_id = simpledump_first_proc_id;
-        simpledump_resuls.second_proc_id = simpledump_second_proc_id;
-        simpledump_resuls.thread_id = simpledump_thread_id;
-        simpledump_resuls.unknown_offset = simpledump_unknown_offset;
-        simpledump_resuls.unknown_ttl = simpledump_unknown_ttl;
-        simpledump_resuls.unknown_type = simpledump_unknown_type;
+        let sender_uuid = clean_uuid(&format!("{sender_uuid_raw:02X?}"));
+        let dsc_uuid = clean_uuid(&format!("{dsc_uuid_raw:02X?}"));
 
-        simpledump_resuls.sender_uuid = clean_uuid(&sender_uuid_string);
-        simpledump_resuls.dsc_uuid = clean_uuid(&dsc_uuid_string);
-        simpledump_resuls.unknown_number_message_strings =
-            simpledump_unknown_number_message_strings;
-        simpledump_resuls.unknown_size_subsystem_string = simpledump_unknown_size_subsystem_string;
-        simpledump_resuls.unknown_size_message_string = simpledump_unknown_size_message_string;
+        let (input, subsystem_data) = take(unknown_size_subsystem_string)(input)?;
+        let (input, message_data) = take(unknown_size_message_string)(input)?;
 
-        let (input, subsystem_string) = take(simpledump_unknown_size_subsystem_string)(input)?;
-        let (input, message_string) = take(simpledump_unknown_size_message_string)(input)?;
-
-        if !subsystem_string.is_empty() {
-            let (_, simpledump_subsystem_string) = extract_string(subsystem_string)?;
-            simpledump_resuls.subsystem = simpledump_subsystem_string;
+        let mut subsystem: &str = Default::default();
+        if !subsystem_data.is_empty() {
+            let (_, s) = extract_string(subsystem_data)?;
+            subsystem = s;
         }
-        if !message_string.is_empty() {
-            let (_, simpledump_message_string) = extract_string(message_string)?;
-            simpledump_resuls.message_string = simpledump_message_string;
+        let mut message_string: &str = Default::default();
+        if !message_data.is_empty() {
+            let (_, s) = extract_string(message_data)?;
+            message_string = s;
         }
 
-        Ok((input, simpledump_resuls))
+        Ok((
+            input,
+            SimpleDump {
+                chunk_tag,
+                chunk_subtag,
+                chunk_data_size,
+                first_proc_id,
+                second_proc_id,
+                continous_time,
+                thread_id,
+                unknown_offset,
+                unknown_ttl,
+                unknown_type,
+                sender_uuid,
+                dsc_uuid,
+                unknown_number_message_strings,
+                unknown_size_subsystem_string,
+                unknown_size_message_string,
+                subsystem,
+                message_string,
+            },
+        ))
     }
 }
 

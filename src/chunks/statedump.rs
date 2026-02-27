@@ -72,8 +72,6 @@ impl<'a> StatedumpStr<'a> {
 impl<'a> StatedumpStr<'a> {
     /// Parse Statedump log entry. Statedumps are special log entries that may contain a plist file, custom object, or protocol buffer
     pub fn parse_statedump(data: &'a [u8]) -> nom::IResult<&'a [u8], Self> {
-        let mut statedump_results = Statedump::default();
-
         let (input, chunk_tag) = take(size_of::<u32>())(data)?;
         let (input, chunk_sub_tag) = take(size_of::<u32>())(input)?;
         let (input, chunk_data_size) = take(size_of::<u64>())(input)?;
@@ -85,68 +83,74 @@ impl<'a> StatedumpStr<'a> {
         let (input, unknown_reserved) = take(unknown_reserved_size)(input)?;
         let (input, continuous_time) = take(size_of::<u64>())(input)?;
         let (input, activity_id) = take(size_of::<u64>())(input)?;
-        let (input, uuid) = take(size_of::<u128>())(input)?;
+        let (input, uuid_raw) = take(size_of::<u128>())(input)?;
         let (input, unknown_data_type) = take(size_of::<u32>())(input)?;
 
-        let (_, statedump_chunk_tag) = le_u32(chunk_tag)?;
-        let (_, statedump_chunk_sub_tag) = le_u32(chunk_sub_tag)?;
-        let (_, statedump_chunk_data_size) = le_u64(chunk_data_size)?;
-        let (_, statedump_first_proc_id) = le_u64(first_number_proc_id)?;
-        let (_, statedump_second_proc_id) = le_u32(second_number_proc_id)?;
+        let (_, chunk_tag) = le_u32(chunk_tag)?;
+        let (_, chunk_subtag) = le_u32(chunk_sub_tag)?;
+        let (_, chunk_data_size) = le_u64(chunk_data_size)?;
+        let (_, first_proc_id) = le_u64(first_number_proc_id)?;
+        let (_, second_proc_id) = le_u32(second_number_proc_id)?;
 
-        let (_, statedump_ttl) = le_u8(ttl)?;
-        let (_, statedump_continous_time) = le_u64(continuous_time)?;
-        let (_, statedump_activity_id) = le_u64(activity_id)?;
-        let (_, statedump_unknown_data_type) = le_u32(unknown_data_type)?;
+        let (_, ttl) = le_u8(ttl)?;
+        let (_, continuous_time) = le_u64(continuous_time)?;
+        let (_, activity_id) = le_u64(activity_id)?;
+        let (_, unknown_data_type) = le_u32(unknown_data_type)?;
 
         let (mut input, unknown_data_size) = take(size_of::<u32>())(input)?;
-        let (_, statedump_unknown_data_size) = le_u32(unknown_data_size)?;
+        let (_, unknown_data_size) = le_u32(unknown_data_size)?;
 
         let custom_decoder = 3;
         let string_size: u8 = 64;
 
-        // Nom unknown data if data type is not custom
-        if statedump_unknown_data_type != custom_decoder {
+        let mut decoder_library: &str = Default::default();
+        let mut decoder_type: &str = Default::default();
+
+        if unknown_data_type != custom_decoder {
+            // Nom unknown data if data type is not custom
             let (remaining_input, _unknown) = take(string_size)(input)?;
             let (remaining_input, _unknown) = take(string_size)(remaining_input)?;
             input = remaining_input;
-        }
-
-        if statedump_unknown_data_type == custom_decoder {
+        } else {
             let (remaining_input, library_data) = take(string_size)(input)?;
             let (remaining_input, type_data) = take(string_size)(remaining_input)?;
-            let (_, decoder_library) = extract_string(library_data)?;
-            let (_, decoder_type) = extract_string(type_data)?;
-
-            statedump_results.decoder_library = decoder_library;
-            statedump_results.decoder_type = decoder_type;
-
+            let (_, lib) = extract_string(library_data)?;
+            let (_, typ) = extract_string(type_data)?;
+            decoder_library = lib;
+            decoder_type = typ;
             input = remaining_input;
         }
 
         let (input, title_data) = take(string_size)(input)?;
         let (_, title_name) = extract_string(title_data)?;
 
-        statedump_results.title_name = title_name;
-        statedump_results.chunk_tag = statedump_chunk_tag;
-        statedump_results.chunk_subtag = statedump_chunk_sub_tag;
-        statedump_results.chunk_data_size = statedump_chunk_data_size;
-        statedump_results.first_proc_id = statedump_first_proc_id;
-        statedump_results.second_proc_id = statedump_second_proc_id;
-        statedump_results.ttl = statedump_ttl;
-        statedump_results.unknown_reserved = unknown_reserved.to_vec();
-        statedump_results.continuous_time = statedump_continous_time;
-        statedump_results.activity_id = statedump_activity_id;
-        statedump_results.unknown_data_type = statedump_unknown_data_type;
-        statedump_results.unknown_data_size = statedump_unknown_data_size;
+        let uuid = clean_uuid(&format!("{uuid_raw:02X?}"));
+        let unknown_reserved = unknown_reserved.to_vec();
 
-        let uuid_string = format!("{uuid:02X?}");
-        statedump_results.uuid = clean_uuid(&uuid_string);
+        let (input, statedump_data_raw) = take(unknown_data_size)(input)?;
+        let statedump_data = statedump_data_raw.to_vec();
 
-        let (input, statedump_data) = take(statedump_unknown_data_size)(input)?;
-        statedump_results.statedump_data = statedump_data.to_vec();
-
-        Ok((input, statedump_results))
+        Ok((
+            input,
+            Statedump {
+                chunk_tag,
+                chunk_subtag,
+                chunk_data_size,
+                first_proc_id,
+                second_proc_id,
+                ttl,
+                unknown_reserved,
+                continuous_time,
+                activity_id,
+                uuid,
+                unknown_data_type,
+                unknown_data_size,
+                decoder_library,
+                decoder_type,
+                title_name,
+                statedump_data,
+            },
+        ))
     }
 
     /// Parse the binary plist file in the log. The plist may be empty

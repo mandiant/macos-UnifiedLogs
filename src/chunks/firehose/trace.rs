@@ -6,7 +6,9 @@
 // See the License for the specific language governing permissions and limitations under the License.
 
 use crate::catalog::CatalogChunk;
-use crate::chunks::firehose::firehose_log::{FirehoseItemData, FirehoseItemInfo, FirehoseItemValue};
+use crate::chunks::firehose::firehose_log::{
+    FirehoseItemData, FirehoseItemInfo, FirehoseItemValue,
+};
 use crate::chunks::firehose::message::MessageData;
 use crate::traits::FileProvider;
 use log::{error, warn};
@@ -24,31 +26,36 @@ impl FirehoseTrace {
     /// Parse Trace Firehose log entry.
     //  Ex: tp 504 + 34: trace default (main_exe)
     pub fn parse_firehose_trace(data: &[u8]) -> nom::IResult<&[u8], FirehoseTrace> {
-        let mut firehose_trace = FirehoseTrace::default();
-
-        let (input, unknown_pc_id) = take(size_of::<u32>())(data)?;
-        let (_, firehose_unknown_pc_id) = le_u32(unknown_pc_id)?;
+        let (input, unknown_pc_id_data) = take(size_of::<u32>())(data)?;
+        let (_, unknown_pc_id) = le_u32(unknown_pc_id_data)?;
 
         // Trace logs only have message values if more than 4 bytes remaining in log entry
         let minimum_message_size = 4;
         if input.len() < minimum_message_size {
-            let (_, firehose_unknown_pc_id) = le_u32(unknown_pc_id)?;
-            firehose_trace.unknown_pc_id = firehose_unknown_pc_id;
             let (input, _unknown_data) = take(input.len())(input)?;
-
-            return Ok((input, firehose_trace));
+            return Ok((
+                input,
+                FirehoseTrace {
+                    unknown_pc_id,
+                    message_data: FirehoseItemData::default(),
+                },
+            ));
         }
 
-        let mut message_data = input.to_vec();
+        let mut reversed = input.to_vec();
         // The rest of the trace log entry appears to be related to log message values
         // But the data is stored differently from other log entries
         // The data appears to be stored backwards? Ex: Data value, Data size, number of data entries, instead normal: number of data entries, data size, data value
-        message_data.reverse();
-        let message = FirehoseTrace::get_message(&message_data);
-        firehose_trace.message_data = message;
-        firehose_trace.unknown_pc_id = firehose_unknown_pc_id;
+        reversed.reverse();
+        let message_data = FirehoseTrace::get_message(&reversed);
 
-        Ok((&[], firehose_trace))
+        Ok((
+            &[],
+            FirehoseTrace {
+                unknown_pc_id,
+                message_data,
+            },
+        ))
     }
 
     /// Get the Trace message
@@ -68,13 +75,15 @@ impl FirehoseTrace {
 
     /// Parse the data associated with the trace message
     fn parse_trace_message(data: &[u8]) -> nom::IResult<&[u8], FirehoseItemData> {
-        let mut item_data = FirehoseItemData {
-            item_info: Vec::new(),
-            backtrace_strings: Vec::new(),
-        };
         let minimum_message_size = 4;
         if data.len() < minimum_message_size {
-            return Ok((data, item_data));
+            return Ok((
+                data,
+                FirehoseItemData {
+                    item_info: Vec::new(),
+                    backtrace_strings: Vec::new(),
+                },
+            ));
         }
 
         let (mut remaining_input, entries_data) = take(size_of::<u8>())(data)?;
@@ -91,46 +100,52 @@ impl FirehoseTrace {
             remaining_input = input;
         }
 
+        let mut item_info = Vec::new();
         for entry_size in sizes_count {
-            let mut item_info = FirehoseItemInfo {
-                message_strings: FirehoseItemValue::Empty,
-                item_type: 0,
-                item_size: 0,
-            };
             // So far all entries appears to be numbers. Using Big Endian because we reversed the data above
             let (input, message_data) = take(entry_size as usize)(remaining_input)?;
-            match entry_size {
+            let message_strings = match entry_size {
                 1 => {
                     let (_, value) = be_u8(message_data)?;
-                    item_info.message_strings = FirehoseItemValue::Number(i64::from(value));
+                    FirehoseItemValue::Number(i64::from(value))
                 }
                 2 => {
                     let (_, value) = be_u16(message_data)?;
-                    item_info.message_strings = FirehoseItemValue::Number(i64::from(value));
+                    FirehoseItemValue::Number(i64::from(value))
                 }
                 4 => {
                     let (_, value) = be_u32(message_data)?;
-                    item_info.message_strings = FirehoseItemValue::Number(i64::from(value));
+                    FirehoseItemValue::Number(i64::from(value))
                 }
                 8 => {
                     let (_, value) = be_u64(message_data)?;
-                    item_info.message_strings = FirehoseItemValue::UNumber(value);
+                    FirehoseItemValue::UNumber(value)
                 }
                 _ => {
                     warn!(
                         "[macos-unifiedlogs] Unhandled size of trace data: {entry_size}. Defaulting to size of one"
                     );
                     let (_, unknown_size) = le_u8(message_data)?;
-                    item_info.message_strings = FirehoseItemValue::Number(i64::from(unknown_size));
+                    FirehoseItemValue::Number(i64::from(unknown_size))
                 }
-            }
+            };
             remaining_input = input;
-            item_data.item_info.push(item_info)
+            item_info.push(FirehoseItemInfo {
+                message_strings,
+                item_type: 0,
+                item_size: 0,
+            });
         }
         // Reverse the data back to expected format
-        item_data.item_info.reverse();
+        item_info.reverse();
 
-        Ok((remaining_input, item_data))
+        Ok((
+            remaining_input,
+            FirehoseItemData {
+                item_info,
+                backtrace_strings: Vec::new(),
+            },
+        ))
     }
 
     /// Get base log message string formatter from shared cache strings (dsc) or UUID text file for firehose trace log entries (chunks)
