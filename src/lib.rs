@@ -93,6 +93,8 @@ mod error;
 pub mod filesystem;
 mod header;
 pub mod iterator;
+/// Streaming per-entry iterator that yields individual log entries
+pub mod log_data_iterator;
 /// Functions to assemble the log message
 mod message;
 /// Functions to extract and assemble log entries from the macOS Unified Log
