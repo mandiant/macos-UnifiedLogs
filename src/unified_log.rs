@@ -994,7 +994,7 @@ impl LogData {
             first_number_proc_id: first_proc_id,
             second_number_proc_id: second_proc_id,
             collapsed: 0,
-            unknown: Vec::new(),
+            unknown: [0; 2],
             public_data_size: 0,
             private_data_virtual_offset: 0,
             unkonwn2: 0,

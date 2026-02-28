@@ -34,7 +34,7 @@ where
     pub first_proc_id: u64,
     pub second_proc_id: u32,
     pub ttl: u8,
-    pub unknown_reserved: Vec<u8>, // 3 bytes
+    pub unknown_reserved: [u8; 3],
     pub continuous_time: u64,
     pub activity_id: u64,
     pub uuid: Uuid,
@@ -113,7 +113,7 @@ impl<'a> StatedumpStr<'a> {
         let (_, title_name) = extract_string(title_data)?;
 
         let uuid = clean_uuid(&format!("{uuid_raw:02X?}"));
-        let unknown_reserved = unknown_reserved.to_vec();
+        let unknown_reserved: [u8; 3] = [unknown_reserved[0], unknown_reserved[1], unknown_reserved[2]];
 
         let (input, statedump_data_raw) = take(unknown_data_size)(input)?;
         let statedump_data = statedump_data_raw.to_vec();
@@ -252,7 +252,7 @@ mod tests {
         assert_eq!(results.first_proc_id, 113);
         assert_eq!(results.second_proc_id, 464);
         assert_eq!(results.ttl, 14);
-        assert_eq!(results.unknown_reserved, vec![0, 0, 0]);
+        assert_eq!(results.unknown_reserved, [0, 0, 0]);
         assert_eq!(results.continuous_time, 3906319117);
         assert_eq!(results.activity_id, 9223372036854776950);
         assert_eq!(

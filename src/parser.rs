@@ -65,10 +65,7 @@ pub fn parse_log(mut reader: impl Read) -> Result<UnifiedLogData, ParserError> {
 ///      println!("TraceV3 file: {}", entry.source_path());
 ///      let mut buf = Vec::new();
 ///      entry.reader().read_to_end(&mut buf);
-///      let log_iterator = UnifiedLogIterator {
-///        data: buf,
-///        header: Vec::new(),
-///      };
+///      let log_iterator = UnifiedLogIterator::new(buf);
 ///      // If we exclude entries that are missing strings, we may find them in later log files
 ///      let exclude = true;
 ///      for mut chunk in log_iterator {

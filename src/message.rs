@@ -57,7 +57,7 @@ fn get_formatable_type(type_data: &str) -> Option<FormatableType> {
 /// Format the Unified Log message entry based on the parsed log items. Formatting follows the C lang prinf formatting process
 pub fn format_firehose_log_message(
     format_string: RcString,
-    item_message: &Vec<FirehoseItemInfo>,
+    item_message: &[FirehoseItemInfo],
     message_re: &Regex,
 ) -> RcString {
     let log_message = format_string;

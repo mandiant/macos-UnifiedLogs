@@ -84,10 +84,7 @@ impl<'a> LogDataIterator<'a> {
         oversize_cache: Vec<Oversize>,
     ) -> Self {
         Self {
-            inner: UnifiedLogIterator {
-                data,
-                header: Vec::new(),
-            },
+            inner: UnifiedLogIterator::new(data),
             provider,
             timesync_data,
             exclude_missing,

@@ -35,7 +35,7 @@ pub struct CatalogChunk {
     pub catalog_offset_sub_chunks: u16,
     pub number_sub_chunks: u16,
     /// unknown 6 bytes, padding? alignment?
-    pub unknown: Vec<u8>,
+    pub unknown: [u8; 6],
     pub earliest_firehose_timestamp: u64,
     /// array of UUIDs in big endian
     pub catalog_uuids: Vec<Uuid>,
@@ -137,7 +137,9 @@ impl CatalogChunk {
         ) = tup.parse(input)?;
 
         const UNKNOWN_LENGTH: u8 = 6;
-        let (input, unknown) = map(take(UNKNOWN_LENGTH), |v: &[u8]| v.to_vec()).parse(input)?;
+        let (input, unknown_slice) = take(UNKNOWN_LENGTH)(input)?;
+        let mut unknown = [0u8; 6];
+        unknown.copy_from_slice(unknown_slice);
         let (input, earliest_firehose_timestamp) = le_u64(input)?;
 
         const UUID_LENGTH: usize = 16;

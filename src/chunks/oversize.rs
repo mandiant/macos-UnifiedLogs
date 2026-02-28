@@ -18,7 +18,7 @@ pub struct Oversize {
     pub first_proc_id: u64,
     pub second_proc_id: u32,
     pub ttl: u8,
-    pub unknown_reserved: Vec<u8>, // 3 bytes
+    pub unknown_reserved: [u8; 3],
     pub continuous_time: u64,
     pub data_ref_index: u32,
     pub public_data_size: u16,
@@ -37,12 +37,12 @@ impl Oversize {
 
         let (input, ttl) = le_u8(input)?;
         let unknown_reserved_size: u8 = 3;
-        let (input, unknown_reserved) = take(unknown_reserved_size)(input)?;
+        let (input, unknown_reserved_slice) = take(unknown_reserved_size)(input)?;
         let (input, continuous_time) = le_u64(input)?;
         let (input, data_ref_index) = le_u32(input)?;
         let (input, public_data_size) = le_u16(input)?;
         let (input, private_data_size) = le_u16(input)?;
-        let unknown_reserved = unknown_reserved.to_vec();
+        let unknown_reserved: [u8; 3] = [unknown_reserved_slice[0], unknown_reserved_slice[1], unknown_reserved_slice[2]];
 
         let mut oversize_data_size = (public_data_size + private_data_size) as usize;
 
@@ -84,36 +84,27 @@ impl Oversize {
         ))
     }
 
-    /// Function to get the firehose item info from the oversize log entry based on oversize (data ref) id, first proc id, and second proc id
-    pub fn get_oversize_strings(
+    /// Get a reference to the firehose item info from the oversize log entry based on oversize (data ref) id, first proc id, and second proc id.
+    /// Returns a slice reference instead of cloning, avoiding heap allocation.
+    pub fn get_oversize_strings<'a>(
         data_ref: u32,
         first_proc_id: u64,
         second_proc_id: u32,
-        oversize_data: &Vec<Oversize>,
-    ) -> Vec<FirehoseItemInfo> {
-        let mut message_strings: Vec<FirehoseItemInfo> = Vec::new();
-
+        oversize_data: &'a [Oversize],
+    ) -> &'a [FirehoseItemInfo] {
         for oversize in oversize_data {
             if data_ref == oversize.data_ref_index
                 && first_proc_id == oversize.first_proc_id
                 && second_proc_id == oversize.second_proc_id
             {
-                for message in &oversize.message_items.item_info {
-                    let oversize_firehose = FirehoseItemInfo {
-                        message_strings: message.message_strings.to_owned(),
-                        item_type: message.item_type,
-                        item_size: message.item_size,
-                    };
-                    message_strings.push(oversize_firehose);
-                }
-                return message_strings;
+                return &oversize.message_items.item_info;
             }
         }
         // We may not find any oversize data (data may have rolled from logs?)
         info!(
             "Did not find any oversize log entries from Data Ref ID: {data_ref}, First Proc ID: {first_proc_id}, and Second Proc ID: {second_proc_id}"
         );
-        message_strings
+        &[]
     }
 }
 
@@ -358,7 +349,7 @@ mod tests {
             first_proc_id: 96,
             second_proc_id: 245,
             ttl: 0,
-            unknown_reserved: Vec::new(),
+            unknown_reserved: [0, 0, 0],
             continuous_time: 5609252490,
             data_ref_index: 1,
             public_data_size: 1092,

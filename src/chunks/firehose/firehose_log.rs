@@ -38,7 +38,7 @@ pub struct FirehosePreamble {
     pub ttl: u8,
     pub collapsed: u8,
     /// reserved?
-    pub unknown: Vec<u8>,
+    pub unknown: [u8; 2],
     /// Size includes the size itself and the 8 bytes below and the public data      
     pub public_data_size: u16,
     /// value is 0x1000 (4096) if there is NO private data
@@ -201,8 +201,8 @@ impl FirehosePreamble {
         let (input, ttl) = le_u8(input)?;
         let (input, collapsed) = le_u8(input)?;
 
-        let (input, unknown) = take(2usize)(input)?;
-        let unknown = unknown.to_vec();
+        let (input, unknown_slice) = take(2usize)(input)?;
+        let unknown: [u8; 2] = [unknown_slice[0], unknown_slice[1]];
 
         let (input, public_data_size) = le_u16(input)?;
         let (input, private_data_virtual_offset) = le_u16(input)?;

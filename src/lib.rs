@@ -57,10 +57,7 @@
 //!         println!("TraceV3 file: {}", entry.source_path());
 //!         let mut buf = Vec::new();
 //!         entry.reader().read_to_end(&mut buf);
-//!         let log_iterator = UnifiedLogIterator {
-//!             data: buf,
-//!             header: Vec::new(),
-//!         };
+//!         let log_iterator = UnifiedLogIterator::new(buf);
 //!         // If we exclude entries that are missing strings, we may find them in later log files
 //!         let exclude = true;
 //!         for mut chunk in log_iterator {
@@ -103,6 +100,10 @@ mod preamble;
 /// Functions to parse time data associated with the Unified Log
 pub mod timesync;
 pub mod traits;
+/// Zero-allocation streaming API for tracev3 files
+pub mod tracev3_stream;
+/// On-demand string resolution for structural entries
+pub mod string_resolver;
 /// Functions to parse tracev3 files
 pub mod unified_log;
 mod util;

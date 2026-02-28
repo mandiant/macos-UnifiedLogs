@@ -272,10 +272,7 @@ fn iterate_chunks(
         return 0;
     }
 
-    let log_iterator = UnifiedLogIterator {
-        data: buf,
-        header: Vec::new(),
-    };
+    let log_iterator = UnifiedLogIterator::new(buf);
 
     // Exclude missing data from returned output. Keep separate until we parse all oversize entries.
     // Then after parsing all logs, go through all missing data and check all parsed oversize entries again
