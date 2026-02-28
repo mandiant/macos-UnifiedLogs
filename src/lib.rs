@@ -94,6 +94,8 @@ pub mod iterator;
 pub mod log_data_iterator;
 /// Functions to assemble the log message
 mod message;
+/// Zero-allocation single-pass iterator with scalar-only entries
+pub mod noalloc_iterator;
 /// Functions to extract and assemble log entries from the macOS Unified Log
 pub mod parser;
 mod preamble;
