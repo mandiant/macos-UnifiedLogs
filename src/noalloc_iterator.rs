@@ -112,16 +112,16 @@ impl NoAllocEntry {
         self.data_ref_value != 0
     }
 
-    /// Whether this is a Fault log entry (`log_type` == 0x11).
+    /// Whether this is a Fault log entry.
     #[inline]
     pub fn is_fault(&self) -> bool {
-        self.log_type == 0x11
+        self.log_type == LOG_TYPE_FAULT
     }
 
-    /// Whether this is an Error log entry (`log_type` == 0x10).
+    /// Whether this is an Error log entry.
     #[inline]
     pub fn is_error(&self) -> bool {
-        self.log_type == 0x10
+        self.log_type == LOG_TYPE_ERROR
     }
 
     /// Whether this is a non-activity entry (standard log).
@@ -170,26 +170,26 @@ impl NoAllocEntry {
 // Duplicated from unified_log.rs (private there)
 fn get_log_type(log_type: u8, activity_type: u8) -> LogType {
     match log_type {
-        0x1 => {
-            if activity_type == 2 {
+        LOG_TYPE_INFO => {
+            if activity_type == ACTIVITY_TYPE {
                 LogType::Create
             } else {
                 LogType::Info
             }
         }
-        0x2 => LogType::Debug,
-        0x3 => LogType::Useraction,
-        0x10 => LogType::Error,
-        0x11 => LogType::Fault,
-        0x80 => LogType::ProcessSignpostEvent,
-        0x81 => LogType::ProcessSignpostStart,
-        0x82 => LogType::ProcessSignpostEnd,
-        0xc0 => LogType::SystemSignpostEvent,
-        0xc1 => LogType::SystemSignpostStart,
-        0xc2 => LogType::SystemSignpostEnd,
-        0x40 => LogType::ThreadSignpostEvent,
-        0x41 => LogType::ThreadSignpostStart,
-        0x42 => LogType::ThreadSignpostEnd,
+        LOG_TYPE_DEBUG => LogType::Debug,
+        LOG_TYPE_USERACTION => LogType::Useraction,
+        LOG_TYPE_ERROR => LogType::Error,
+        LOG_TYPE_FAULT => LogType::Fault,
+        LOG_TYPE_PROCESS_SIGNPOST_EVENT => LogType::ProcessSignpostEvent,
+        LOG_TYPE_PROCESS_SIGNPOST_START => LogType::ProcessSignpostStart,
+        LOG_TYPE_PROCESS_SIGNPOST_END => LogType::ProcessSignpostEnd,
+        LOG_TYPE_SYSTEM_SIGNPOST_EVENT => LogType::SystemSignpostEvent,
+        LOG_TYPE_SYSTEM_SIGNPOST_START => LogType::SystemSignpostStart,
+        LOG_TYPE_SYSTEM_SIGNPOST_END => LogType::SystemSignpostEnd,
+        LOG_TYPE_THREAD_SIGNPOST_EVENT => LogType::ThreadSignpostEvent,
+        LOG_TYPE_THREAD_SIGNPOST_START => LogType::ThreadSignpostStart,
+        LOG_TYPE_THREAD_SIGNPOST_END => LogType::ThreadSignpostEnd,
         _ => LogType::Default,
     }
 }
@@ -197,11 +197,11 @@ fn get_log_type(log_type: u8, activity_type: u8) -> LogType {
 // Duplicated from unified_log.rs (private there)
 fn get_event_type(event_type: u8) -> EventType {
     match event_type {
-        0x4 => EventType::Log,
-        0x2 => EventType::Activity,
-        0x3 => EventType::Trace,
-        0x6 => EventType::Signpost,
-        0x7 => EventType::Loss,
+        NON_ACTIVITY_TYPE => EventType::Log,
+        ACTIVITY_TYPE => EventType::Activity,
+        TRACE_TYPE => EventType::Trace,
+        SIGNPOST_TYPE => EventType::Signpost,
+        LOSS_TYPE => EventType::Loss,
         _ => EventType::Unknown,
     }
 }
@@ -710,13 +710,13 @@ impl<'file, 'ts> NoAllocLogStream<'file, 'ts> {
                     }
                     // Continue to next inner chunk
                 }
-                0x6004 => {
+                SIMPLEDUMP_CHUNK => {
                     // Simpledump: eagerly resolve and queue LogData
                     if let Some(log_data) = self.resolve_simpledump(chunk_data) {
                         self.pending_resolved.push(log_data);
                     }
                 }
-                0x6003 => {
+                STATEDUMP_CHUNK => {
                     // Statedump: eagerly resolve and queue LogData
                     if let Some(log_data) = self.resolve_statedump(chunk_data) {
                         self.pending_resolved.push(log_data);
@@ -834,17 +834,21 @@ impl<'file, 'ts> NoAllocLogStream<'file, 'ts> {
     fn resolve_statedump(&self, chunk_data: &[u8]) -> Option<LogData> {
         let (_, sd) = StatedumpStr::parse_statedump(chunk_data).ok()?;
         let data_string = match sd.unknown_data_type {
-            0x1 => Statedump::<&str>::parse_statedump_plist(&sd.statedump_data),
-            0x2 => match sunlight::light::extract_protobuf(&sd.statedump_data) {
-                Ok(map) => serde_json::to_string(&map)
-                    .unwrap_or_else(|_| String::from("Failed to serialize Protobuf HashMap")),
-                Err(_) => format!(
-                    "Failed to parse StateDump protobuf: {}",
-                    crate::util::encode_standard(&sd.statedump_data)
-                ),
-            },
-            0x3 => Statedump::<&str>::parse_statedump_object(&sd.statedump_data, sd.title_name)
-                .to_string(),
+            STATEDUMP_DATA_PLIST => Statedump::<&str>::parse_statedump_plist(&sd.statedump_data),
+            STATEDUMP_DATA_PROTOBUF => {
+                match sunlight::light::extract_protobuf(&sd.statedump_data) {
+                    Ok(map) => serde_json::to_string(&map)
+                        .unwrap_or_else(|_| String::from("Failed to serialize Protobuf HashMap")),
+                    Err(_) => format!(
+                        "Failed to parse StateDump protobuf: {}",
+                        crate::util::encode_standard(&sd.statedump_data)
+                    ),
+                }
+            }
+            STATEDUMP_DATA_OBJECT => {
+                Statedump::<&str>::parse_statedump_object(&sd.statedump_data, sd.title_name)
+                    .to_string()
+            }
             _ => {
                 let results = crate::util::extract_string(&sd.statedump_data);
                 match results {
@@ -1606,41 +1610,35 @@ fn parse_nonactivity_scalars(data: &[u8], flags: u16) -> nom::IResult<&[u8], (u3
     let mut data_ref_value: u32 = 0;
     let mut subsystem_value: u16 = 0;
 
-    // has_current_aid (0x0001)
-    if (flags & 0x0001) != 0 {
+    if (flags & FLAG_HAS_CURRENT_AID) != 0 {
         let (i, _) = le_u32(input)?;
         let (i, _) = le_u32(i)?;
         input = i;
     }
 
-    // has_private_data (0x0100)
-    if (flags & 0x0100) != 0 {
+    if (flags & FLAG_HAS_PRIVATE_DATA) != 0 {
         let (i, _) = le_u16(input)?;
         let (i, _) = le_u16(i)?;
         input = i;
     }
 
-    // unknown flag 0x0008
-    if (flags & 0x0008) != 0 {
+    if (flags & FLAG_HAS_UNKNOWN_REF) != 0 {
         let (i, _) = le_u32(input)?;
         input = i;
     }
 
-    // has_subsystem (0x0200)
-    if (flags & 0x0200) != 0 {
+    if (flags & FLAG_HAS_SUBSYSTEM) != 0 {
         let (i, val) = le_u16(input)?;
         subsystem_value = val;
         input = i;
     }
 
-    // has_rules (0x0400)
-    if (flags & 0x0400) != 0 {
+    if (flags & FLAG_HAS_RULES) != 0 {
         let (i, _) = le_u8(input)?;
         input = i;
     }
 
-    // has_oversize (0x0800)
-    if (flags & 0x0800) != 0 {
+    if (flags & FLAG_HAS_OVERSIZE) != 0 {
         let (i, val) = le_u32(input)?;
         data_ref_value = val;
         input = i;
@@ -1660,8 +1658,7 @@ fn parse_activity_item_count(data: &[u8], flags: u16) -> nom::IResult<&[u8], u8>
     let (i, _) = le_u32(i)?;
     input = i;
 
-    // has_other_aid (0x0001)
-    if (flags & 0x0001) != 0 {
+    if (flags & FLAG_HAS_CURRENT_AID) != 0 {
         let (i, _) = le_u32(input)?;
         let (i, _) = le_u32(i)?;
         input = i;
@@ -1681,35 +1678,31 @@ fn parse_signpost_scalars(data: &[u8], flags: u16) -> nom::IResult<&[u8], (u16, 
     let (i, _) = le_u32(i)?;
     input = i;
 
-    // has_other_aid (0x0001)
-    if (flags & 0x0001) != 0 {
+    if (flags & FLAG_HAS_CURRENT_AID) != 0 {
         let (i, _) = le_u32(input)?;
         let (i, _) = le_u32(i)?;
         input = i;
     }
 
-    // has_private_data (0x0100)
-    if (flags & 0x0100) != 0 {
+    if (flags & FLAG_HAS_PRIVATE_DATA) != 0 {
         let (i, _) = le_u16(input)?;
         let (i, _) = le_u16(i)?;
         input = i;
     }
 
-    // has_subsystem (0x0200)
-    if (flags & 0x0200) != 0 {
+    if (flags & FLAG_HAS_SUBSYSTEM) != 0 {
         let (i, val) = le_u16(input)?;
         subsystem_value = val;
         input = i;
     }
 
-    // has_rules (0x0400)
-    if (flags & 0x0400) != 0 {
+    if (flags & FLAG_HAS_RULES) != 0 {
         let (i, _) = le_u8(input)?;
         input = i;
     }
 
     // Signpost name
-    if (flags & 0x8000) != 0 {
+    if (flags & FLAG_HAS_NAME) != 0 {
         if input.len() >= 8 {
             input = &input[8..];
         }

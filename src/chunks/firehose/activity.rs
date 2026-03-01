@@ -8,6 +8,7 @@
 use crate::catalog::CatalogChunk;
 use crate::chunks::firehose::flags::FirehoseFormatters;
 use crate::chunks::firehose::message::MessageData;
+use crate::constants::*;
 use crate::traits::FileProvider;
 use log::debug;
 use nom::number::complete::{le_u32, le_u64};
@@ -39,9 +40,8 @@ impl FirehoseActivity {
         let mut unknown_activity_id: u32 = 0;
         let mut unknown_sentinal: u32 = 0;
         // Useraction activity type does not have first Activity ID or sentinel
-        let useraction: u8 = 0x3;
         // Get first activity_id (if not useraction type)
-        if firehose_log_type != &useraction {
+        if firehose_log_type != &LOG_TYPE_USERACTION {
             let (firehose_input, val) = le_u32(data)?;
             let (firehose_input, sval) = le_u32(firehose_input)?;
             unknown_activity_id = val;
@@ -50,8 +50,7 @@ impl FirehoseActivity {
         }
 
         let mut pid: u64 = 0;
-        let unique_pid_flag: u16 = 0x10; // has_unique_pid flag
-        if (firehose_flags & unique_pid_flag) != 0 {
+        if (firehose_flags & FLAG_HAS_UNIQUE_PID) != 0 {
             debug!("[macos-unifiedlogs] Activity Firehose log chunk has unique_pid flag");
             let (firehose_input, val) = le_u64(input)?;
             pid = val;
@@ -60,8 +59,7 @@ impl FirehoseActivity {
 
         let mut unknown_activity_id_2: u32 = 0;
         let mut unknown_sentinal_2: u32 = 0;
-        let activity_id_current: u16 = 0x1; // has_current_aid flag
-        if (firehose_flags & activity_id_current) != 0 {
+        if (firehose_flags & FLAG_HAS_CURRENT_AID) != 0 {
             debug!("[macos-unifiedlogs] Activity Firehose log chunk has has_current_aid flag");
             let (firehose_input, val) = le_u32(input)?;
             let (firehose_input, sval) = le_u32(firehose_input)?;
@@ -72,8 +70,8 @@ impl FirehoseActivity {
 
         let mut unknown_activity_id_3: u32 = 0;
         let mut unknown_sentinal_3: u32 = 0;
-        let activity_id_other: u16 = 0x200; // has_other_current_aid flag. In Activity log entries this is another activity id flag
-        if (firehose_flags & activity_id_other) != 0 {
+        // In Activity log entries FLAG_HAS_SUBSYSTEM means another activity id flag
+        if (firehose_flags & FLAG_HAS_SUBSYSTEM) != 0 {
             debug!(
                 "[macos-unifiedlogs] Activity Firehose log chunk has has_other_current_aid flag"
             );
@@ -138,7 +136,7 @@ impl FirehoseActivity {
                 } else if firehose.firehose_formatters.shared_cache {
                     // Large offset is 8 if shared_cache flag is set
                     large_offset = 8;
-                    offset = 0x1000_0000_u64 * u64::from(large_offset) + string_offset;
+                    offset = LARGE_OFFSET_BASE * u64::from(large_offset) + string_offset;
                 } else {
                     offset = (u64::from(large_offset) << 32) | string_offset;
                 }

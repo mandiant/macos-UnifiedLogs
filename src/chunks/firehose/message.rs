@@ -6,6 +6,7 @@
 // See the License for the specific language governing permissions and limitations under the License.
 
 use crate::catalog::CatalogProcessInfoKey;
+use crate::constants::DYNAMIC_OFFSET_FLAG;
 use crate::traits::FileProvider;
 use crate::util::{extract_string, format_uuid};
 use crate::uuidtext::UUIDTextEntry;
@@ -58,7 +59,7 @@ impl MessageData {
         }
 
         // Check if the string offset is "dynamic" (the formatter is "%s")
-        if original_offset & 0x80000000 != 0
+        if original_offset & DYNAMIC_OFFSET_FLAG != 0
             && let Some(dsc_uuid) = dsc_uuid
             && let Some(shared_string) = provider.cached_dsc(dsc_uuid)
             && let Some(ranges) = shared_string.ranges.first()
@@ -205,7 +206,7 @@ impl MessageData {
         }
 
         // If most significant bit is set, the string offset is "dynamic" (the formatter is "%s")
-        if original_offset & 0x80000000 != 0
+        if original_offset & DYNAMIC_OFFSET_FLAG != 0
             && let Some(data) = provider.cached_uuidtext(message_data.process_uuid)
         {
             // Footer data is a collection of strings that ends with the image path/library associated with strings
@@ -352,7 +353,7 @@ impl MessageData {
             provider.update_uuid(message_data.library_uuid, message_data.process_uuid);
         }
         // If most significant bit is set, the string offset is "dynamic" (the formatter is "%s")
-        if ((original_offset & 0x80000000 != 0) || string_offset == absolute_offset)
+        if ((original_offset & DYNAMIC_OFFSET_FLAG != 0) || string_offset == absolute_offset)
             && let Some(data) = provider.cached_uuidtext(message_data.library_uuid)
         {
             // Footer data is a collection of strings that ends with the image path/library associated with strings
@@ -504,7 +505,7 @@ impl MessageData {
             provider.update_uuid(message_data.process_uuid, message_data.library_uuid);
         }
         // If most significant bit is set, the string offset is "dynamic" (the formatter is "%s")
-        if original_offset & 0x80000000 != 0
+        if original_offset & DYNAMIC_OFFSET_FLAG != 0
             && let Some(data) = provider.cached_uuidtext(uuid)
         {
             // Footer data is a collection of strings that ends with the image path/library associated with strings

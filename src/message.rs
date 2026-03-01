@@ -6,6 +6,7 @@
 // See the License for the specific language governing permissions and limitations under the License.
 
 use crate::chunks::firehose::firehose_log::FirehoseItemInfo;
+use crate::constants::*;
 use crate::decoders::decoder;
 use crate::{RcString, empty_rc_string, missing_data_rc_string, private_rc_string, rc_string};
 use log::{error, info, warn};
@@ -126,7 +127,7 @@ pub fn format_firehose_log_message(
             continue;
         }
 
-        const PRECISION_ITEMS: [u8; 2] = [0x10, 0x12]; // dynamic precision item types?
+        const PRECISION_ITEMS: [u8; 2] = [ITEM_PRECISION, ITEM_PRECISION_ALT];
         // If the item message was a precision type increment to actual value
         if PRECISION_ITEMS.contains(&item_message[item_index].item_type) {
             item_index += 1;
@@ -138,8 +139,7 @@ pub fn format_firehose_log_message(
             continue;
         }
         // Also seen number type value 0 also used for dynamic width/precision value
-        let dynamic_precision_value = 0x0;
-        if (item_message[item_index].item_type == dynamic_precision_value
+        if (item_message[item_index].item_type == ITEM_NUMBER
             && item_message[item_index].item_size == 0)
             && formatter_string.contains("%*")
         {
@@ -153,9 +153,14 @@ pub fn format_firehose_log_message(
             continue;
         }
 
-        let private_strings = [0x1, 0x21, 0x31, 0x41];
-        let private_number = 0x1;
-        let private_message = 0x8000;
+        let private_strings = [
+            ITEM_PRIVATE_NUMBER,
+            ITEM_PRIVATE_STRING,
+            ITEM_PRIVATE_ARBITRARY,
+            ITEM_PRIVATE_OBJECT,
+        ];
+        let private_number = ITEM_PRIVATE_NUMBER;
+        let private_message = PRIVATE_NUMBER_SIZE;
         if formatter_string.starts_with("%{") {
             // If item type is [0x1, 0x21, 0x31, 0x41] and the value is zero. Its appears to be a private string
             /*
@@ -306,7 +311,7 @@ fn parse_formatter<'a>(
 ) -> nom::IResult<&'a str, RcString> {
     let mut index = item_index;
 
-    const PRECISION_ITEMS: [u8; 2] = [0x10, 0x12];
+    const PRECISION_ITEMS: [u8; 2] = [ITEM_PRECISION, ITEM_PRECISION_ALT];
     let mut precision_value = 0;
     if PRECISION_ITEMS.contains(&item_type) {
         precision_value = message_value[index].item_size as usize;
@@ -323,7 +328,7 @@ fn parse_formatter<'a>(
 
     let mut message = message_value[index].message_strings.to_rc_string();
 
-    let number_item_type: Vec<u8> = vec![0x0, 0x1, 0x2];
+    let number_item_type: Vec<u8> = vec![ITEM_NUMBER, ITEM_PRIVATE_NUMBER, ITEM_NUMBER_ALT];
 
     // If the message formatter is expects a string/character and the message string is a number type
     // Try to convert to a character/string
@@ -373,8 +378,7 @@ fn parse_formatter<'a>(
 
     if formatter_message.starts_with('*') {
         // Also seen number type value 0 used for dynamic width/precision value
-        const DYNAMIC_PRECISION_VALUE: u8 = 0x0;
-        if item_type == DYNAMIC_PRECISION_VALUE && message_value[index].item_size == 0 {
+        if item_type == ITEM_NUMBER && message_value[index].item_size == 0 {
             precision_value = message_value[index].item_size as usize;
             index += 1;
             if index >= message_value.len() {

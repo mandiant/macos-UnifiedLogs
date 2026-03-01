@@ -636,8 +636,8 @@ impl Iterator for LogIterator<'_> {
             let no_firehose_preamble = 1;
 
             let data_string = match statedump.unknown_data_type {
-                0x1 => Statedump::parse_statedump_plist(&statedump.statedump_data),
-                0x2 => match extract_protobuf(&statedump.statedump_data) {
+                STATEDUMP_DATA_PLIST => Statedump::parse_statedump_plist(&statedump.statedump_data),
+                STATEDUMP_DATA_PROTOBUF => match extract_protobuf(&statedump.statedump_data) {
                     Ok(map) => serde_json::to_string(&map)
                         .unwrap_or(String::from("Failed to serialize Protobuf HashMap")),
                     Err(_err) => format!(
@@ -645,7 +645,7 @@ impl Iterator for LogIterator<'_> {
                         encode_standard(&statedump.statedump_data)
                     ),
                 },
-                0x3 => Statedump::parse_statedump_object(
+                STATEDUMP_DATA_OBJECT => Statedump::parse_statedump_object(
                     &statedump.statedump_data,
                     &statedump.title_name,
                 )
@@ -900,27 +900,26 @@ impl LogData {
     /// Return log type based on parsed log data
     fn get_log_type(log_type: u8, activity_type: u8) -> LogType {
         match log_type {
-            0x1 => {
-                let activity = 2;
-                if activity_type == activity {
+            LOG_TYPE_INFO => {
+                if activity_type == ACTIVITY_TYPE {
                     LogType::Create
                 } else {
                     LogType::Info
                 }
             }
-            0x2 => LogType::Debug,
-            0x3 => LogType::Useraction,
-            0x10 => LogType::Error,
-            0x11 => LogType::Fault,
-            0x80 => LogType::ProcessSignpostEvent,
-            0x81 => LogType::ProcessSignpostStart,
-            0x82 => LogType::ProcessSignpostEnd,
-            0xc0 => LogType::SystemSignpostEvent, // Not seen but may exist?
-            0xc1 => LogType::SystemSignpostStart,
-            0xc2 => LogType::SystemSignpostEnd,
-            0x40 => LogType::ThreadSignpostEvent, // Not seen but may exist?
-            0x41 => LogType::ThreadSignpostStart,
-            0x42 => LogType::ThreadSignpostEnd,
+            LOG_TYPE_DEBUG => LogType::Debug,
+            LOG_TYPE_USERACTION => LogType::Useraction,
+            LOG_TYPE_ERROR => LogType::Error,
+            LOG_TYPE_FAULT => LogType::Fault,
+            LOG_TYPE_PROCESS_SIGNPOST_EVENT => LogType::ProcessSignpostEvent,
+            LOG_TYPE_PROCESS_SIGNPOST_START => LogType::ProcessSignpostStart,
+            LOG_TYPE_PROCESS_SIGNPOST_END => LogType::ProcessSignpostEnd,
+            LOG_TYPE_SYSTEM_SIGNPOST_EVENT => LogType::SystemSignpostEvent, // Not seen but may exist?
+            LOG_TYPE_SYSTEM_SIGNPOST_START => LogType::SystemSignpostStart,
+            LOG_TYPE_SYSTEM_SIGNPOST_END => LogType::SystemSignpostEnd,
+            LOG_TYPE_THREAD_SIGNPOST_EVENT => LogType::ThreadSignpostEvent, // Not seen but may exist?
+            LOG_TYPE_THREAD_SIGNPOST_START => LogType::ThreadSignpostStart,
+            LOG_TYPE_THREAD_SIGNPOST_END => LogType::ThreadSignpostEnd,
             _ => LogType::Default,
         }
     }

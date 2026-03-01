@@ -10,6 +10,7 @@ use crate::chunks::firehose::loss::FirehoseLoss;
 use crate::chunks::firehose::nonactivity::FirehoseNonActivity;
 use crate::chunks::firehose::signpost::FirehoseSignpost;
 use crate::chunks::firehose::trace::FirehoseTrace;
+use crate::constants::*;
 use crate::util::{
     encode_standard, extract_string_size, padding_size_8, padding_size_four, u64_to_usize,
 };
@@ -182,12 +183,33 @@ pub struct FirehoseItemInfo {
 impl FirehosePreamble {
     /// Now at the end of firehose item types.
     /// Remaining data (if any) contains strings for the string item types
-    const STRING_ITEM: [u8; 8] = [0x20, 0x22, 0x40, 0x42, 0x30, 0x31, 0x32, 0xf2];
-    const PRIVATE_NUMBER: u8 = 0x1;
-    /// 0x81 and 0xf1 Added in macOS Sequioa
-    const PRIVATE_STRINGS: [u8; 7] = [0x21, 0x25, 0x35, 0x31, 0x41, 0x81, 0xf1];
-    const LOG_TYPES: [u8; 5] = [0x2, 0x6, 0x4, 0x7, 0x3];
-    const REMNANT_DATA: u8 = 0x0;
+    const STRING_ITEM: [u8; 8] = [
+        ITEM_STRING,
+        ITEM_STRING_ALT,
+        ITEM_OBJECT,
+        ITEM_OBJECT_ALT,
+        ITEM_ARBITRARY,
+        ITEM_PRIVATE_ARBITRARY,
+        ITEM_ARBITRARY_ALT,
+        ITEM_BASE64_RAW,
+    ];
+    /// 0x81 and 0xf1 Added in macOS Sequoia
+    const PRIVATE_STRINGS: [u8; 7] = [
+        ITEM_PRIVATE_STRING,
+        ITEM_PRIVATE_STRING_25,
+        ITEM_PRIVATE_STRING_35,
+        ITEM_PRIVATE_ARBITRARY,
+        ITEM_PRIVATE_OBJECT,
+        ITEM_PRIVATE_STRING_81,
+        ITEM_PRIVATE_STRING_F1,
+    ];
+    const LOG_TYPES: [u8; 5] = [
+        ACTIVITY_TYPE,
+        SIGNPOST_TYPE,
+        NON_ACTIVITY_TYPE,
+        LOSS_TYPE,
+        TRACE_TYPE,
+    ];
 
     /// Parse the start of the Firehose data
     pub fn parse_firehose_preamble(
@@ -223,13 +245,13 @@ impl FirehosePreamble {
                 FirehosePreamble::parse_firehose(public_data)?;
             public_data = firehose_input;
             if !Self::LOG_TYPES.contains(&firehose_public_data.unknown_log_activity_type)
-                || public_data.len() < 24
+                || public_data.len() < FIREHOSE_ENTRY_HEADER_SIZE
             {
-                if Self::REMNANT_DATA == firehose_public_data.unknown_log_activity_type {
+                if REMNANT_DATA == firehose_public_data.unknown_log_activity_type {
                     break;
                 }
-                if private_data_virtual_offset != 0x1000 {
-                    let private_offst = 0x1000;
+                if private_data_virtual_offset != NO_PRIVATE_DATA {
+                    let private_offst = NO_PRIVATE_DATA;
                     let private_data_offset = private_offst - private_data_virtual_offset;
                     // Calculate start of private data. If the remaining input is greater than private data offset.
                     // Remove any padding/junk data in front of the private data
@@ -275,7 +297,7 @@ impl FirehosePreamble {
         }
 
         // If there is private data, go through and update any logs that have private data items
-        if private_data_virtual_offset != 0x1000 {
+        if private_data_virtual_offset != NO_PRIVATE_DATA {
             debug!("[macos-unifiedlogs] Parsing Private Firehose Data");
             // Nom any padding
             let (mut private_input, _) = take_while(|b: u8| b == 0)(input)?;
@@ -338,13 +360,13 @@ impl FirehosePreamble {
         let mut backtrace_strings: Vec<RcString> = Vec::new();
 
         // Firehose number item values
-        let number_item_type: Vec<u8> = vec![0x0, 0x2];
+        let number_item_type: Vec<u8> = vec![ITEM_NUMBER, ITEM_NUMBER_ALT];
         // Dynamic precision item types?
-        let precision_items = [0x10, 0x12];
-        //  Likely realted to private string. Seen only "<private>" values
-        // 0x85 and 0x5 added in macOS Sequioa
-        let sensitive_items = [0x5, 0x45, 0x85];
-        let object_items = [0x40, 0x42];
+        let precision_items = [ITEM_PRECISION, ITEM_PRECISION_ALT];
+        //  Likely related to private string. Seen only "<private>" values
+        // 0x85 and 0x5 added in macOS Sequoia
+        let sensitive_items = [ITEM_SENSITIVE, ITEM_SENSITIVE_45, ITEM_SENSITIVE_85];
+        let object_items = [ITEM_OBJECT, ITEM_OBJECT_ALT];
 
         while &item_count < firehose_number_items {
             // Get non-number values first since the values are at the end of the of the log (chunk) entry data
@@ -383,7 +405,7 @@ impl FirehosePreamble {
         // Backtrace data appears before Firehose item strings
         // It only exists if log entry has_context_data flag set
         // Backtrace data can also exist in Oversize log entries. However, Oversize entries do not have has_context_data flags. Instead we check for possible signature
-        let has_context_data: u16 = 0x1000;
+        let has_context_data: u16 = FLAG_HAS_CONTEXT_DATA;
         let backtrace_signature_size: usize = 3;
 
         if (firehose_flags & has_context_data) != 0 {
@@ -417,7 +439,7 @@ impl FirehosePreamble {
                 continue;
             }
 
-            if item.item_type == Self::PRIVATE_NUMBER {
+            if item.item_type == ITEM_PRIVATE_NUMBER {
                 continue;
             }
 
@@ -475,8 +497,16 @@ impl FirehosePreamble {
         data: &'a [u8],
         firehose_item_data: &mut FirehoseItemData,
     ) -> nom::IResult<&'a [u8], ()> {
-        let private_strings: Vec<u8> = vec![0x21, 0x25, 0x41, 0x35, 0x31, 0x81, 0xf1];
-        let private_number = 0x1;
+        let private_strings: Vec<u8> = vec![
+            ITEM_PRIVATE_STRING,
+            ITEM_PRIVATE_STRING_25,
+            ITEM_PRIVATE_OBJECT,
+            ITEM_PRIVATE_STRING_35,
+            ITEM_PRIVATE_ARBITRARY,
+            ITEM_PRIVATE_STRING_81,
+            ITEM_PRIVATE_STRING_F1,
+        ];
+        let private_number = ITEM_PRIVATE_NUMBER;
 
         let mut private_string_start = data;
         // Go through all firehose items, for each private item entry get the private value
@@ -518,9 +548,8 @@ impl FirehosePreamble {
                         FirehoseItemValue::Str(rc_string!(private_string));
                 }
             } else if firehose_info.item_type == private_number {
-                let private_number = 0x8000;
                 // Numbers can also be private
-                if firehose_info.item_size == private_number {
+                if firehose_info.item_size == PRIVATE_NUMBER_SIZE {
                     firehose_info.message_strings = FirehoseItemValue::Str(private_rc_string());
                 } else {
                     let (private_data, private_string) = FirehosePreamble::parse_item_number(

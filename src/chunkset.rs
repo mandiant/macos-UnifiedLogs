@@ -1205,7 +1205,7 @@ mod tests {
         ];
 
         let (_, chunkset) = ChunksetChunk::parse_chunkset(&test_chunk_chunkset).unwrap();
-        assert_eq!(chunkset.chunk_tag, 0x600d);
+        assert_eq!(chunkset.chunk_tag, CHUNKSET_CHUNK);
         assert_eq!(chunkset.chunk_sub_tag, 17);
         assert_eq!(chunkset.chunk_data_size, 21703);
         assert_eq!(chunkset.signature, 825521762); // "bv41"
@@ -2181,7 +2181,7 @@ mod tests {
             16, 63, 96, 1, 0, 0, 0, 0, 0, 98, 118, 52, 36,
         ];
         let (_, chunkset) = ChunksetChunk::parse_chunkset(&test_data).unwrap();
-        assert_eq!(chunkset.chunk_tag, 0x600d);
+        assert_eq!(chunkset.chunk_tag, CHUNKSET_CHUNK);
         assert_eq!(chunkset.chunk_sub_tag, 17);
         assert_eq!(chunkset.chunk_data_size, 20758);
         assert_eq!(chunkset.signature, 825521762); // "bv41"

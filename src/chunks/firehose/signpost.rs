@@ -8,6 +8,7 @@
 use crate::catalog::CatalogChunk;
 use crate::chunks::firehose::flags::FirehoseFormatters;
 use crate::chunks::firehose::message::MessageData;
+use crate::constants::*;
 use crate::traits::FileProvider;
 use log::debug;
 use nom::bytes::complete::take;
@@ -40,8 +41,7 @@ impl FirehoseSignpost {
 
         let mut unknown_activity_id: u32 = 0;
         let mut unknown_sentinel: u32 = 0;
-        let activity_id_current: u16 = 0x1; // has_current_aid flag
-        if (firehose_flags & activity_id_current) != 0 {
+        if (firehose_flags & FLAG_HAS_CURRENT_AID) != 0 {
             debug!("[macos-unifiedlogs] Signpost Firehose has has_current_aid flag");
             let (firehose_input, val) = le_u32(input)?;
             let (firehose_input, sval) = le_u32(firehose_input)?;
@@ -52,9 +52,8 @@ impl FirehoseSignpost {
 
         let mut private_strings_offset: u16 = 0;
         let mut private_strings_size: u16 = 0;
-        let private_string_range: u16 = 0x100; // has_private_data flag
         // Entry has private string data. The private data is found after parsing all the public data first
-        if (firehose_flags & private_string_range) != 0 {
+        if (firehose_flags & FLAG_HAS_PRIVATE_DATA) != 0 {
             debug!("[macos-unifiedlogs] Signpost Firehose has has_private_data flag");
             let (firehose_input, val) = le_u16(input)?;
             let (firehose_input, sval) = le_u16(firehose_input)?;
@@ -71,8 +70,7 @@ impl FirehoseSignpost {
             FirehoseFormatters::firehose_formatter_flags(input, firehose_flags)?;
 
         let mut subsystem: u16 = 0;
-        let subsystem_flag: u16 = 0x200; // has_subsystem flag. In Signpost log entries this is the subsystem flag
-        if (firehose_flags & subsystem_flag) != 0 {
+        if (firehose_flags & FLAG_HAS_SUBSYSTEM) != 0 {
             debug!("[macos-unifiedlogs] Signpost Firehose log chunk has has_subsystem flag");
             let (firehose_input, val) = le_u16(input)?;
             subsystem = val;
@@ -82,8 +80,7 @@ impl FirehoseSignpost {
         let (mut input, signpost_id) = le_u64(input)?;
 
         let mut ttl_value: u8 = 0;
-        let has_rules: u16 = 0x400; // has_rules flag
-        if (firehose_flags & has_rules) != 0 {
+        if (firehose_flags & FLAG_HAS_RULES) != 0 {
             debug!("[macos-unifiedlogs] Signpost Firehose log chunk has has_rules flag");
             let (firehose_input, val) = le_u8(input)?;
             ttl_value = val;
@@ -91,8 +88,7 @@ impl FirehoseSignpost {
         }
 
         let mut data_ref_value: u32 = 0;
-        let data_ref: u16 = 0x800; // has_oversize flag
-        if (firehose_flags & data_ref) != 0 {
+        if (firehose_flags & FLAG_HAS_OVERSIZE) != 0 {
             debug!("[macos-unifiedlogs] Signpost Firehose log chunk has has_oversize flag");
             let (firehose_input, val) = le_u32(input)?;
             data_ref_value = val;
@@ -100,8 +96,7 @@ impl FirehoseSignpost {
         }
 
         let mut signpost_name: u32 = 0;
-        let has_name = 0x8000;
-        if (firehose_flags & has_name) != 0 {
+        if (firehose_flags & FLAG_HAS_NAME) != 0 {
             debug!("[macos-unifiedlogs] Signpost Firehose log chunk has has_name flag");
             let (firehose_input, val) = le_u32(input)?;
             signpost_name = val;

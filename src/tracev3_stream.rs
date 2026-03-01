@@ -128,12 +128,12 @@ impl StructuralEntry<'_, '_> {
 
     /// Check if this is a Fault log type.
     pub fn is_fault(&self) -> bool {
-        self.log_type == 0x11
+        self.log_type == LOG_TYPE_FAULT
     }
 
     /// Check if this is an Error log type.
     pub fn is_error(&self) -> bool {
-        self.log_type == 0x10
+        self.log_type == LOG_TYPE_ERROR
     }
 
     /// Check if this entry is a non-activity type (the most common log type).
@@ -743,54 +743,39 @@ fn parse_nonactivity_scalars(data: &[u8], flags: u16) -> nom::IResult<&[u8], (u3
     let mut data_ref_value: u32 = 0;
     let mut subsystem_value: u16 = 0;
 
-    // has_current_aid (0x0001)
-    if (flags & 0x0001) != 0 {
-        let (i, _) = le_u32(input)?; // unknown_activity_id
-        let (i, _) = le_u32(i)?; // unknown_sentinel
+    if (flags & FLAG_HAS_CURRENT_AID) != 0 {
+        let (i, _) = le_u32(input)?;
+        let (i, _) = le_u32(i)?;
         input = i;
     }
 
-    // has_private_data (0x0100)
-    if (flags & 0x0100) != 0 {
-        let (i, _) = le_u16(input)?; // private_strings_offset
-        let (i, _) = le_u16(i)?; // private_strings_size
+    if (flags & FLAG_HAS_PRIVATE_DATA) != 0 {
+        let (i, _) = le_u16(input)?;
+        let (i, _) = le_u16(i)?;
         input = i;
     }
 
-    // unknown flag 0x0008
-    if (flags & 0x0008) != 0 {
+    if (flags & FLAG_HAS_UNKNOWN_REF) != 0 {
         let (i, _) = le_u32(input)?;
         input = i;
     }
 
-    // has_subsystem (0x0200)
-    if (flags & 0x0200) != 0 {
+    if (flags & FLAG_HAS_SUBSYSTEM) != 0 {
         let (i, val) = le_u16(input)?;
         subsystem_value = val;
         input = i;
     }
 
-    // has_rules (0x0400)
-    if (flags & 0x0400) != 0 {
+    if (flags & FLAG_HAS_RULES) != 0 {
         let (i, _) = le_u8(input)?;
         input = i;
     }
 
-    // has_oversize (0x0800)
-    if (flags & 0x0800) != 0 {
+    if (flags & FLAG_HAS_OVERSIZE) != 0 {
         let (i, val) = le_u32(input)?;
         data_ref_value = val;
         input = i;
     }
-
-    // Now skip to item count. After the conditional fields there may be more
-    // (unknown_pc_id for absolute flag, firehose formatters).
-    // For the item count, we need the formatters to be skipped.
-    // The formatters depend on flag combinations. This is complex.
-    // For a minimal structural pass, we'll set number_items from what we can find.
-
-    // Skip formatters (main_exe 0x0002, absolute 0x0004, uuid 0x0010, large_shared_cache 0x0020, large_offset 0x8000)
-    // This mirrors FirehoseFormatters::parse_formatter_data
 
     let number_items = extract_number_items_after_formatters(input, flags);
 
@@ -802,12 +787,11 @@ fn parse_activity_item_count(data: &[u8], flags: u16) -> nom::IResult<&[u8], u8>
     let mut input = data;
 
     // Activity always has current_aid
-    let (i, _) = le_u64(input)?; // activity_id
-    let (i, _) = le_u32(i)?; // sentinel
+    let (i, _) = le_u64(input)?;
+    let (i, _) = le_u32(i)?;
     input = i;
 
-    // has_other_aid (0x0001)
-    if (flags & 0x0001) != 0 {
+    if (flags & FLAG_HAS_CURRENT_AID) != 0 {
         let (i, _) = le_u32(input)?;
         let (i, _) = le_u32(i)?;
         input = i;
@@ -823,39 +807,35 @@ fn parse_signpost_scalars(data: &[u8], flags: u16) -> nom::IResult<&[u8], (u16, 
     let mut subsystem_value: u16 = 0;
 
     // Signpost always has these:
-    let (i, _) = le_u64(input)?; // signpost_id
-    let (i, _) = le_u32(i)?; // signpost_scope / sentinel
+    let (i, _) = le_u64(input)?;
+    let (i, _) = le_u32(i)?;
     input = i;
 
-    // has_other_aid (0x0001)
-    if (flags & 0x0001) != 0 {
+    if (flags & FLAG_HAS_CURRENT_AID) != 0 {
         let (i, _) = le_u32(input)?;
         let (i, _) = le_u32(i)?;
         input = i;
     }
 
-    // has_private_data (0x0100)
-    if (flags & 0x0100) != 0 {
+    if (flags & FLAG_HAS_PRIVATE_DATA) != 0 {
         let (i, _) = le_u16(input)?;
         let (i, _) = le_u16(i)?;
         input = i;
     }
 
-    // has_subsystem (0x0200)
-    if (flags & 0x0200) != 0 {
+    if (flags & FLAG_HAS_SUBSYSTEM) != 0 {
         let (i, val) = le_u16(input)?;
         subsystem_value = val;
         input = i;
     }
 
-    // has_rules (0x0400)
-    if (flags & 0x0400) != 0 {
+    if (flags & FLAG_HAS_RULES) != 0 {
         let (i, _) = le_u8(input)?;
         input = i;
     }
 
-    // Signpost name (if flag 0x8000 is NOT set, there's a u32; if set, u64)
-    if (flags & 0x8000) != 0 {
+    // Signpost name
+    if (flags & FLAG_HAS_NAME) != 0 {
         if input.len() >= 8 {
             input = &input[8..];
         }
