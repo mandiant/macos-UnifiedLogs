@@ -131,6 +131,12 @@ pub fn format_firehose_log_message(
         if PRECISION_ITEMS.contains(&item_message[item_index].item_type) {
             item_index += 1;
         }
+        if item_index >= item_message.len() {
+            format_and_message.formatter = formatter.as_str();
+            format_and_message.message = missing_data_rc_string();
+            format_and_message_vec.push(format_and_message);
+            continue;
+        }
         // Also seen number type value 0 also used for dynamic width/precision value
         let dynamic_precision_value = 0x0;
         if (item_message[item_index].item_type == dynamic_precision_value

@@ -39,6 +39,8 @@ use crate::chunks::firehose::nonactivity::FirehoseNonActivity;
 use crate::chunks::firehose::signpost::FirehoseSignpost;
 use crate::chunks::firehose::trace::FirehoseTrace;
 use crate::chunks::oversize::Oversize;
+use crate::chunks::simpledump::SimpleDumpStr;
+use crate::chunks::statedump::{Statedump, StatedumpStr};
 use crate::header::HeaderChunkStr;
 use crate::message::format_firehose_log_message;
 use crate::preamble::LogPreamble;
@@ -62,6 +64,9 @@ const NON_ACTIVITY_TYPE: u8 = 0x4;
 const SIGNPOST_TYPE: u8 = 0x6;
 const LOSS_TYPE: u8 = 0x7;
 const REMNANT_DATA: u8 = 0x0;
+/// Synthetic log_activity_type values for non-firehose chunks.
+const SIMPLEDUMP_TYPE: u8 = 0xF0;
+const STATEDUMP_TYPE: u8 = 0xF1;
 
 const BV41_COMPRESSED: u32 = 825_521_762; // "bv41"
 const BV41_UNCOMPRESSED: u32 = 758_412_898; // "bv4-"
@@ -287,6 +292,14 @@ pub struct NoAllocLogStream<'file, 'ts> {
 
     inner_state: Option<InnerIterState>,
     message_re: Regex,
+
+    /// Queue of pre-resolved LogData from simpledump/statedump chunks.
+    /// Entries are paired: `next_entry` yields a synthetic `NoAllocEntry`, and
+    /// `resolve` returns the corresponding `LogData` from `last_resolved_dump`.
+    pending_resolved: Vec<LogData>,
+
+    /// The last simpledump/statedump entry popped by `next_entry()`, waiting for `resolve()`.
+    last_resolved_dump: Option<LogData>,
 }
 
 impl<'file, 'ts> NoAllocLogStream<'file, 'ts> {
@@ -320,6 +333,8 @@ impl<'file, 'ts> NoAllocLogStream<'file, 'ts> {
             message_re: Regex::new(
                 r"(%(?:(?:\{[^}]+}?)(?:[-+0#]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*))?(?:h|hh|l|ll|w|I|z|t|q|I32|I64)?[cmCdiouxXeEfgGaAnpsSZP@}]|(?:[-+0 #]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*))?(?:h|hh|l||q|t|ll|w|I|z|I32|I64)?[cmCdiouxXeEfgGaAnpsSZP@%]))",
             ).expect("Failed to compile message format regex"),
+            pending_resolved: Vec::new(),
+            last_resolved_dump: None,
         }
     }
 
@@ -330,6 +345,40 @@ impl<'file, 'ts> NoAllocLogStream<'file, 'ts> {
     #[allow(clippy::collapsible_if, clippy::collapsible_match)]
     pub fn next_entry(&mut self) -> Option<NoAllocEntry> {
         loop {
+            // Drain any pending pre-resolved simpledump/statedump entries first.
+            // Pop the LogData into `last_resolved_dump` so the queue always shrinks,
+            // even if the caller never calls `resolve()`.
+            if let Some(log_data) = self.pending_resolved.pop() {
+                self.last_resolved_dump = Some(log_data);
+                return Some(NoAllocEntry {
+                    pid: 0,
+                    euid: 0,
+                    thread_id: 0,
+                    continuous_time: 0,
+                    timestamp: 0.0,
+                    log_activity_type: SIMPLEDUMP_TYPE, // marker type
+                    log_type: 0,
+                    flags: 0,
+                    format_string_location: 0,
+                    data_ref_value: 0,
+                    boot_uuid: self.boot_uuid,
+                    first_proc_id: 0,
+                    second_proc_id: 0,
+                    subsystem_value: 0,
+                    data_size: 0,
+                    number_items: 0,
+                    private_data_virtual_offset: 0,
+                    ttl: 0,
+                    catalog_index: 0,
+                    decomp_generation: self.decomp_generation,
+                    decomp_data_offset: 0,
+                    decomp_data_len: 0,
+                    preamble_public_data_start: 0,
+                    preamble_public_data_size: 0,
+                    collapsed: 0,
+                });
+            }
+
             // Level 3: yield next entry from current preamble
             if let Some(ref mut inner) = self.inner_state {
                 if let Some(ref mut preamble) = inner.preamble {
@@ -349,7 +398,7 @@ impl<'file, 'ts> NoAllocLogStream<'file, 'ts> {
                             if let Some(entry_data) =
                                 decomp_data.get(abs_cursor..abs_cursor + remaining_in_preamble)
                             {
-                                if let Some(entry) = Self::parse_entry_from_data(
+                                match Self::parse_entry_from_data(
                                     entry_data,
                                     abs_cursor,
                                     preamble,
@@ -358,7 +407,9 @@ impl<'file, 'ts> NoAllocLogStream<'file, 'ts> {
                                     self.catalog_index,
                                     self.decomp_generation,
                                 ) {
-                                    return Some(entry);
+                                    Some(Some(entry)) => return Some(entry),
+                                    Some(None) => continue, // Skip unknown type, cursor advanced
+                                    None => {} // Preamble exhausted (remnant/parse failure)
                                 }
                             }
                         }
@@ -436,6 +487,11 @@ impl<'file, 'ts> NoAllocLogStream<'file, 'ts> {
                 entry.decomp_generation, self.decomp_generation
             );
             return None;
+        }
+
+        // Simpledump/statedump: return pre-resolved LogData stashed by next_entry()
+        if entry.log_activity_type == SIMPLEDUMP_TYPE || entry.log_activity_type == STATEDUMP_TYPE {
+            return self.last_resolved_dump.take();
         }
 
         // Take catalog out temporarily to avoid borrow conflict
@@ -527,6 +583,10 @@ impl<'file, 'ts> NoAllocLogStream<'file, 'ts> {
     /// Parse a single entry from the given data slice at the preamble cursor.
     /// This is a static method to avoid borrow conflicts with `self`.
     /// Advances `preamble.entry_cursor` on success.
+    /// Returns:
+    /// - `Some(Some(entry))` — valid entry parsed
+    /// - `Some(None)` — entry skipped (cursor advanced), caller should retry
+    /// - `None` — preamble exhausted (remnant data or parse failure)
     fn parse_entry_from_data(
         entry_data: &[u8],
         abs_cursor: usize,
@@ -535,20 +595,12 @@ impl<'file, 'ts> NoAllocLogStream<'file, 'ts> {
         boot_uuid: Uuid,
         catalog_index: u32,
         decomp_generation: u32,
-    ) -> Option<NoAllocEntry> {
+    ) -> Option<Option<NoAllocEntry>> {
         // Parse 24-byte entry header
         let (rest, log_activity_type) =
             le_u8::<_, nom::error::Error<&[u8]>>(entry_data).ok()?;
 
         if log_activity_type == REMNANT_DATA {
-            return None;
-        }
-
-        // Check valid type early
-        if !matches!(
-            log_activity_type,
-            ACTIVITY_TYPE | TRACE_TYPE | NON_ACTIVITY_TYPE | SIGNPOST_TYPE | LOSS_TYPE
-        ) {
             return None;
         }
 
@@ -568,6 +620,19 @@ impl<'file, 'ts> NoAllocLogStream<'file, 'ts> {
             return None;
         }
         let raw_firehose_data = &rest[..entry_body_len];
+
+        // Advance the entry cursor past header + body + padding
+        let data_pad = padding_size_8(u64::from(data_size)) as usize;
+        let total_advance = FIREHOSE_ENTRY_HEADER_SIZE + entry_body_len + data_pad;
+        preamble.entry_cursor += total_advance;
+
+        // Check valid type — cursor already advanced, return Skip for unknown types
+        if !matches!(
+            log_activity_type,
+            ACTIVITY_TYPE | TRACE_TYPE | NON_ACTIVITY_TYPE | SIGNPOST_TYPE | LOSS_TYPE
+        ) {
+            return Some(None);
+        }
 
         // Calculate continuous time
         let entry_continuous_time = u64::from(continuous_time_delta)
@@ -590,12 +655,7 @@ impl<'file, 'ts> NoAllocLogStream<'file, 'ts> {
         // Record the absolute offset of the raw firehose data in the decomp buffer
         let decomp_data_offset = abs_cursor + FIREHOSE_ENTRY_HEADER_SIZE;
 
-        // Advance the entry cursor past header + body + padding
-        let data_pad = padding_size_8(u64::from(data_size)) as usize;
-        let total_advance = FIREHOSE_ENTRY_HEADER_SIZE + entry_body_len + data_pad;
-        preamble.entry_cursor += total_advance;
-
-        Some(NoAllocEntry {
+        Some(Some(NoAllocEntry {
             pid: preamble.pid,
             euid: preamble.euid,
             thread_id,
@@ -621,7 +681,7 @@ impl<'file, 'ts> NoAllocLogStream<'file, 'ts> {
             preamble_public_data_start: preamble.public_data_start as u32,
             preamble_public_data_size: preamble.public_data_len as u16,
             collapsed: preamble.collapsed,
-        })
+        }))
     }
 
     // ── Level 2: inner chunk advancement ───────────────────────────────
@@ -680,11 +740,17 @@ impl<'file, 'ts> NoAllocLogStream<'file, 'ts> {
                     }
                     // Continue to next inner chunk
                 }
-                0x6003 | 0x6004 => {
-                    debug!(
-                        "[noalloc_iterator] Skipping statedump/simpledump chunk 0x{:04x}",
-                        preamble.chunk_tag
-                    );
+                0x6004 => {
+                    // Simpledump: eagerly resolve and queue LogData
+                    if let Some(log_data) = self.resolve_simpledump(chunk_data) {
+                        self.pending_resolved.push(log_data);
+                    }
+                }
+                0x6003 => {
+                    // Statedump: eagerly resolve and queue LogData
+                    if let Some(log_data) = self.resolve_statedump(chunk_data) {
+                        self.pending_resolved.push(log_data);
+                    }
                 }
                 other => {
                     warn!("[noalloc_iterator] Unknown inner chunk type: 0x{other:04x}");
@@ -757,6 +823,110 @@ impl<'file, 'ts> NoAllocLogStream<'file, 'ts> {
             public_data_start,
             public_data_len,
             entry_cursor: 0,
+        })
+    }
+
+    /// Eagerly resolve a simpledump chunk into `LogData`.
+    fn resolve_simpledump(&self, chunk_data: &[u8]) -> Option<LogData> {
+        let (_, sd) = SimpleDumpStr::parse_simpledump(chunk_data).ok()?;
+        let no_firehose_preamble = 1;
+        let timestamp = TimesyncBoot::get_timestamp(
+            self.timesync,
+            self.boot_uuid,
+            sd.continous_time,
+            no_firehose_preamble,
+        );
+        let timezone_name = rc_string!(
+            self.timezone_path
+                .split('/')
+                .next_back()
+                .unwrap_or("Unknown Timezone Name")
+        );
+        Some(LogData {
+            subsystem: rc_string!(sd.subsystem),
+            thread_id: sd.thread_id,
+            pid: sd.first_proc_id,
+            euid: 0,
+            library: empty_rc_string(),
+            library_uuid: sd.sender_uuid,
+            activity_id: 0,
+            time: timestamp,
+            timestamp: unixepoch_to_datetime(timestamp as i64),
+            category: empty_rc_string(),
+            log_type: LogType::Simpledump,
+            event_type: EventType::Simpledump,
+            process: empty_rc_string(),
+            process_uuid: sd.dsc_uuid,
+            message: rc_string!(sd.message_string),
+            raw_message: empty_rc_string(),
+            boot_uuid: self.boot_uuid,
+            timezone_name,
+            message_entries: Vec::new(),
+        })
+    }
+
+    /// Eagerly resolve a statedump chunk into `LogData`.
+    fn resolve_statedump(&self, chunk_data: &[u8]) -> Option<LogData> {
+        let (_, sd) = StatedumpStr::parse_statedump(chunk_data).ok()?;
+        let data_string = match sd.unknown_data_type {
+            0x1 => Statedump::<&str>::parse_statedump_plist(&sd.statedump_data),
+            0x2 => match sunlight::light::extract_protobuf(&sd.statedump_data) {
+                Ok(map) => serde_json::to_string(&map)
+                    .unwrap_or_else(|_| String::from("Failed to serialize Protobuf HashMap")),
+                Err(_) => format!(
+                    "Failed to parse StateDump protobuf: {}",
+                    crate::util::encode_standard(&sd.statedump_data)
+                ),
+            },
+            0x3 => Statedump::<&str>::parse_statedump_object(
+                &sd.statedump_data,
+                sd.title_name,
+            )
+            .to_string(),
+            _ => {
+                let results = crate::util::extract_string(&sd.statedump_data);
+                match results {
+                    Ok((_, s)) => s.to_string(),
+                    Err(_) => String::from("Failed to extract string from statedump"),
+                }
+            }
+        };
+        let no_firehose_preamble = 1;
+        let timestamp = TimesyncBoot::get_timestamp(
+            self.timesync,
+            self.boot_uuid,
+            sd.continuous_time,
+            no_firehose_preamble,
+        );
+        let timezone_name = rc_string!(
+            self.timezone_path
+                .split('/')
+                .next_back()
+                .unwrap_or("Unknown Timezone Name")
+        );
+        Some(LogData {
+            subsystem: empty_rc_string(),
+            thread_id: 0,
+            pid: sd.first_proc_id,
+            euid: 0,
+            library: empty_rc_string(),
+            library_uuid: Uuid::nil(),
+            activity_id: sd.activity_id,
+            time: timestamp,
+            timestamp: unixepoch_to_datetime(timestamp as i64),
+            category: empty_rc_string(),
+            log_type: LogType::Statedump,
+            event_type: EventType::Statedump,
+            process: empty_rc_string(),
+            process_uuid: Uuid::nil(),
+            message: rc_string!(format!(
+                "title: {}\nObject Type: {}\nObject Type: {}\n{data_string}",
+                sd.title_name, sd.decoder_library, sd.decoder_type,
+            )),
+            raw_message: empty_rc_string(),
+            boot_uuid: self.boot_uuid,
+            timezone_name,
+            message_entries: Vec::new(),
         })
     }
 
@@ -1332,9 +1502,23 @@ impl<'file, 'ts> NoAllocLogStream<'file, 'ts> {
 
         match remainder {
             Some(rest) => {
+                // The remainder starts with unknown_item (u8) + number_items (u8),
+                // matching the standard path in parse_firehose (firehose_log.rs:641-644).
+                let minimum_item_size = 6;
+                if rest.len() < minimum_item_size {
+                    return FirehoseItemData::default();
+                }
+                let (rest, _unknown_item) = match le_u8::<&[u8], nom::error::Error<&[u8]>>(rest) {
+                    Ok(v) => v,
+                    Err(_) => return FirehoseItemData::default(),
+                };
+                let (rest, number_items) = match le_u8::<&[u8], nom::error::Error<&[u8]>>(rest) {
+                    Ok(v) => v,
+                    Err(_) => return FirehoseItemData::default(),
+                };
                 match FirehosePreamble::collect_items(
                     rest,
-                    &entry.number_items,
+                    &number_items,
                     &entry.flags,
                 ) {
                     Ok((_, items)) => items,
