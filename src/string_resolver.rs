@@ -13,10 +13,10 @@ use regex::Regex;
 use uuid::Uuid;
 
 use crate::chunks::oversize::Oversize;
+use crate::empty_rc_string;
 use crate::tracev3_stream::StructuralEntry;
 use crate::traits::FileProvider;
 use crate::unified_log::{LogData, LogType};
-use crate::empty_rc_string;
 
 /// Resolves structural entries into full LogData with strings.
 ///

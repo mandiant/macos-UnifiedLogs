@@ -113,7 +113,11 @@ impl<'a> StatedumpStr<'a> {
         let (_, title_name) = extract_string(title_data)?;
 
         let uuid = clean_uuid(&format!("{uuid_raw:02X?}"));
-        let unknown_reserved: [u8; 3] = [unknown_reserved[0], unknown_reserved[1], unknown_reserved[2]];
+        let unknown_reserved: [u8; 3] = [
+            unknown_reserved[0],
+            unknown_reserved[1],
+            unknown_reserved[2],
+        ];
 
         let (input, statedump_data_raw) = take(unknown_data_size)(input)?;
         let statedump_data = statedump_data_raw.to_vec();
@@ -678,7 +682,10 @@ mod tests {
         ];
 
         let (_, statedump_results) = Statedump::parse_statedump(&test_data).unwrap();
-        assert_eq!(statedump_results.chunk_tag, 0x6003);
+        assert_eq!(
+            statedump_results.chunk_tag,
+            crate::constants::STATEDUMP_CHUNK
+        );
         assert_eq!(statedump_results.chunk_subtag, 0);
         assert_eq!(statedump_results.chunk_data_size, 7859);
         assert_eq!(statedump_results.first_proc_id, 1771);

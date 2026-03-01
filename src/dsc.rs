@@ -5,6 +5,7 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
+use crate::constants::DSC_SIGNATURE;
 use crate::util::extract_string;
 use crate::{RcString, rc_string};
 use log::error;
@@ -88,10 +89,9 @@ impl<'a> SharedCacheStringsStr<'a> {
     pub fn parse_dsc(data: &'a [u8]) -> nom::IResult<&'a [u8], Self> {
         let (input, signature) = le_u32(data)?;
 
-        let expected_dsc_signature = 0x64736368;
-        if expected_dsc_signature != signature {
+        if DSC_SIGNATURE != signature {
             error!(
-                "[macos-unifiedlogs] Incorrect DSC file signature. Expected {expected_dsc_signature}. Got: {signature}"
+                "[macos-unifiedlogs] Incorrect DSC file signature. Expected {DSC_SIGNATURE}. Got: {signature}"
             );
             return Err(nom::Err::Incomplete(Needed::Unknown));
         }

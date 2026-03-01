@@ -550,15 +550,7 @@ impl FirehosePreamble {
 
         let (mut input, mut firehose_input) = take(data_size)(input)?;
 
-        // Log activity type (unknown_log_activity_type)
-        let activity: u8 = 0x2;
-        let signpost: u8 = 0x6;
-        let nonactivity: u8 = 0x4;
-        let loss: u8 = 0x7;
-        let trace: u8 = 0x3;
-
-        // Unknown types
-        let unknown_remnant_data = 0x0; // 0x0 appears to be remnant data or garbage data (log command does not parse it either)
+        use crate::constants::*;
 
         let mut firehose_activity = FirehoseActivity::default();
         let mut firehose_non_activity = FirehoseNonActivity::default();
@@ -567,30 +559,30 @@ impl FirehosePreamble {
         let mut firehose_trace = FirehoseTrace::default();
         let mut message = FirehoseItemData::default();
 
-        if unknown_log_activity_type == activity {
+        if unknown_log_activity_type == ACTIVITY_TYPE {
             let (activity_data, parsed) =
                 FirehoseActivity::parse_activity(firehose_input, &flags, &unknown_log_type)?;
             firehose_input = activity_data;
             firehose_activity = parsed;
-        } else if unknown_log_activity_type == nonactivity {
+        } else if unknown_log_activity_type == NON_ACTIVITY_TYPE {
             let (non_activity_data, parsed) =
                 FirehoseNonActivity::parse_non_activity(firehose_input, &flags)?;
             firehose_input = non_activity_data;
             firehose_non_activity = parsed;
-        } else if unknown_log_activity_type == signpost {
+        } else if unknown_log_activity_type == SIGNPOST_TYPE {
             let (process_data, parsed) = FirehoseSignpost::parse_signpost(firehose_input, &flags)?;
             firehose_input = process_data;
             firehose_signpost = parsed;
-        } else if unknown_log_activity_type == loss {
+        } else if unknown_log_activity_type == LOSS_TYPE {
             let (loss_data, parsed) = FirehoseLoss::parse_firehose_loss(firehose_input)?;
             firehose_loss = parsed;
             firehose_input = loss_data;
-        } else if unknown_log_activity_type == trace {
+        } else if unknown_log_activity_type == TRACE_TYPE {
             let (trace_data, parsed) = FirehoseTrace::parse_firehose_trace(firehose_input)?;
             firehose_trace = parsed;
             firehose_input = trace_data;
             message = firehose_trace.message_data.clone();
-        } else if unknown_log_activity_type == unknown_remnant_data {
+        } else if unknown_log_activity_type == REMNANT_DATA {
             return Ok((
                 input,
                 Firehose {

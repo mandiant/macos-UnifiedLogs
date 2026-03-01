@@ -52,25 +52,11 @@ use uuid::Uuid;
 
 use crate::catalog::CatalogChunk;
 use crate::chunks::oversize::Oversize;
+use crate::constants::*;
 use crate::header::HeaderChunkStr;
 use crate::preamble::LogPreamble;
 use crate::timesync::TimesyncBoot;
 use crate::util::{padding_size_8, u64_to_usize};
-
-// Chunk type constants
-const HEADER_CHUNK: u32 = 0x1000;
-const CATALOG_CHUNK: u32 = 0x600b;
-const CHUNKSET_CHUNK: u32 = 0x600d;
-const FIREHOSE_CHUNK: u32 = 0x6001;
-const OVERSIZE_CHUNK: u32 = 0x6002;
-
-// Firehose log activity types
-const ACTIVITY_TYPE: u8 = 0x2;
-const TRACE_TYPE: u8 = 0x3;
-const NON_ACTIVITY_TYPE: u8 = 0x4;
-const SIGNPOST_TYPE: u8 = 0x6;
-const LOSS_TYPE: u8 = 0x7;
-const REMNANT_DATA: u8 = 0x0;
 
 /// Near-zero-alloc handle to a log entry. All fields are scalars or borrowed.
 /// No string resolution, no message formatting, no heap allocation.
@@ -185,13 +171,9 @@ pub enum StreamEvent<'cat, 'decomp> {
     /// An oversize entry was parsed and added to the internal cache.
     OversizeParsed,
     /// A statedump chunk was encountered (raw data available in the decompression buffer).
-    Statedump {
-        chunk_data: &'decomp [u8],
-    },
+    Statedump { chunk_data: &'decomp [u8] },
     /// A simpledump chunk was encountered.
-    Simpledump {
-        chunk_data: &'decomp [u8],
-    },
+    Simpledump { chunk_data: &'decomp [u8] },
 }
 
 /// Zero-allocation streaming engine for tracev3 files.
@@ -213,10 +195,7 @@ pub struct TraceV3Stream<'file, 'ts> {
 
 impl<'file, 'ts> TraceV3Stream<'file, 'ts> {
     /// Create a new streaming engine from a tracev3 file buffer and timesync data.
-    pub fn new(
-        data: &'file [u8],
-        timesync: &'ts HashMap<Uuid, TimesyncBoot>,
-    ) -> Self {
+    pub fn new(data: &'file [u8], timesync: &'ts HashMap<Uuid, TimesyncBoot>) -> Self {
         Self {
             file_buf: data,
             cursor: 0,
@@ -262,10 +241,7 @@ impl<'file, 'ts> TraceV3Stream<'file, 'ts> {
     ///
     /// Statedump, simpledump, and oversize entries are handled internally (oversize entries
     /// are accumulated in the cache; statedump/simpledump are skipped).
-    pub fn for_each_entry(
-        &mut self,
-        mut f: impl FnMut(StructuralEntry<'_, '_>),
-    ) {
+    pub fn for_each_entry(&mut self, mut f: impl FnMut(StructuralEntry<'_, '_>)) {
         let _ = self.try_for_each_entry(|entry| -> Result<(), std::convert::Infallible> {
             f(entry);
             Ok(())
@@ -280,10 +256,9 @@ impl<'file, 'ts> TraceV3Stream<'file, 'ts> {
         &mut self,
         mut f: impl FnMut(StructuralEntry<'_, '_>) -> Result<(), E>,
     ) -> Result<(), E> {
-        let chunk_preamble_size: usize = 16;
         let mut current_catalog: Option<CatalogChunk> = None;
 
-        while self.cursor + chunk_preamble_size <= self.file_buf.len() {
+        while self.cursor + CHUNK_PREAMBLE_SIZE <= self.file_buf.len() {
             let input = &self.file_buf[self.cursor..];
 
             let preamble = match LogPreamble::detect_preamble(input) {
@@ -294,7 +269,7 @@ impl<'file, 'ts> TraceV3Stream<'file, 'ts> {
                 }
             };
 
-            let total_chunk_size = preamble.chunk_data_size as usize + chunk_preamble_size;
+            let total_chunk_size = preamble.chunk_data_size as usize + CHUNK_PREAMBLE_SIZE;
             if self.cursor + total_chunk_size > self.file_buf.len() {
                 warn!(
                     "[tracev3_stream] Chunk extends beyond file buffer ({} + {} > {})",
@@ -311,16 +286,14 @@ impl<'file, 'ts> TraceV3Stream<'file, 'ts> {
                 HEADER_CHUNK => {
                     self.parse_header(chunk_data);
                 }
-                CATALOG_CHUNK => {
-                    match CatalogChunk::parse_catalog(chunk_data) {
-                        Ok((_, catalog)) => {
-                            current_catalog = Some(catalog);
-                        }
-                        Err(err) => {
-                            error!("[tracev3_stream] Failed to parse catalog: {err:?}");
-                        }
+                CATALOG_CHUNK => match CatalogChunk::parse_catalog(chunk_data) {
+                    Ok((_, catalog)) => {
+                        current_catalog = Some(catalog);
                     }
-                }
+                    Err(err) => {
+                        error!("[tracev3_stream] Failed to parse catalog: {err:?}");
+                    }
+                },
                 CHUNKSET_CHUNK => {
                     if let Some(ref catalog) = current_catalog {
                         self.process_chunkset(chunk_data, catalog, &mut f)?;
@@ -376,8 +349,8 @@ impl<'file, 'ts> TraceV3Stream<'file, 'ts> {
         };
         let _ = chunkset_preamble; // chunk_tag already known
 
-        // Skip preamble (16 bytes) to get to signature
-        let inner = match chunk_data.get(16..) {
+        // Skip preamble to get to signature
+        let inner = match chunk_data.get(CHUNK_PREAMBLE_SIZE..) {
             Some(d) => d,
             None => return Ok(()),
         };
@@ -391,10 +364,7 @@ impl<'file, 'ts> TraceV3Stream<'file, 'ts> {
             Err(_) => return Ok(()),
         };
 
-        let bv41_sig = 825_521_762u32; // "bv41" signature
-        let bv41_uncomp_sig = 758_412_898u32; // "bv41-" uncompressed signature
-
-        if signature == bv41_uncomp_sig {
+        if signature == BV41_UNCOMPRESSED {
             // Already decompressed data
             let (_, uncompressed_data) =
                 match take::<_, _, nom::error::Error<&[u8]>>(uncompress_size as usize)(input) {
@@ -403,7 +373,7 @@ impl<'file, 'ts> TraceV3Stream<'file, 'ts> {
                 };
             // Use directly — no need to copy into decomp_buf
             self.process_decompressed_chunks(uncompressed_data, catalog, f)?;
-        } else if signature == bv41_sig {
+        } else if signature == BV41_COMPRESSED {
             // Compressed data
             let (input, block_size) = match le_u32::<_, nom::error::Error<&[u8]>>(input) {
                 Ok(r) => r,
@@ -439,10 +409,9 @@ impl<'file, 'ts> TraceV3Stream<'file, 'ts> {
         catalog: &CatalogChunk,
         f: &mut impl FnMut(StructuralEntry<'_, '_>) -> Result<(), E>,
     ) -> Result<(), E> {
-        let chunk_preamble_size: usize = 16;
         let mut input = data;
 
-        while !input.is_empty() && input.len() >= chunk_preamble_size {
+        while !input.is_empty() && input.len() >= CHUNK_PREAMBLE_SIZE {
             let preamble = match LogPreamble::detect_preamble(input) {
                 Ok((_, p)) => p,
                 Err(_) => break,
@@ -453,7 +422,7 @@ impl<'file, 'ts> TraceV3Stream<'file, 'ts> {
                 None => break,
             };
 
-            let total = chunk_size + chunk_preamble_size;
+            let total = chunk_size + CHUNK_PREAMBLE_SIZE;
             if total > input.len() {
                 break;
             }
@@ -464,17 +433,15 @@ impl<'file, 'ts> TraceV3Stream<'file, 'ts> {
                 FIREHOSE_CHUNK => {
                     self.process_firehose_preamble(chunk_data, catalog, f)?;
                 }
-                OVERSIZE_CHUNK => {
-                    match Oversize::parse_oversize(chunk_data) {
-                        Ok((_, oversize)) => {
-                            self.oversize_cache.push(oversize);
-                        }
-                        Err(err) => {
-                            error!("[tracev3_stream] Failed to parse oversize: {err:?}");
-                        }
+                OVERSIZE_CHUNK => match Oversize::parse_oversize(chunk_data) {
+                    Ok((_, oversize)) => {
+                        self.oversize_cache.push(oversize);
                     }
-                }
-                0x6003 | 0x6004 => {
+                    Err(err) => {
+                        error!("[tracev3_stream] Failed to parse oversize: {err:?}");
+                    }
+                },
+                STATEDUMP_CHUNK | SIMPLEDUMP_CHUNK => {
                     // Statedump/simpledump — skip in the structural pass
                     debug!(
                         "[tracev3_stream] Skipping statedump/simpledump chunk 0x{:04x}",
@@ -587,20 +554,17 @@ impl<'file, 'ts> TraceV3Stream<'file, 'ts> {
         let public_data = &input[..public_data_len];
 
         // Resolve pid/euid from catalog
-        let pid =
-            catalog.get_pid(first_number_proc_id, second_number_proc_id);
-        let euid =
-            catalog.get_euid(first_number_proc_id, second_number_proc_id);
+        let pid = catalog.get_pid(first_number_proc_id, second_number_proc_id);
+        let euid = catalog.get_euid(first_number_proc_id, second_number_proc_id);
 
         // Iterate through individual firehose entries in the public data
         let mut entry_data = public_data;
-        while entry_data.len() >= 24 {
-            // Parse the 24-byte fixed firehose entry header
-            let (rest, log_activity_type) =
-                match le_u8::<_, nom::error::Error<&[u8]>>(entry_data) {
-                    Ok(r) => r,
-                    Err(_) => break,
-                };
+        while entry_data.len() >= FIREHOSE_ENTRY_HEADER_SIZE {
+            // Parse the fixed firehose entry header
+            let (rest, log_activity_type) = match le_u8::<_, nom::error::Error<&[u8]>>(entry_data) {
+                Ok(r) => r,
+                Err(_) => break,
+            };
 
             if log_activity_type == REMNANT_DATA {
                 break;
@@ -614,8 +578,7 @@ impl<'file, 'ts> TraceV3Stream<'file, 'ts> {
                 Ok(r) => r,
                 Err(_) => break,
             };
-            let (rest, format_string_location) = match le_u32::<_, nom::error::Error<&[u8]>>(rest)
-            {
+            let (rest, format_string_location) = match le_u32::<_, nom::error::Error<&[u8]>>(rest) {
                 Ok(r) => r,
                 Err(_) => break,
             };
@@ -645,8 +608,8 @@ impl<'file, 'ts> TraceV3Stream<'file, 'ts> {
             let raw_firehose_data = &rest[..entry_body_len];
 
             // Calculate continuous time
-            let entry_continuous_time = u64::from(continous_time_delta)
-                | (u64::from(continous_time_delta_upper) << 32);
+            let entry_continuous_time =
+                u64::from(continous_time_delta) | (u64::from(continous_time_delta_upper) << 32);
             let absolute_continuous_time = base_continuous_time + entry_continuous_time;
 
             // Calculate wall-clock timestamp
@@ -688,7 +651,7 @@ impl<'file, 'ts> TraceV3Stream<'file, 'ts> {
             f(entry)?;
 
             // Advance past the entry data + padding
-            let consumed = 24 + entry_body_len;
+            let consumed = FIREHOSE_ENTRY_HEADER_SIZE + entry_body_len;
             // Padding to 8 bytes for the data_size portion
             let data_pad = padding_size_8(u64::from(data_size)) as usize;
             let total_advance = consumed + data_pad;
@@ -699,7 +662,7 @@ impl<'file, 'ts> TraceV3Stream<'file, 'ts> {
             entry_data = &entry_data[total_advance..];
 
             // Check for end conditions
-            if entry_data.len() < 24 {
+            if entry_data.len() < FIREHOSE_ENTRY_HEADER_SIZE {
                 break;
             }
             // Check if next byte is a valid log activity type
@@ -722,11 +685,7 @@ impl<'file, 'ts> TraceV3Stream<'file, 'ts> {
 
 /// Extract key scalar values from a firehose sub-type header without full parsing.
 /// Returns (data_ref_value, subsystem_value, number_items).
-fn extract_subtype_scalars(
-    raw_data: &[u8],
-    log_activity_type: u8,
-    flags: u16,
-) -> (u32, u16, u8) {
+fn extract_subtype_scalars(raw_data: &[u8], log_activity_type: u8, flags: u16) -> (u32, u16, u8) {
     let mut data_ref_value: u32 = 0;
     let mut subsystem_value: u16 = 0;
     let mut number_items: u8 = 0;
@@ -1037,11 +996,7 @@ mod tests {
         let mut count = 0u64;
         let result = stream.try_for_each_entry(|_entry| -> Result<(), &str> {
             count += 1;
-            if count >= 10 {
-                Err("stop")
-            } else {
-                Ok(())
-            }
+            if count >= 10 { Err("stop") } else { Ok(()) }
         });
 
         assert!(result.is_err());

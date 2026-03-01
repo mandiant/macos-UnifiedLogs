@@ -54,7 +54,7 @@ mod tests {
         let (output, preamble_data) = LogPreamble::detect_preamble(test_preamble_header)?;
 
         assert_eq!(output, test_preamble_header);
-        assert_eq!(preamble_data.chunk_tag, 0x1000);
+        assert_eq!(preamble_data.chunk_tag, crate::constants::HEADER_CHUNK);
         assert_eq!(preamble_data.chunk_sub_tag, 0x11);
         assert_eq!(preamble_data.chunk_data_size, 0xd0);
 
@@ -62,7 +62,7 @@ mod tests {
         let (output, preamble_data) = LogPreamble::parse(test_catalog_chunk)?;
 
         assert_eq!(output.len(), 0);
-        assert_eq!(preamble_data.chunk_tag, 0x600b);
+        assert_eq!(preamble_data.chunk_tag, crate::constants::CATALOG_CHUNK);
         assert_eq!(preamble_data.chunk_sub_tag, 0x11);
         assert_eq!(preamble_data.chunk_data_size, 0x1fb0);
 

@@ -204,7 +204,7 @@ mod tests {
 
         let (_, header_data) = HeaderChunk::parse_header(&test_chunk_header).unwrap();
 
-        assert_eq!(header_data.chunk_tag, 0x1000);
+        assert_eq!(header_data.chunk_tag, crate::constants::HEADER_CHUNK);
         assert_eq!(header_data.chunk_sub_tag, 0x11);
         assert_eq!(header_data.mach_time_numerator, 1);
         assert_eq!(header_data.mach_time_denominator, 1);

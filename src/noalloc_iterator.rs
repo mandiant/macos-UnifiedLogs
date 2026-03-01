@@ -41,6 +41,7 @@ use crate::chunks::firehose::trace::FirehoseTrace;
 use crate::chunks::oversize::Oversize;
 use crate::chunks::simpledump::SimpleDumpStr;
 use crate::chunks::statedump::{Statedump, StatedumpStr};
+use crate::constants::*;
 use crate::header::HeaderChunkStr;
 use crate::message::format_firehose_log_message;
 use crate::preamble::LogPreamble;
@@ -49,30 +50,6 @@ use crate::traits::FileProvider;
 use crate::unified_log::{EventType, LogData, LogType};
 use crate::util::{padding_size_8, u64_to_usize, unixepoch_to_datetime};
 use crate::{empty_rc_string, rc_string};
-
-// ── Constants ──────────────────────────────────────────────────────────────
-
-const HEADER_CHUNK: u32 = 0x1000;
-const CATALOG_CHUNK: u32 = 0x600b;
-const CHUNKSET_CHUNK: u32 = 0x600d;
-const FIREHOSE_CHUNK: u32 = 0x6001;
-const OVERSIZE_CHUNK: u32 = 0x6002;
-
-const ACTIVITY_TYPE: u8 = 0x2;
-const TRACE_TYPE: u8 = 0x3;
-const NON_ACTIVITY_TYPE: u8 = 0x4;
-const SIGNPOST_TYPE: u8 = 0x6;
-const LOSS_TYPE: u8 = 0x7;
-const REMNANT_DATA: u8 = 0x0;
-/// Synthetic log_activity_type values for non-firehose chunks.
-const SIMPLEDUMP_TYPE: u8 = 0xF0;
-const STATEDUMP_TYPE: u8 = 0xF1;
-
-const BV41_COMPRESSED: u32 = 825_521_762; // "bv41"
-const BV41_UNCOMPRESSED: u32 = 758_412_898; // "bv4-"
-
-const CHUNK_PREAMBLE_SIZE: usize = 16;
-const FIREHOSE_ENTRY_HEADER_SIZE: usize = 24;
 
 // ── NoAllocEntry ───────────────────────────────────────────────────────────
 
@@ -304,10 +281,7 @@ pub struct NoAllocLogStream<'file, 'ts> {
 
 impl<'file, 'ts> NoAllocLogStream<'file, 'ts> {
     /// Create a new stream over a tracev3 file buffer.
-    pub fn new(
-        data: &'file [u8],
-        timesync: &'ts HashMap<Uuid, TimesyncBoot>,
-    ) -> Self {
+    pub fn new(data: &'file [u8], timesync: &'ts HashMap<Uuid, TimesyncBoot>) -> Self {
         Self::with_oversize_cache(data, timesync, Vec::new())
     }
 
@@ -389,10 +363,10 @@ impl<'file, 'ts> NoAllocLogStream<'file, 'ts> {
                         DecompSource::Borrowed(s) => Some(*s),
                     };
                     if let Some(decomp_data) = decomp_data {
-                        let abs_cursor =
-                            preamble.public_data_start + preamble.entry_cursor;
-                        let remaining_in_preamble =
-                            preamble.public_data_len.saturating_sub(preamble.entry_cursor);
+                        let abs_cursor = preamble.public_data_start + preamble.entry_cursor;
+                        let remaining_in_preamble = preamble
+                            .public_data_len
+                            .saturating_sub(preamble.entry_cursor);
 
                         if remaining_in_preamble >= FIREHOSE_ENTRY_HEADER_SIZE {
                             if let Some(entry_data) =
@@ -597,8 +571,7 @@ impl<'file, 'ts> NoAllocLogStream<'file, 'ts> {
         decomp_generation: u32,
     ) -> Option<Option<NoAllocEntry>> {
         // Parse 24-byte entry header
-        let (rest, log_activity_type) =
-            le_u8::<_, nom::error::Error<&[u8]>>(entry_data).ok()?;
+        let (rest, log_activity_type) = le_u8::<_, nom::error::Error<&[u8]>>(entry_data).ok()?;
 
         if log_activity_type == REMNANT_DATA {
             return None;
@@ -606,11 +579,9 @@ impl<'file, 'ts> NoAllocLogStream<'file, 'ts> {
 
         let (rest, log_type) = le_u8::<_, nom::error::Error<&[u8]>>(rest).ok()?;
         let (rest, flags) = le_u16::<_, nom::error::Error<&[u8]>>(rest).ok()?;
-        let (rest, format_string_location) =
-            le_u32::<_, nom::error::Error<&[u8]>>(rest).ok()?;
+        let (rest, format_string_location) = le_u32::<_, nom::error::Error<&[u8]>>(rest).ok()?;
         let (rest, thread_id) = le_u64::<_, nom::error::Error<&[u8]>>(rest).ok()?;
-        let (rest, continuous_time_delta) =
-            le_u32::<_, nom::error::Error<&[u8]>>(rest).ok()?;
+        let (rest, continuous_time_delta) = le_u32::<_, nom::error::Error<&[u8]>>(rest).ok()?;
         let (rest, continuous_time_delta_upper) =
             le_u16::<_, nom::error::Error<&[u8]>>(rest).ok()?;
         let (rest, data_size) = le_u16::<_, nom::error::Error<&[u8]>>(rest).ok()?;
@@ -635,10 +606,9 @@ impl<'file, 'ts> NoAllocLogStream<'file, 'ts> {
         }
 
         // Calculate continuous time
-        let entry_continuous_time = u64::from(continuous_time_delta)
-            | (u64::from(continuous_time_delta_upper) << 32);
-        let absolute_continuous_time =
-            preamble.base_continuous_time + entry_continuous_time;
+        let entry_continuous_time =
+            u64::from(continuous_time_delta) | (u64::from(continuous_time_delta_upper) << 32);
+        let absolute_continuous_time = preamble.base_continuous_time + entry_continuous_time;
 
         // Calculate wall-clock timestamp
         let timestamp = TimesyncBoot::get_timestamp(
@@ -774,27 +744,22 @@ impl<'file, 'ts> NoAllocLogStream<'file, 'ts> {
         let (input, _chunk_tag) = le_u32::<_, nom::error::Error<&[u8]>>(input).ok()?;
         let (input, _chunk_sub_tag) = le_u32::<_, nom::error::Error<&[u8]>>(input).ok()?;
         let (input, _chunk_data_size) = le_u64::<_, nom::error::Error<&[u8]>>(input).ok()?;
-        let (input, first_number_proc_id) =
-            le_u64::<_, nom::error::Error<&[u8]>>(input).ok()?;
-        let (input, second_number_proc_id) =
-            le_u32::<_, nom::error::Error<&[u8]>>(input).ok()?;
+        let (input, first_number_proc_id) = le_u64::<_, nom::error::Error<&[u8]>>(input).ok()?;
+        let (input, second_number_proc_id) = le_u32::<_, nom::error::Error<&[u8]>>(input).ok()?;
         let (input, ttl) = le_u8::<_, nom::error::Error<&[u8]>>(input).ok()?;
         let (input, collapsed) = le_u8::<_, nom::error::Error<&[u8]>>(input).ok()?;
         // Skip 2 unknown bytes
         let input = input.get(2..)?;
-        let (input, public_data_size) =
-            le_u16::<_, nom::error::Error<&[u8]>>(input).ok()?;
+        let (input, public_data_size) = le_u16::<_, nom::error::Error<&[u8]>>(input).ok()?;
         let (input, private_data_virtual_offset) =
             le_u16::<_, nom::error::Error<&[u8]>>(input).ok()?;
         // Skip unknown2 + unknown3 (4 bytes)
         let input = input.get(4..)?;
-        let (input, base_continuous_time) =
-            le_u64::<_, nom::error::Error<&[u8]>>(input).ok()?;
+        let (input, base_continuous_time) = le_u64::<_, nom::error::Error<&[u8]>>(input).ok()?;
 
         // Public data starts right after the preamble fixed header
         let public_data_size_offset: u16 = 16;
-        let public_data_len =
-            public_data_size.saturating_sub(public_data_size_offset) as usize;
+        let public_data_len = public_data_size.saturating_sub(public_data_size_offset) as usize;
 
         if input.len() < public_data_len {
             return None;
@@ -878,11 +843,8 @@ impl<'file, 'ts> NoAllocLogStream<'file, 'ts> {
                     crate::util::encode_standard(&sd.statedump_data)
                 ),
             },
-            0x3 => Statedump::<&str>::parse_statedump_object(
-                &sd.statedump_data,
-                sd.title_name,
-            )
-            .to_string(),
+            0x3 => Statedump::<&str>::parse_statedump_object(&sd.statedump_data, sd.title_name)
+                .to_string(),
             _ => {
                 let results = crate::util::extract_string(&sd.statedump_data);
                 match results {
@@ -969,17 +931,15 @@ impl<'file, 'ts> NoAllocLogStream<'file, 'ts> {
                 HEADER_CHUNK => {
                     self.parse_header(chunk_data);
                 }
-                CATALOG_CHUNK => {
-                    match CatalogChunk::parse_catalog(chunk_data) {
-                        Ok((_, catalog)) => {
-                            self.current_catalog = Some(catalog);
-                            self.catalog_index += 1;
-                        }
-                        Err(err) => {
-                            error!("[noalloc_iterator] Failed to parse catalog: {err:?}");
-                        }
+                CATALOG_CHUNK => match CatalogChunk::parse_catalog(chunk_data) {
+                    Ok((_, catalog)) => {
+                        self.current_catalog = Some(catalog);
+                        self.catalog_index += 1;
                     }
-                }
+                    Err(err) => {
+                        error!("[noalloc_iterator] Failed to parse catalog: {err:?}");
+                    }
+                },
                 CHUNKSET_CHUNK => {
                     if self.current_catalog.is_some() && self.process_chunkset(chunk_data) {
                         return true; // inner_state is now set up
@@ -1055,11 +1015,10 @@ impl<'file, 'ts> NoAllocLogStream<'file, 'ts> {
             false
         } else if signature == BV41_COMPRESSED {
             // Compressed data
-            let (input, block_size) =
-                match le_u32::<_, nom::error::Error<&[u8]>>(input) {
-                    Ok(r) => r,
-                    Err(_) => return false,
-                };
+            let (input, block_size) = match le_u32::<_, nom::error::Error<&[u8]>>(input) {
+                Ok(r) => r,
+                Err(_) => return false,
+            };
             let compressed_data = match input.get(..block_size as usize) {
                 Some(d) => d,
                 None => return false,
@@ -1115,14 +1074,13 @@ impl<'file, 'ts> NoAllocLogStream<'file, 'ts> {
         provider: &mut dyn FileProvider,
         log_data: &mut LogData,
     ) -> Option<()> {
-        let non_activity =
-            match FirehoseNonActivity::parse_non_activity(raw_data, &entry.flags) {
-                Ok((_, na)) => na,
-                Err(err) => {
-                    warn!("[noalloc_iterator] Failed to parse non-activity: {err:?}");
-                    return None;
-                }
-            };
+        let non_activity = match FirehoseNonActivity::parse_non_activity(raw_data, &entry.flags) {
+            Ok((_, na)) => na,
+            Err(err) => {
+                warn!("[noalloc_iterator] Failed to parse non-activity: {err:?}");
+                return None;
+            }
+        };
 
         log_data.activity_id = u64::from(non_activity.unknown_activity_id);
 
@@ -1185,9 +1143,7 @@ impl<'file, 'ts> NoAllocLogStream<'file, 'ts> {
                 log_data.message_entries = item_data.item_info;
             }
             Err(err) => {
-                warn!(
-                    "[noalloc_iterator] Failed to get non-activity strings: {err:?}"
-                );
+                warn!("[noalloc_iterator] Failed to get non-activity strings: {err:?}");
             }
         }
 
@@ -1215,8 +1171,7 @@ impl<'file, 'ts> NoAllocLogStream<'file, 'ts> {
         log_data: &mut LogData,
     ) -> Option<()> {
         let activity =
-            match FirehoseActivity::parse_activity(raw_data, &entry.flags, &entry.log_type)
-            {
+            match FirehoseActivity::parse_activity(raw_data, &entry.flags, &entry.log_type) {
                 Ok((_, a)) => a,
                 Err(err) => {
                     warn!("[noalloc_iterator] Failed to parse activity: {err:?}");
@@ -1267,9 +1222,7 @@ impl<'file, 'ts> NoAllocLogStream<'file, 'ts> {
                 log_data.message_entries = item_data.item_info;
             }
             Err(err) => {
-                warn!(
-                    "[noalloc_iterator] Failed to get activity strings: {err:?}"
-                );
+                warn!("[noalloc_iterator] Failed to get activity strings: {err:?}");
             }
         }
 
@@ -1354,9 +1307,7 @@ impl<'file, 'ts> NoAllocLogStream<'file, 'ts> {
                 log_data.message_entries = item_data.item_info;
             }
             Err(err) => {
-                warn!(
-                    "[noalloc_iterator] Failed to get signpost strings: {err:?}"
-                );
+                warn!("[noalloc_iterator] Failed to get signpost strings: {err:?}");
             }
         }
 
@@ -1430,9 +1381,7 @@ impl<'file, 'ts> NoAllocLogStream<'file, 'ts> {
                 log_data.message_entries = item_data.item_info;
             }
             Err(err) => {
-                warn!(
-                    "[noalloc_iterator] Failed to get trace strings: {err:?}"
-                );
+                warn!("[noalloc_iterator] Failed to get trace strings: {err:?}");
             }
         }
 
@@ -1440,11 +1389,7 @@ impl<'file, 'ts> NoAllocLogStream<'file, 'ts> {
     }
 
     /// Collect message items from a raw firehose entry using the existing parser.
-    fn collect_items_for_entry(
-        &self,
-        entry: &NoAllocEntry,
-        _raw_data: &[u8],
-    ) -> FirehoseItemData {
+    fn collect_items_for_entry(&self, entry: &NoAllocEntry, _raw_data: &[u8]) -> FirehoseItemData {
         // The item data follows the sub-type header in the raw firehose data.
         // We use collect_items which expects the data after the sub-type header
         // and formatters. However, the existing parsers (parse_non_activity, etc.)
@@ -1479,21 +1424,17 @@ impl<'file, 'ts> NoAllocLogStream<'file, 'ts> {
         // Re-parse to get the remainder after the sub-type header
         let raw_data = _raw_data;
         let remainder = match entry.log_activity_type {
-            NON_ACTIVITY_TYPE => {
-                FirehoseNonActivity::parse_non_activity(raw_data, &entry.flags)
-                    .ok()
-                    .map(|(r, _)| r)
-            }
+            NON_ACTIVITY_TYPE => FirehoseNonActivity::parse_non_activity(raw_data, &entry.flags)
+                .ok()
+                .map(|(r, _)| r),
             ACTIVITY_TYPE => {
                 FirehoseActivity::parse_activity(raw_data, &entry.flags, &entry.log_type)
                     .ok()
                     .map(|(r, _)| r)
             }
-            SIGNPOST_TYPE => {
-                FirehoseSignpost::parse_signpost(raw_data, &entry.flags)
-                    .ok()
-                    .map(|(r, _)| r)
-            }
+            SIGNPOST_TYPE => FirehoseSignpost::parse_signpost(raw_data, &entry.flags)
+                .ok()
+                .map(|(r, _)| r),
             TRACE_TYPE => FirehoseTrace::parse_firehose_trace(raw_data)
                 .ok()
                 .map(|(r, _)| r),
@@ -1516,11 +1457,7 @@ impl<'file, 'ts> NoAllocLogStream<'file, 'ts> {
                     Ok(v) => v,
                     Err(_) => return FirehoseItemData::default(),
                 };
-                match FirehosePreamble::collect_items(
-                    rest,
-                    &number_items,
-                    &entry.flags,
-                ) {
+                match FirehosePreamble::collect_items(rest, &number_items, &entry.flags) {
                     Ok((_, items)) => items,
                     Err(_) => FirehoseItemData::default(),
                 }
@@ -1599,8 +1536,9 @@ impl<'file, 'ts> NoAllocLogStream<'file, 'ts> {
             return;
         }
 
-        let string_offset =
-            non_activity.private_strings_offset.saturating_sub(private_data_virtual_offset);
+        let string_offset = non_activity
+            .private_strings_offset
+            .saturating_sub(private_data_virtual_offset);
 
         if let Ok((private_string_start, _)) =
             take::<_, _, nom::error::Error<&[u8]>>(string_offset)(private_input)
@@ -1880,7 +1818,10 @@ mod tests {
             noalloc_count, tracev3_count,
             "NoAllocLogStream yielded {noalloc_count} entries, TraceV3Stream yielded {tracev3_count}"
         );
-        assert!(noalloc_count > 1000, "Expected >1000 entries, got {noalloc_count}");
+        assert!(
+            noalloc_count > 1000,
+            "Expected >1000 entries, got {noalloc_count}"
+        );
     }
 
     #[test]
@@ -1932,7 +1873,11 @@ mod tests {
             .ok();
 
         assert_eq!(noalloc_entries.len(), tracev3_entries.len());
-        for (i, (na, tv)) in noalloc_entries.iter().zip(tracev3_entries.iter()).enumerate() {
+        for (i, (na, tv)) in noalloc_entries
+            .iter()
+            .zip(tracev3_entries.iter())
+            .enumerate()
+        {
             assert_eq!(na.0, tv.0, "pid mismatch at entry {i}");
             assert_eq!(na.1, tv.1, "euid mismatch at entry {i}");
             assert_eq!(na.2, tv.2, "thread_id mismatch at entry {i}");
@@ -1987,8 +1932,7 @@ mod tests {
         let cache = stream.into_oversize_cache();
 
         // Verify cache can be carried forward
-        let mut stream2 =
-            NoAllocLogStream::with_oversize_cache(&buffer, &timesync_data, cache);
+        let mut stream2 = NoAllocLogStream::with_oversize_cache(&buffer, &timesync_data, cache);
         let initial_cache_len = stream2.oversize_cache().len();
         stream2.for_each_entry(|_| {});
 

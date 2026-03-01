@@ -1,4 +1,5 @@
 use crate::{
+    constants::{CATALOG_CHUNK, CHUNK_PREAMBLE_SIZE, CHUNKSET_CHUNK, HEADER_CHUNK},
     header::HeaderChunkOwned,
     preamble::LogPreamble,
     unified_log::{LogData, UnifiedLogCatalogData, UnifiedLogData},
@@ -43,11 +44,6 @@ impl Iterator for UnifiedLogIterator {
         let mut catalog_data = UnifiedLogCatalogData::default();
 
         let mut input = &self.data[self.cursor..];
-        let chunk_preamble_size = 16; // Include preamble size in total chunk size
-
-        let header_chunk = 0x1000;
-        let catalog_chunk = 0x600b;
-        let chunkset_chunk = 0x600d;
 
         loop {
             let preamble_result = LogPreamble::detect_preamble(input);
@@ -61,7 +57,7 @@ impl Iterator for UnifiedLogIterator {
             let chunk_size = preamble.chunk_data_size;
 
             // Grab all data associated with Unified Log entry (chunk)
-            let chunk_result = nom_bytes(input, &(chunk_size + chunk_preamble_size));
+            let chunk_result = nom_bytes(input, &(chunk_size + CHUNK_PREAMBLE_SIZE as u64));
 
             let (data, chunk_data) = match chunk_result {
                 Ok(result) => result,
@@ -71,9 +67,9 @@ impl Iterator for UnifiedLogIterator {
                 }
             };
 
-            if preamble.chunk_tag == header_chunk {
+            if preamble.chunk_tag == HEADER_CHUNK {
                 LogData::get_header_data(chunk_data, &mut unified_log_data_true);
-            } else if preamble.chunk_tag == catalog_chunk {
+            } else if preamble.chunk_tag == CATALOG_CHUNK {
                 if catalog_data.catalog.chunk_tag != 0 {
                     // Record cursor position instead of copying remaining data
                     self.cursor = self.data.len() - input.len();
@@ -81,7 +77,7 @@ impl Iterator for UnifiedLogIterator {
                 }
 
                 LogData::get_catalog_data(chunk_data, &mut catalog_data);
-            } else if preamble.chunk_tag == chunkset_chunk {
+            } else if preamble.chunk_tag == CHUNKSET_CHUNK {
                 LogData::get_chunkset_data(
                     chunk_data,
                     &mut catalog_data,
@@ -112,7 +108,7 @@ impl Iterator for UnifiedLogIterator {
                 break;
             }
             input = data;
-            if input.len() < chunk_preamble_size as usize {
+            if input.len() < CHUNK_PREAMBLE_SIZE {
                 warn!(
                     "Not enough data for preamble header, needed 16 bytes. Got: {}",
                     input.len()

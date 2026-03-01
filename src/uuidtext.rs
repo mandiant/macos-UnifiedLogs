@@ -11,6 +11,8 @@ use nom::number::complete::le_u32;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::constants::UUIDTEXT_SIGNATURE;
+
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct UUIDText {
     pub uuid: Uuid,
@@ -29,12 +31,11 @@ pub struct UUIDTextEntry {
 impl UUIDText {
     /// Parse the UUID files in uuidinfo directory. Contains the base log message string
     pub fn parse_uuidtext(data: &[u8]) -> nom::IResult<&[u8], UUIDText> {
-        let expected_uuidtext_signature = 0x66778899;
         let (input, signature) = le_u32(data)?;
 
-        if expected_uuidtext_signature != signature {
+        if UUIDTEXT_SIGNATURE != signature {
             error!(
-                "[macos-unifiedlogs] Incorrect UUIDText header signature. Expected {expected_uuidtext_signature}. Got: {signature}"
+                "[macos-unifiedlogs] Incorrect UUIDText header signature. Expected {UUIDTEXT_SIGNATURE}. Got: {signature}"
             );
             return Err(nom::Err::Incomplete(Needed::Unknown));
         }

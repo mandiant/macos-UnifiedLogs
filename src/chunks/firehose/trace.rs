@@ -226,12 +226,10 @@ mod tests {
 
         let log_data = parse_log(handle).unwrap();
 
-        let activity_type = 0x3;
-
         for catalog_data in log_data.catalog_data {
             for preamble in catalog_data.firehose {
                 for firehose in preamble.public_data {
-                    if firehose.unknown_log_activity_type == activity_type {
+                    if firehose.unknown_log_activity_type == crate::constants::TRACE_TYPE {
                         let (_, message_data) = FirehoseTrace::get_firehose_trace_strings(
                             &mut provider,
                             u64::from(firehose.format_string_location),

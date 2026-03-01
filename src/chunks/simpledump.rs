@@ -152,7 +152,7 @@ mod tests {
             32, 49, 0, 0, 0, 0, 0, 0,
         ];
         let (_, results) = SimpleDump::parse_simpledump(&test_data).unwrap();
-        assert_eq!(results.chunk_tag, 24580); // 0x6004 - simpledump chunk tag
+        assert_eq!(results.chunk_tag, crate::constants::SIMPLEDUMP_CHUNK);
         assert_eq!(results.chunk_subtag, 0);
         assert_eq!(results.chunk_data_size, 219);
         assert_eq!(results.first_proc_id, 1);

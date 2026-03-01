@@ -42,7 +42,11 @@ impl Oversize {
         let (input, data_ref_index) = le_u32(input)?;
         let (input, public_data_size) = le_u16(input)?;
         let (input, private_data_size) = le_u16(input)?;
-        let unknown_reserved: [u8; 3] = [unknown_reserved_slice[0], unknown_reserved_slice[1], unknown_reserved_slice[2]];
+        let unknown_reserved: [u8; 3] = [
+            unknown_reserved_slice[0],
+            unknown_reserved_slice[1],
+            unknown_reserved_slice[2],
+        ];
 
         let mut oversize_data_size = (public_data_size + private_data_size) as usize;
 
@@ -295,7 +299,7 @@ mod tests {
             108, 105, 98, 10, 10, 10, 0,
         ];
         let (_, oversize_results) = Oversize::parse_oversize(&test_data).unwrap();
-        assert_eq!(oversize_results.chunk_tag, 0x6002);
+        assert_eq!(oversize_results.chunk_tag, crate::constants::OVERSIZE_CHUNK);
         assert_eq!(oversize_results.chunk_subtag, 0);
         assert_eq!(oversize_results.chunk_data_size, 3354);
         assert_eq!(oversize_results.first_proc_id, 192);
@@ -321,7 +325,7 @@ mod tests {
         let buffer = fs::read(test_path).unwrap();
 
         let (_, oversize_results) = Oversize::parse_oversize(&buffer).unwrap();
-        assert_eq!(oversize_results.chunk_tag, 0x6002);
+        assert_eq!(oversize_results.chunk_tag, crate::constants::OVERSIZE_CHUNK);
         assert_eq!(oversize_results.chunk_subtag, 0);
         assert_eq!(oversize_results.chunk_data_size, 2963);
         assert_eq!(oversize_results.first_proc_id, 86);

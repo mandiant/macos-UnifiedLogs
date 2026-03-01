@@ -177,8 +177,7 @@ mod tests {
         let timesync_data = collect_timesync(&provider).unwrap();
         let buf = persist_file();
 
-        let iter =
-            LogDataIterator::new(buf, &mut provider, &timesync_data, false);
+        let iter = LogDataIterator::new(buf, &mut provider, &timesync_data, false);
 
         let mut total = 0;
         for item in iter {
@@ -197,8 +196,7 @@ mod tests {
         let timesync_data = collect_timesync(&provider).unwrap();
         let buf = persist_file();
 
-        let iter =
-            LogDataIterator::new(buf, &mut provider, &timesync_data, false);
+        let iter = LogDataIterator::new(buf, &mut provider, &timesync_data, false);
 
         let entries: Vec<LogData> = iter
             .filter_map(|item| match item {
@@ -248,8 +246,7 @@ mod tests {
         let timesync_data = collect_timesync(&provider).unwrap();
         let buf = persist_file();
 
-        let mut iter =
-            LogDataIterator::new(buf, &mut provider, &timesync_data, false);
+        let mut iter = LogDataIterator::new(buf, &mut provider, &timesync_data, false);
 
         // Exhaust the iterator, then retrieve the cache
         while iter.next().is_some() {}
@@ -265,8 +262,7 @@ mod tests {
         let mut provider = LogarchiveProvider::new(archive_path.as_path());
         let timesync_data = collect_timesync(&provider).unwrap();
 
-        let iter =
-            LogDataIterator::new(Vec::new(), &mut provider, &timesync_data, true);
+        let iter = LogDataIterator::new(Vec::new(), &mut provider, &timesync_data, true);
 
         let count = iter.count();
         assert_eq!(count, 0);

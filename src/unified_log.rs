@@ -21,6 +21,7 @@ use crate::chunks::oversize::Oversize;
 use crate::chunks::simpledump::SimpleDumpOwned;
 use crate::chunks::statedump::{Statedump, StatedumpOwned};
 use crate::chunkset::ChunksetChunk;
+use crate::constants::*;
 use crate::header::{HeaderChunk, HeaderChunkOwned};
 use crate::message::format_firehose_log_message;
 use crate::preamble::LogPreamble;
@@ -264,7 +265,7 @@ impl Iterator for LogIterator<'_> {
                 // 0x6 - Signpost entry. Ex: process signpost, thread signpost, system signpost
                 // 0x3 - Trace log entry. Ex: trace default
                 match firehose.unknown_log_activity_type {
-                    0x4 => {
+                    NON_ACTIVITY_TYPE => {
                         log_data.activity_id =
                             u64::from(firehose.firehose_non_activity.unknown_activity_id);
                         let message_data = FirehoseNonActivity::get_firehose_nonactivity_strings(
@@ -364,12 +365,12 @@ impl Iterator for LogIterator<'_> {
                             }
                         }
                     }
-                    0x7 => {
+                    LOSS_TYPE => {
                         // No message data in loss entries
                         log_data.event_type = EventType::Loss;
                         log_data.log_type = LogType::Loss;
                     }
-                    0x2 => {
+                    ACTIVITY_TYPE => {
                         log_data.activity_id =
                             u64::from(firehose.firehose_activity.unknown_activity_id);
                         let message_data = FirehoseActivity::get_firehose_activity_strings(
@@ -432,7 +433,7 @@ impl Iterator for LogIterator<'_> {
                             }
                         }
                     }
-                    0x6 => {
+                    SIGNPOST_TYPE => {
                         log_data.activity_id =
                             u64::from(firehose.firehose_signpost.unknown_activity_id);
                         let message_data = FirehoseSignpost::get_firehose_signpost(
@@ -533,7 +534,7 @@ impl Iterator for LogIterator<'_> {
                             }
                         }
                     }
-                    0x3 => {
+                    TRACE_TYPE => {
                         let message_data = FirehoseTrace::get_firehose_trace_strings(
                             self.provider,
                             u64::from(firehose.format_string_location),
@@ -739,11 +740,6 @@ impl LogData {
         let mut catalog_data = UnifiedLogCatalogData::default();
 
         let mut input = data;
-        let chunk_preamble_size = 16; // Include preamble size in total chunk size
-
-        let header_chunk = 0x1000;
-        let catalog_chunk = 0x600b;
-        let chunkset_chunk = 0x600d;
         // Loop through traceV3 file until all file contents are read
         while !input.is_empty() {
             let (_, preamble) = LogPreamble::detect_preamble(input)?;
@@ -760,18 +756,18 @@ impl LogData {
                     )));
                 }
             };
-            let (data, chunk_data) = take(chunk_size + chunk_preamble_size)(input)?;
+            let (data, chunk_data) = take(chunk_size + CHUNK_PREAMBLE_SIZE)(input)?;
 
-            if preamble.chunk_tag == header_chunk {
+            if preamble.chunk_tag == HEADER_CHUNK {
                 LogData::get_header_data(chunk_data, &mut unified_log_data_true);
-            } else if preamble.chunk_tag == catalog_chunk {
+            } else if preamble.chunk_tag == CATALOG_CHUNK {
                 if catalog_data.catalog.chunk_tag != 0 {
                     unified_log_data_true.catalog_data.push(catalog_data);
                 }
                 catalog_data = UnifiedLogCatalogData::default();
 
                 LogData::get_catalog_data(chunk_data, &mut catalog_data);
-            } else if preamble.chunk_tag == chunkset_chunk {
+            } else if preamble.chunk_tag == CHUNKSET_CHUNK {
                 LogData::get_chunkset_data(
                     chunk_data,
                     &mut catalog_data,
@@ -804,7 +800,7 @@ impl LogData {
                 break;
             }
             input = data;
-            if input.len() < chunk_preamble_size {
+            if input.len() < CHUNK_PREAMBLE_SIZE {
                 warn!(
                     "Not enough data for preamble header, needed 16 bytes. Got: {:?}",
                     input.len()
@@ -932,11 +928,11 @@ impl LogData {
     /// Return the log event type based on parsed log data
     fn get_event_type(event_type: u8) -> EventType {
         match event_type {
-            0x4 => EventType::Log,
-            0x2 => EventType::Activity,
-            0x3 => EventType::Trace,
-            0x6 => EventType::Signpost,
-            0x7 => EventType::Loss,
+            NON_ACTIVITY_TYPE => EventType::Log,
+            ACTIVITY_TYPE => EventType::Activity,
+            TRACE_TYPE => EventType::Trace,
+            SIGNPOST_TYPE => EventType::Signpost,
+            LOSS_TYPE => EventType::Loss,
             _ => EventType::Unknown,
         }
     }

@@ -8,6 +8,8 @@
 use log::error;
 use nom::Needed;
 use nom::number::complete::{be_u128, le_i64, le_u16, le_u32, le_u64};
+
+use crate::constants::{TIMESYNC_BOOT_SIGNATURE, TIMESYNC_SIGNATURE};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -48,8 +50,7 @@ impl TimesyncBoot {
         while !input.is_empty() {
             let (_, timesync_signature) = le_u32(input)?;
 
-            let timesync_sig: u32 = 0x207354;
-            if timesync_signature == timesync_sig {
+            if timesync_signature == TIMESYNC_SIGNATURE {
                 let (timesync_input, timesync) = TimesyncBoot::parse_timesync(input)?;
                 timesync_boot.timesync.push(timesync);
                 input = timesync_input;
@@ -78,10 +79,9 @@ impl TimesyncBoot {
     fn parse_timesync_boot(data: &[u8]) -> nom::IResult<&[u8], TimesyncBoot> {
         let (input, timesync_signature) = le_u16(data)?;
 
-        let expected_boot_signature = 0xbbb0;
-        if expected_boot_signature != timesync_signature {
+        if TIMESYNC_BOOT_SIGNATURE != timesync_signature {
             error!(
-                "[macos-unifiedlogs] Incorrect Timesync boot header signature. Expected {expected_boot_signature}. Got: {timesync_signature}",
+                "[macos-unifiedlogs] Incorrect Timesync boot header signature. Expected {TIMESYNC_BOOT_SIGNATURE}. Got: {timesync_signature}",
             );
             return Err(nom::Err::Incomplete(Needed::Unknown));
         }
@@ -113,10 +113,9 @@ impl TimesyncBoot {
     fn parse_timesync(data: &[u8]) -> nom::IResult<&[u8], Timesync> {
         let (input, timesync_signature) = le_u32(data)?;
 
-        let expected_record_signature = 0x207354;
-        if expected_record_signature != timesync_signature {
+        if TIMESYNC_SIGNATURE != timesync_signature {
             error!(
-                "[macos-unifiedlogs] Incorrect Timesync record header signature. Expected {expected_record_signature}. Got: {timesync_signature}",
+                "[macos-unifiedlogs] Incorrect Timesync record header signature. Expected {TIMESYNC_SIGNATURE}. Got: {timesync_signature}",
             );
             return Err(nom::Err::Incomplete(Needed::Unknown));
         }

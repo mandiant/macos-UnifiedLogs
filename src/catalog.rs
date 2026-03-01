@@ -512,7 +512,7 @@ mod tests {
 
         let (_, catalog_data) = CatalogChunk::parse_catalog(&test_chunk_catalog).unwrap();
 
-        assert_eq!(catalog_data.chunk_tag, 0x600b);
+        assert_eq!(catalog_data.chunk_tag, crate::constants::CATALOG_CHUNK);
         assert_eq!(catalog_data.chunk_sub_tag, 17);
         assert_eq!(catalog_data.chunk_data_size, 464);
         assert_eq!(catalog_data.catalog_subsystem_strings_offset, 32);

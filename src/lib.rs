@@ -81,6 +81,7 @@
 mod catalog;
 mod chunks;
 mod chunkset;
+mod constants;
 /// Parsers to extract specific log objects
 mod decoders;
 /// Functions to parse the shared string cache
@@ -99,13 +100,13 @@ pub mod noalloc_iterator;
 /// Functions to extract and assemble log entries from the macOS Unified Log
 pub mod parser;
 mod preamble;
-/// Functions to parse time data associated with the Unified Log
-pub mod timesync;
-pub mod traits;
-/// Zero-allocation streaming API for tracev3 files
-pub mod tracev3_stream;
 /// On-demand string resolution for structural entries
 pub mod string_resolver;
+/// Functions to parse time data associated with the Unified Log
+pub mod timesync;
+/// Zero-allocation streaming API for tracev3 files
+pub mod tracev3_stream;
+pub mod traits;
 /// Functions to parse tracev3 files
 pub mod unified_log;
 mod util;
