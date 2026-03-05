@@ -579,7 +579,8 @@ impl FirehosePreamble {
             })
             .collect::<Vec<String>>();
 
-        let padding_size = padding_size_four(u64::try_from(offset_count).unwrap());
+        // offset_count derives from le_u16 (max 65535), so the cast to u64 is always safe
+        let padding_size = padding_size_four(offset_count as u64);
         let padding_size = match u64_to_usize(padding_size) {
             Some(p) => p,
             None => {

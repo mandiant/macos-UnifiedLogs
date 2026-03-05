@@ -563,21 +563,35 @@ pub(crate) fn dns_acceptable(data: &str) -> String {
 }
 
 /// Translate DNS getaddrinfo log values
-pub(crate) fn dns_getaddrinfo_opts(data: &str) -> Result<&'static str, DecoderError<'_>> {
-    let message = match data {
-        "0" => "0x0 {}",
-        "8" => "0x8 {use-failover}",
-        "12" => "0xC {in-app-browser, use-failover}",
-        "24" => "0x18 {use-failover, prohibit-encrypted-dns}",
-        _ => {
-            return Err(DecoderError::Parse {
-                input: data.as_bytes(),
-                parser_name: "dns getaddrinfo opts",
-                message: "Unknown DNS getaddrinfo options",
-            });
+pub(crate) fn dns_getaddrinfo_opts(data: &str) -> Result<String, DecoderError<'_>> {
+    let value = data.parse::<u32>().map_err(|_| DecoderError::Parse {
+        input: data.as_bytes(),
+        parser_name: "dns getaddrinfo opts",
+        message: "Unknown DNS getaddrinfo options",
+    })?;
+
+    const FLAGS: &[(u32, &str)] = &[
+        (0x4, "in-app-browser"),
+        (0x8, "use-failover"),
+        (0x10, "prohibit-encrypted-dns"),
+    ];
+
+    let mut parts = Vec::new();
+    let mut known_bits = 0u32;
+
+    for &(bit, name) in FLAGS {
+        if (value & bit) != 0 {
+            known_bits |= bit;
+            parts.push(name.to_string());
         }
-    };
-    Ok(message)
+    }
+
+    let unknown_bits = value & !known_bits;
+    if unknown_bits != 0 {
+        parts.push(format!("unknown(0x{unknown_bits:x})"));
+    }
+
+    Ok(format!("0x{value:x} {{{}}}", parts.join(", ")))
 }
 
 #[cfg(test)]
@@ -825,9 +839,20 @@ mod tests {
 
     #[test]
     fn test_dns_getaddrinfo_opts() {
-        let test_data = "8";
-
-        let result = dns_getaddrinfo_opts(test_data).unwrap();
-        assert_eq!(result, "0x8 {use-failover}");
+        assert_eq!(dns_getaddrinfo_opts("0").unwrap(), "0x0 {}");
+        assert_eq!(dns_getaddrinfo_opts("8").unwrap(), "0x8 {use-failover}");
+        assert_eq!(
+            dns_getaddrinfo_opts("12").unwrap(),
+            "0xc {in-app-browser, use-failover}"
+        );
+        assert_eq!(
+            dns_getaddrinfo_opts("24").unwrap(),
+            "0x18 {use-failover, prohibit-encrypted-dns}"
+        );
+        assert_eq!(dns_getaddrinfo_opts("32").unwrap(), "0x20 {unknown(0x20)}");
+        assert_eq!(
+            dns_getaddrinfo_opts("40").unwrap(),
+            "0x28 {use-failover, unknown(0x20)}"
+        );
     }
 }

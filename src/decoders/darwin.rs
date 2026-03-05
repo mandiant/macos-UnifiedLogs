@@ -33,7 +33,7 @@ pub(crate) fn errno_codes(errno: &str) -> String {
         "19" => "Operation not supported by device",
         "20" => "Not a directory",
         "21" => "Is a directory",
-        "22" => "Invalid arguement",
+        "22" => "Invalid argument",
         "23" => "Too many open files in system",
         "24" => "Too many open files",
         "25" => "Inappropriate ioctl for devices",

@@ -449,6 +449,7 @@ fn test_parse_all_logs_private_with_public_mix_big_sur() {
     let mut bssid_count = 0;
     let mut dns_query_count = 0;
     let mut bofa_count = 0;
+    let mut invalid_argument = 0;
 
     for logs in log_data_vec {
         if logs.message.contains("<not found>") {
@@ -476,6 +477,10 @@ fn test_parse_all_logs_private_with_public_mix_big_sur() {
         if logs.message.contains("bankofamerica") {
             bofa_count += 1;
         }
+
+        if logs.message.contains("send failed: Invalid argument") {
+            invalid_argument += 1;
+        }
     }
     assert_eq!(not_found, 5);
     assert_eq!(user_not_found, 2);
@@ -483,6 +488,7 @@ fn test_parse_all_logs_private_with_public_mix_big_sur() {
     assert_eq!(bssid_count, 39);
     assert_eq!(dns_query_count, 41);
     assert_eq!(bofa_count, 573);
+    assert_eq!(invalid_argument, 15);
 }
 
 #[test]

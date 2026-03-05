@@ -73,7 +73,11 @@ db-urls = ["https://github.com/rustsec/advisory-db"]
 # notice = "warn"
 # A list of advisory IDs to ignore. Note that ignored advisories will still
 # output a note when they are encountered.
-ignore = []
+ignore = [
+    # Transitive dep via plist -> time; DoS in RFC 2822 parsing (not used by this library).
+    # No Cargo.lock committed, so we cannot pin the resolution. Safe to ignore.
+    "RUSTSEC-2026-0009",
+]
 # Threshold for security vulnerabilities, any vulnerability with a CVSS score
 # lower than the range specified will be ignored. Note that ignored advisories
 # will still output a note when they are encountered.
