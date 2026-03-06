@@ -47,6 +47,11 @@ struct ParseContext<'a> {
     bookmark: Arc<Mutex<Bookmark>>,
     context: &'a mut IterationContext,
     resume: bool,
+    // Snapshot of bookmark timestamp at start of this run.
+    // Important: tracev3 files are not guaranteed to be processed in timestamp order.
+    // We must not advance the filter threshold mid-run, or we can incorrectly drop
+    // older entries from later-processed files.
+    resume_timestamp: f64,
 }
 
 /// Filter log results by bookmark and update bookmark with max timestamp.
@@ -56,6 +61,7 @@ fn filter_and_update_bookmark(
     results: Vec<LogData>,
     bookmark: &Arc<Mutex<Bookmark>>,
     resume: bool,
+    resume_timestamp: f64,
 ) -> (Vec<LogData>, usize) {
     if !resume {
         return (results, 0);
@@ -67,15 +73,13 @@ fn filter_and_update_bookmark(
         .map(|r| r.time)
         .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
-    // Filter results by bookmark
+    // Filter results using the timestamp captured at the start of the run.
+    // Do not consult (or mutate) the shared bookmark while filtering.
     let mut skipped = 0;
     let filtered_results: Vec<LogData> = results
         .into_iter()
         .filter(|r| {
-            let should_process = bookmark
-                .lock()
-                .is_ok_and(|book| book.should_process_entry(r.time));
-            if should_process {
+            if r.time > resume_timestamp {
                 true
             } else {
                 skipped += 1;
@@ -461,10 +465,20 @@ fn parse_trace_file(
             evidence: String::new(),
         },
     };
+    let resume_timestamp = if resume {
+        bookmark
+            .lock()
+            .map(|b| b.last_timestamp)
+            .unwrap_or(0.0)
+    } else {
+        0.0
+    };
+
     let mut parse_context = ParseContext {
         bookmark,
         context: &mut context,
         resume,
+        resume_timestamp,
     };
     // We need to persist the Oversize log entries (they contain large strings that don't fit in normal log entries)
     // Some log entries have Oversize strings located in different tracev3 files.
@@ -530,8 +544,12 @@ fn parse_trace_file(
         let (results, _) = build_log(&leftover_data, provider, timesync_data, include_missing);
 
         // Filter by bookmark and update bookmark with max timestamp seen
-        let (filtered_results, new_skipped) =
-            filter_and_update_bookmark(results, &parse_context.bookmark, parse_context.resume);
+        let (filtered_results, new_skipped) = filter_and_update_bookmark(
+            results,
+            &parse_context.bookmark,
+            parse_context.resume,
+            parse_context.resume_timestamp,
+        );
         log_count += filtered_results.len();
         skipped_count += new_skipped;
 
@@ -592,8 +610,12 @@ fn iterate_chunks(
         let (results, missing_logs) = build_log(&chunk, provider, timesync_data, exclude_missing);
 
         // Filter by bookmark and update bookmark with max timestamp seen
-        let (filtered_results, new_skipped) =
-            filter_and_update_bookmark(results, &parse_context.bookmark, parse_context.resume);
+        let (filtered_results, new_skipped) = filter_and_update_bookmark(
+            results,
+            &parse_context.bookmark,
+            parse_context.resume,
+            parse_context.resume_timestamp,
+        );
         skipped += new_skipped;
         count += filtered_results.len();
         parse_context.context.oversize_strings.oversize = chunk.oversize;
