@@ -1,0 +1,244 @@
+// Copyright 2022 Mandiant, Inc. All Rights Reserved
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software distributed under the License
+// is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and limitations under the License.
+
+#[cfg(feature = "rewrite_behave_previous")]
+use super::DecoderError;
+#[cfg(feature = "rewrite_behave_previous")]
+use crate::rewrite::helpers::decode_standard;
+#[cfg(feature = "rewrite_behave_previous")]
+use log::warn;
+#[cfg(feature = "rewrite_behave_previous")]
+use nom::number::complete::{be_u8, be_u16};
+use nom::{
+  Parser,
+  combinator::map,
+  number::complete::{be_u32, be_u128},
+};
+#[cfg(feature = "rewrite_behave_previous")]
+use std::fmt::Display;
+use std::net::{Ipv4Addr, Ipv6Addr};
+
+#[cfg(feature = "rewrite_behave_previous")]
+/// Parse an IPv6 address
+pub(crate) fn ipv_six(input: &str) -> Result<Ipv6Addr, DecoderError<'_>> {
+  let decoded_data = decode_standard(input).map_err(|_| DecoderError::Parse {
+    input: input.as_bytes(),
+    parser_name: "ipv vix",
+    message: "Failed to base64 decode ipv6 data",
+  })?;
+
+  let (_, result) = get_ip_six(&decoded_data).map_err(|_| DecoderError::Parse {
+    input: input.as_bytes(),
+    parser_name: "ipv vix",
+    message: "Failed to get ipv6",
+  })?;
+
+  Ok(result)
+}
+
+#[cfg(feature = "rewrite_behave_previous")]
+/// Parse an IPv4 address
+pub(crate) fn ipv_four(input: &str) -> Result<Ipv4Addr, DecoderError<'_>> {
+  let decoded_data = decode_standard(input).map_err(|_| DecoderError::Parse {
+    input: input.as_bytes(),
+    parser_name: "ipv four",
+    message: "Failed to base64 decode ipv4 data",
+  })?;
+
+  let (_, result) = get_ip_four(&decoded_data).map_err(|_| DecoderError::Parse {
+    input: input.as_bytes(),
+    parser_name: "ipv four",
+    message: "Failed to get ipv4",
+  })?;
+
+  Ok(result)
+}
+
+#[cfg(feature = "rewrite_behave_previous")]
+/// Parse a sockaddr structure
+pub(crate) fn sockaddr(input: &str) -> Result<SockaddrData, DecoderError<'_>> {
+  if input.is_empty() {
+    return Ok(SockaddrData::Unknown { family: 0 });
+  }
+
+  let decoded_data = decode_standard(input).map_err(|_| DecoderError::Parse {
+    input: input.as_bytes(),
+    parser_name: "sock addr",
+    message: "Failed to bas64 decode sockaddr data",
+  })?;
+
+  let (_, result) = get_sockaddr_data(&decoded_data).map_err(|_| DecoderError::Parse {
+    input: input.as_bytes(),
+    parser_name: "ipv four",
+    message: "Failed to get sockaddr structure",
+  })?;
+
+  Ok(result)
+}
+
+#[cfg(feature = "rewrite_behave_previous")]
+#[allow(non_camel_case_types)]
+pub enum SockaddrData {
+  AF_INET {
+    _family: u8,
+    ip_addr: Ipv4Addr,
+    port: u16,
+  },
+  AF_INET6 {
+    _family: u8,
+    ip_addr: Ipv6Addr,
+    port: u16,
+    flow: u32,
+    scope: u32,
+  },
+  Unknown {
+    family: u8,
+  },
+}
+
+#[cfg(feature = "rewrite_behave_previous")]
+impl Display for SockaddrData {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      SockaddrData::AF_INET { ip_addr, port, .. } => {
+        if *port == 0 {
+          write!(f, "{ip_addr}")
+        } else {
+          write!(f, "{ip_addr}:{port}")
+        }
+      }
+      SockaddrData::AF_INET6 {
+        ip_addr,
+        port,
+        flow,
+        scope,
+        ..
+      } => {
+        if *port == 0 {
+          write!(f, "{ip_addr}, Flow ID: {flow}, Scope ID: {scope}")
+        } else {
+          write!(f, "{ip_addr}:{port}, Flow ID: {flow}, Scope ID: {scope}")
+        }
+      }
+      SockaddrData::Unknown { family } => {
+        write!(f, "Unknown sockaddr family: {family}")
+      }
+    }
+  }
+}
+
+#[cfg(feature = "rewrite_behave_previous")]
+/// Get the sockaddr data
+fn get_sockaddr_data(input: &[u8]) -> nom::IResult<&[u8], SockaddrData> {
+  let (input, (_total_length, family)) = (be_u8, be_u8).parse(input)?;
+
+  // Family types seen so far (AF_INET should be used most often)
+  Ok(match family {
+    2 => {
+      // AF_INET
+      let (input, port) = be_u16(input)?;
+      let (input, ip_addr) = get_ip_four(input)?;
+      (
+        input,
+        SockaddrData::AF_INET {
+          _family: family,
+          ip_addr,
+          port,
+        },
+      )
+    }
+    30 => {
+      let mut tup = (be_u16, be_u32, get_ip_six, be_u32);
+      let (input, (port, flow, ip_addr, scope)) = tup.parse(input)?;
+      (
+        input,
+        SockaddrData::AF_INET6 {
+          _family: family,
+          ip_addr,
+          port,
+          flow,
+          scope,
+        },
+      )
+    }
+    _ => {
+      warn!("[macos-unifiedlogs] Unknown sockaddr family: {family}. From: {input:?}");
+      (input, SockaddrData::Unknown { family })
+    }
+  })
+}
+
+/// Get the IPv4 data
+pub(crate) fn get_ip_four(input: &[u8]) -> nom::IResult<&[u8], Ipv4Addr> {
+  map(be_u32, Ipv4Addr::from).parse(input)
+}
+
+/// Get the IPv6 data
+pub(crate) fn get_ip_six(input: &[u8]) -> nom::IResult<&[u8], Ipv6Addr> {
+  map(be_u128, Ipv6Addr::from).parse(input)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::rewrite::helpers::decode_standard;
+
+  #[cfg(feature = "rewrite_behave_previous")]
+  #[test]
+  fn test_ipv_six() {
+    let test_data = "/wIAAAAAAAAAAAAAAAAA+w==";
+    let result = ipv_six(test_data).unwrap();
+    assert_eq!(result.to_string(), "ff02::fb");
+  }
+
+  #[test]
+  fn test_get_ip_six() {
+    let test_data = "/wIAAAAAAAAAAAAAAAAA+w==";
+    let decoded_data_result = decode_standard(test_data).unwrap();
+
+    let (_, result) = get_ip_six(&decoded_data_result).unwrap();
+    assert_eq!(result.to_string(), "ff02::fb");
+  }
+
+  #[cfg(feature = "rewrite_behave_previous")]
+  #[test]
+  fn test_ipv_four() {
+    let test_data = "4AAA+w==";
+    let result = ipv_four(test_data).unwrap();
+    assert_eq!(result.to_string(), "224.0.0.251");
+  }
+
+  #[test]
+  fn test_get_ip_four() {
+    let test_data = "4AAA+w==";
+    let decoded_data_result = decode_standard(test_data).unwrap();
+
+    let (_, result) = get_ip_four(&decoded_data_result).unwrap();
+    assert_eq!(result.to_string(), "224.0.0.251");
+  }
+  #[cfg(feature = "rewrite_behave_previous")]
+  #[test]
+  fn test_sockaddr() {
+    let mut test_data = "EAIAALgciWcAAAAAAAAAAA==";
+    let mut result = sockaddr(test_data).unwrap();
+    assert_eq!(result.to_string(), "184.28.137.103");
+
+    test_data = "HB4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==";
+    result = sockaddr(test_data).unwrap();
+    assert_eq!(result.to_string(), "::, Flow ID: 0, Scope ID: 0");
+  }
+
+  #[cfg(feature = "rewrite_behave_previous")]
+  #[test]
+  fn test_get_sockaddr_data() {
+    let test_data = "EAIAALgciWcAAAAAAAAAAA==";
+    let decoded_data_result = decode_standard(test_data).unwrap();
+
+    let (_, result) = get_sockaddr_data(&decoded_data_result).unwrap();
+    assert_eq!(result.to_string(), "184.28.137.103");
+  }
+}

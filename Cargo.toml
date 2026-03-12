@@ -11,8 +11,8 @@ keywords = ["forensics", "macOS", "unifiedlog"]
 [features]
 default = []
 rewrite = []
-rewrite-compat = ["rewrite"]
-
+rewrite-compat = ["rewrite", "rewrite_behave_previous"]
+rewrite_behave_previous = []
 
 [dependencies]
 nom = "8.0.0"
@@ -23,16 +23,21 @@ lz4_flex = "0.12.0"
 byteorder = "1.5.0"
 plist = "1.8.0"
 regex = "1.12.3"
+uuid = { version = "1.19", features = ["v4", "serde"] }
 base64 = "0.22.1"
-chrono = "0.4.43"
+chrono = { version = "0.4.43", features = ["serde"] }
 walkdir = "2.5.0"
 sunlight = "0.1.4"
+strum = { version = "0.27.2", features = ["derive"] }
+thiserror = "2"
+num_enum = "0.7"
+bitflags = "2.11"
 
 [dev-dependencies]
-chrono = "0.4.43"
 criterion = "0.8.1"
-anyhow = "1.0.100"
+anyhow = "1"
 test-case = "3.3"
+pretty_env_logger = "0.4.0"
 
 [[bench]]
 name = "high_sierra_benchmark"

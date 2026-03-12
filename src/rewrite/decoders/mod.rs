@@ -1,0 +1,54 @@
+// Copyright 2022 Mandiant, Inc. All Rights Reserved
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software distributed under the License
+// is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and limitations under the License.
+
+mod bool;
+pub(crate) mod config;
+pub(crate) mod location;
+mod network;
+
+#[cfg(feature = "rewrite_behave_previous")]
+mod darwin;
+#[cfg(feature = "rewrite_behave_previous")]
+pub(crate) mod decoder;
+#[cfg(feature = "rewrite_behave_previous")]
+mod dns;
+#[cfg(feature = "rewrite_behave_previous")]
+mod opendirectory;
+#[cfg(feature = "rewrite_behave_previous")]
+mod time;
+#[cfg(feature = "rewrite_behave_previous")]
+mod uuid;
+
+pub enum DecoderError<'a> {
+  Parse {
+    input: &'a [u8],
+    parser_name: &'a str,
+    message: &'a str,
+  },
+}
+
+impl std::error::Error for DecoderError<'_> {}
+
+impl std::fmt::Display for DecoderError<'_> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Self::Parse { message, .. } => write!(f, "{message}"),
+    }
+  }
+}
+
+impl std::fmt::Debug for DecoderError<'_> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Self::Parse {
+        parser_name,
+        message,
+        input,
+      } => write!(f, "Failed at {parser_name} parser, data {input:?}: {message}"),
+    }
+  }
+}
