@@ -8,6 +8,11 @@ description = "A library to help parse macOS UnifiedLogs"
 keywords = ["forensics", "macOS", "unifiedlog"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[features]
+default = []
+rewrite = []
+rewrite-compat = ["rewrite"]
+
 
 [dependencies]
 nom = "8.0.0"

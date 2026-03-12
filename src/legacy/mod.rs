@@ -83,28 +83,28 @@
 //! ```
 
 /// Functions to parse catalog information from tracev3 files
-mod catalog;
-mod chunks;
-mod chunkset;
+pub(super) mod catalog;
+pub(super) mod chunks;
+pub(super) mod chunkset;
 /// Parsers to extract specific log objects
-mod decoders;
+pub(super) mod decoders;
 /// Functions to parse the shared string cache
 pub mod dsc;
-mod error;
+pub(super) mod error;
 /// Providers to parse Unified Log data on a live system or a provided logarchive
 pub mod filesystem;
-mod header;
+pub(super) mod header;
 pub mod iterator;
 /// Functions to assemble the log message
-mod message;
+pub(super) mod message;
 /// Functions to extract and assemble log entries from the macOS Unified Log
 pub mod parser;
-mod preamble;
+pub(super) mod preamble;
 /// Functions to parse time data associated with the Unified Log
 pub mod timesync;
 pub mod traits;
 /// Functions to parse tracev3 files
 pub mod unified_log;
-mod util;
+pub(super) mod util;
 /// Functions to parse the log string files
 pub mod uuidtext;
