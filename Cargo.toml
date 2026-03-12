@@ -11,8 +11,7 @@ keywords = ["forensics", "macOS", "unifiedlog"]
 [features]
 default = []
 rewrite = []
-rewrite-compat = ["rewrite", "rewrite_behave_previous"]
-rewrite_behave_previous = []
+rewrite-compat = ["rewrite"]
 
 [dependencies]
 nom = "8.0.0"

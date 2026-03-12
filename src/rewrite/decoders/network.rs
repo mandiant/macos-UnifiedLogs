@@ -5,24 +5,24 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-#[cfg(feature = "rewrite_behave_previous")]
+#[cfg(feature = "rewrite-compat")]
 use super::DecoderError;
-#[cfg(feature = "rewrite_behave_previous")]
+#[cfg(feature = "rewrite-compat")]
 use crate::rewrite::helpers::decode_standard;
-#[cfg(feature = "rewrite_behave_previous")]
+#[cfg(feature = "rewrite-compat")]
 use log::warn;
-#[cfg(feature = "rewrite_behave_previous")]
+#[cfg(feature = "rewrite-compat")]
 use nom::number::complete::{be_u8, be_u16};
 use nom::{
   Parser,
   combinator::map,
   number::complete::{be_u32, be_u128},
 };
-#[cfg(feature = "rewrite_behave_previous")]
+#[cfg(feature = "rewrite-compat")]
 use std::fmt::Display;
 use std::net::{Ipv4Addr, Ipv6Addr};
 
-#[cfg(feature = "rewrite_behave_previous")]
+#[cfg(feature = "rewrite-compat")]
 /// Parse an IPv6 address
 pub(crate) fn ipv_six(input: &str) -> Result<Ipv6Addr, DecoderError<'_>> {
   let decoded_data = decode_standard(input).map_err(|_| DecoderError::Parse {
@@ -40,7 +40,7 @@ pub(crate) fn ipv_six(input: &str) -> Result<Ipv6Addr, DecoderError<'_>> {
   Ok(result)
 }
 
-#[cfg(feature = "rewrite_behave_previous")]
+#[cfg(feature = "rewrite-compat")]
 /// Parse an IPv4 address
 pub(crate) fn ipv_four(input: &str) -> Result<Ipv4Addr, DecoderError<'_>> {
   let decoded_data = decode_standard(input).map_err(|_| DecoderError::Parse {
@@ -58,7 +58,7 @@ pub(crate) fn ipv_four(input: &str) -> Result<Ipv4Addr, DecoderError<'_>> {
   Ok(result)
 }
 
-#[cfg(feature = "rewrite_behave_previous")]
+#[cfg(feature = "rewrite-compat")]
 /// Parse a sockaddr structure
 pub(crate) fn sockaddr(input: &str) -> Result<SockaddrData, DecoderError<'_>> {
   if input.is_empty() {
@@ -80,7 +80,7 @@ pub(crate) fn sockaddr(input: &str) -> Result<SockaddrData, DecoderError<'_>> {
   Ok(result)
 }
 
-#[cfg(feature = "rewrite_behave_previous")]
+#[cfg(feature = "rewrite-compat")]
 #[allow(non_camel_case_types)]
 pub enum SockaddrData {
   AF_INET {
@@ -100,7 +100,7 @@ pub enum SockaddrData {
   },
 }
 
-#[cfg(feature = "rewrite_behave_previous")]
+#[cfg(feature = "rewrite-compat")]
 impl Display for SockaddrData {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
@@ -131,7 +131,7 @@ impl Display for SockaddrData {
   }
 }
 
-#[cfg(feature = "rewrite_behave_previous")]
+#[cfg(feature = "rewrite-compat")]
 /// Get the sockaddr data
 fn get_sockaddr_data(input: &[u8]) -> nom::IResult<&[u8], SockaddrData> {
   let (input, (_total_length, family)) = (be_u8, be_u8).parse(input)?;
@@ -187,7 +187,7 @@ mod tests {
   use super::*;
   use crate::rewrite::helpers::decode_standard;
 
-  #[cfg(feature = "rewrite_behave_previous")]
+  #[cfg(feature = "rewrite-compat")]
   #[test]
   fn test_ipv_six() {
     let test_data = "/wIAAAAAAAAAAAAAAAAA+w==";
@@ -204,7 +204,7 @@ mod tests {
     assert_eq!(result.to_string(), "ff02::fb");
   }
 
-  #[cfg(feature = "rewrite_behave_previous")]
+  #[cfg(feature = "rewrite-compat")]
   #[test]
   fn test_ipv_four() {
     let test_data = "4AAA+w==";
@@ -220,7 +220,7 @@ mod tests {
     let (_, result) = get_ip_four(&decoded_data_result).unwrap();
     assert_eq!(result.to_string(), "224.0.0.251");
   }
-  #[cfg(feature = "rewrite_behave_previous")]
+  #[cfg(feature = "rewrite-compat")]
   #[test]
   fn test_sockaddr() {
     let mut test_data = "EAIAALgciWcAAAAAAAAAAA==";
@@ -232,7 +232,7 @@ mod tests {
     assert_eq!(result.to_string(), "::, Flow ID: 0, Scope ID: 0");
   }
 
-  #[cfg(feature = "rewrite_behave_previous")]
+  #[cfg(feature = "rewrite-compat")]
   #[test]
   fn test_get_sockaddr_data() {
     let test_data = "EAIAALgciWcAAAAAAAAAAA==";

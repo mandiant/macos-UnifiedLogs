@@ -483,7 +483,7 @@ pub fn fill_private_data<'a>(
 /// Compat variant of `fill_private_data` that uses the old pipeline's `extract_string_size`
 /// so that entries with non-UTF8 private data produce "Could not find path string" (matching
 /// the old pipeline's behavior) instead of resolving to actual content.
-#[cfg(feature = "rewrite_behave_previous")]
+#[cfg(feature = "rewrite-compat")]
 pub fn fill_private_data_compat<'a>(
   items: &mut [RawFirehoseItem<'a>],
   private_data: &'a [u8],
@@ -569,7 +569,7 @@ pub fn fill_private_data_compat<'a>(
 }
 
 /// Leak a String to get a `&'static str`. Only used in compat mode for parity testing.
-#[cfg(feature = "rewrite_behave_previous")]
+#[cfg(feature = "rewrite-compat")]
 fn leak_string(s: String) -> &'static str {
   Box::leak(s.into_boxed_str())
 }

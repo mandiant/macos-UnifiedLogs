@@ -109,7 +109,7 @@ pub fn visit_tracev3<'a>(
               // Compute the extended private data region for compat mode.
               // The old pipeline had access to the full chunkset buffer past the public data,
               // not just the current chunk's private data. This affected oversized items.
-              #[cfg(feature = "rewrite_behave_previous")]
+              #[cfg(feature = "rewrite-compat")]
               let extended_private_data = {
                 const FIREHOSE_HEADER_SIZE: usize = 32;
                 let offset = FIREHOSE_HEADER_SIZE + fh.public_data_len();
@@ -128,7 +128,7 @@ pub fn visit_tracev3<'a>(
                 dsc_files,
                 uuidtext_files,
                 oversize_cache,
-                #[cfg(feature = "rewrite_behave_previous")]
+                #[cfg(feature = "rewrite-compat")]
                 extended_private_data,
                 &mut callback,
               );
@@ -164,7 +164,7 @@ pub fn visit_tracev3<'a>(
                   },
                   signpost_id: 0,
                   signpost_name: 0,
-                  #[cfg(feature = "rewrite_behave_previous")]
+                  #[cfg(feature = "rewrite-compat")]
                   format_string_error: None,
                 });
               }
@@ -204,7 +204,7 @@ pub fn visit_tracev3<'a>(
                   },
                   signpost_id: 0,
                   signpost_name: 0,
-                  #[cfg(feature = "rewrite_behave_previous")]
+                  #[cfg(feature = "rewrite-compat")]
                   format_string_error: None,
                 });
               }
@@ -234,7 +234,7 @@ fn visit_firehose_entries<'a, 'b>(
   dsc_files: &'a HashMap<Uuid, RawSharedCacheStrings<'a>>,
   uuidtext_files: &'a HashMap<Uuid, RawUUIDText<'a>>,
   oversize_cache: &'b OversizeCache,
-  #[cfg(feature = "rewrite_behave_previous")] extended_private_data: Option<&'b [u8]>,
+  #[cfg(feature = "rewrite-compat")] extended_private_data: Option<&'b [u8]>,
   callback: &mut impl FnMut(LogEntry<'a, 'b>),
 ) {
   let boot_uuid = header.boot_uuid;
@@ -314,7 +314,7 @@ fn visit_firehose_entries<'a, 'b>(
           },
           signpost_id: 0,
           signpost_name: 0,
-          #[cfg(feature = "rewrite_behave_previous")]
+          #[cfg(feature = "rewrite-compat")]
           format_string_error: None,
         });
         continue;
@@ -345,7 +345,7 @@ fn visit_firehose_entries<'a, 'b>(
     );
 
     // Generate error string for invalid format string offsets (old pipeline parity)
-    #[cfg(feature = "rewrite_behave_previous")]
+    #[cfg(feature = "rewrite-compat")]
     let format_string_error = if resolved.format_string.is_none() {
       let string_offset = u64::from(entry.format_string_location);
       Some(format_string_error_message(string_offset, &formatter, resolved.library_uuid))
@@ -369,7 +369,7 @@ fn visit_firehose_entries<'a, 'b>(
           private_strings_offset: offset,
           private_data_virtual_offset: fh.private_data_virtual_offset,
           collapsed: fh.collapsed,
-          #[cfg(feature = "rewrite_behave_previous")]
+          #[cfg(feature = "rewrite-compat")]
           extended_private_data,
         }),
         _ => None,
@@ -432,7 +432,7 @@ fn visit_firehose_entries<'a, 'b>(
       items,
       signpost_id,
       signpost_name,
-      #[cfg(feature = "rewrite_behave_previous")]
+      #[cfg(feature = "rewrite-compat")]
       format_string_error,
     });
   }
@@ -481,11 +481,11 @@ fn combine_activity_id(ids: Option<(u32, u32)>) -> u64 {
       let raw = u64::from(lo) | (u64::from(hi) << 32);
       // Under the feature flag, mask off the high bit sentinel (0x80000000 in hi)
       // to match the old pipeline which used only the lower u32: u64::from(lo).
-      #[cfg(feature = "rewrite_behave_previous")]
+      #[cfg(feature = "rewrite-compat")]
       {
         raw & 0x7FFFFFFFFFFFFFFF
       }
-      #[cfg(not(feature = "rewrite_behave_previous"))]
+      #[cfg(not(feature = "rewrite-compat"))]
       {
         raw
       }
@@ -505,7 +505,7 @@ fn extract_timezone_name(timezone_path: &str) -> &str {
 /// - Main exe → `"Error: Invalid offset {offset} for UUID {hex}"`
 /// - Absolute → `"Error: Invalid offset {offset} for absolute UUID {hex}"`
 /// - UUID-relative → `"Error: Invalid offset {offset} for alternative UUID {hex}"`
-#[cfg(feature = "rewrite_behave_previous")]
+#[cfg(feature = "rewrite-compat")]
 fn format_string_error_message(
   string_offset: u64,
   formatter: &RawFormatterFlags,

@@ -13,14 +13,14 @@ use uuid::Uuid;
 use super::decoders::{config, location};
 
 use super::chunkset::firehose::flags::FirehoseFlags;
-#[cfg(feature = "rewrite_behave_previous")]
+#[cfg(feature = "rewrite-compat")]
 use super::chunkset::firehose::item::fill_private_data_compat;
-#[cfg(not(feature = "rewrite_behave_previous"))]
+#[cfg(not(feature = "rewrite-compat"))]
 use super::chunkset::firehose::item::fill_private_data;
 use super::chunkset::firehose::item::{parse_items_data, parse_trace_items};
-#[cfg(not(feature = "rewrite_behave_previous"))]
+#[cfg(not(feature = "rewrite-compat"))]
 use super::format::NoDecoder;
-#[cfg(feature = "rewrite_behave_previous")]
+#[cfg(feature = "rewrite-compat")]
 use super::format::OldAppleDecoder;
 use super::format::{AppleDecoder, format_message};
 
@@ -71,7 +71,7 @@ pub(crate) struct PrivateDataContext<'b> {
   /// Extended private data region for compat mode — extends to end of chunkset buffer.
   /// The old pipeline had access to subsequent chunks' data when parsing private items,
   /// producing different results (e.g., "Could not find path string") for oversized items.
-  #[cfg(feature = "rewrite_behave_previous")]
+  #[cfg(feature = "rewrite-compat")]
   pub extended_private_data: Option<&'b [u8]>,
 }
 
@@ -137,13 +137,13 @@ pub struct LogEntry<'a, 'b> {
   // Private: deferred message data
   pub(crate) items: ItemsData<'b>,
   // Signpost fields — populated only for Signpost entries, 0 otherwise.
-  #[cfg_attr(not(feature = "rewrite_behave_previous"), allow(dead_code))]
+  #[cfg_attr(not(feature = "rewrite-compat"), allow(dead_code))]
   pub(crate) signpost_id: u64,
-  #[cfg_attr(not(feature = "rewrite_behave_previous"), allow(dead_code))]
+  #[cfg_attr(not(feature = "rewrite-compat"), allow(dead_code))]
   pub(crate) signpost_name: u32,
   /// Error message for invalid format string offsets (old pipeline parity).
   /// When `format_string` is None, this replaces `<missing format string>`.
-  #[cfg(feature = "rewrite_behave_previous")]
+  #[cfg(feature = "rewrite-compat")]
   pub(crate) format_string_error: Option<String>,
 }
 
@@ -158,11 +158,11 @@ impl<'a, 'b> LogEntry<'a, 'b> {
 
   /// Format the log message on demand. This is the only allocation point.
   pub fn message(&self) -> String {
-    #[cfg(feature = "rewrite_behave_previous")]
+    #[cfg(feature = "rewrite-compat")]
     {
       self.message_with_decoder(&OldAppleDecoder)
     }
-    #[cfg(not(feature = "rewrite_behave_previous"))]
+    #[cfg(not(feature = "rewrite-compat"))]
     {
       self.message_with_decoder(&NoDecoder)
     }
@@ -173,11 +173,11 @@ impl<'a, 'b> LogEntry<'a, 'b> {
     if self.format_string.is_some() {
       return self.format_string;
     }
-    #[cfg(feature = "rewrite_behave_previous")]
+    #[cfg(feature = "rewrite-compat")]
     {
       self.format_string_error.as_deref()
     }
-    #[cfg(not(feature = "rewrite_behave_previous"))]
+    #[cfg(not(feature = "rewrite-compat"))]
     {
       None
     }
@@ -197,7 +197,7 @@ impl<'a, 'b> LogEntry<'a, 'b> {
           ..
         } = &self.items
         {
-          #[cfg(not(feature = "rewrite_behave_previous"))]
+          #[cfg(not(feature = "rewrite-compat"))]
           fill_private_data(
             &mut items,
             ctx.private_data,
@@ -205,7 +205,7 @@ impl<'a, 'b> LogEntry<'a, 'b> {
             ctx.private_data_virtual_offset,
             ctx.collapsed,
           );
-          #[cfg(feature = "rewrite_behave_previous")]
+          #[cfg(feature = "rewrite-compat")]
           fill_private_data_compat(
             &mut items,
             ctx.extended_private_data.unwrap_or(ctx.private_data),
@@ -226,12 +226,12 @@ impl<'a, 'b> LogEntry<'a, 'b> {
         start_time,
         end_time,
       } => {
-        #[cfg(feature = "rewrite_behave_previous")]
+        #[cfg(feature = "rewrite-compat")]
         {
           let _ = (count, start_time, end_time);
           String::new()
         }
-        #[cfg(not(feature = "rewrite_behave_previous"))]
+        #[cfg(not(feature = "rewrite-compat"))]
         {
           format!("Lost {} log entries between {} and {}", count, start_time, end_time)
         }
@@ -261,7 +261,7 @@ impl<'a, 'b> LogEntry<'a, 'b> {
   /// Apply signpost prefix and backtrace prefix for parity with the old pipeline.
   /// Without the feature flag, returns the message unchanged.
   fn apply_parity_prefix(&self, msg: String, _backtrace: Option<&[u8]>) -> String {
-    #[cfg(feature = "rewrite_behave_previous")]
+    #[cfg(feature = "rewrite-compat")]
     {
       let mut result = msg;
 
@@ -283,7 +283,7 @@ impl<'a, 'b> LogEntry<'a, 'b> {
 
       result
     }
-    #[cfg(not(feature = "rewrite_behave_previous"))]
+    #[cfg(not(feature = "rewrite-compat"))]
     {
       msg
     }
@@ -298,7 +298,7 @@ impl<'a, 'b> LogEntry<'a, 'b> {
 ///
 /// Output: one line per offset: `"UUID_HEX" +0xOFFSET_DECIMAL` joined by newlines.
 /// Matches old pipeline's `FirehosePreamble::get_backtrace_data()`.
-#[cfg(feature = "rewrite_behave_previous")]
+#[cfg(feature = "rewrite-compat")]
 fn format_backtrace(data: &[u8]) -> String {
   if data.len() < 6 {
     return String::new();
@@ -367,7 +367,7 @@ fn format_statedump_data(data_type: u32, data: &[u8], title_name: &str) -> Strin
     }
     STATEDUMP_DATA_PROTOBUF => match sunlight::light::extract_protobuf(data) {
       Ok(map) => {
-        #[cfg(feature = "rewrite_behave_previous")]
+        #[cfg(feature = "rewrite-compat")]
         let map: std::collections::BTreeMap<_, _> = map.into_iter().collect();
         serde_json::to_string(&map)
           .unwrap_or_else(|_| String::from("Failed to serialize Protobuf HashMap"))
