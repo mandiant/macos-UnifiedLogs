@@ -40,3 +40,12 @@ mod rewrite_prelude {
 }
 #[cfg(feature =  "rewrite")]
 pub use rewrite_prelude::*;
+
+#[cfg(feature =  "rewrite-compat")]
+pub mod compat;
+#[cfg(feature =  "rewrite-compat")]
+mod compat_prelude {
+    pub use super::compat::*;
+}
+#[cfg(feature =  "rewrite-compat")]
+pub use compat_prelude::*;
