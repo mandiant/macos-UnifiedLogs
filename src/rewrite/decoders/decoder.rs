@@ -80,7 +80,7 @@ impl fmt::Display for Decoded {
       Self::SidDetails(value) => write!(f, "{value}"),
       Self::ClientAuthorizationStatus(value) => write!(f, "{value}"),
       Self::DaemonStatusType(value) => write!(f, "{value}"),
-      Self::SubharvesterIdentifier(value) => write!(f, "{value}"),
+      Self::SubharvesterIdentifier(value) => write!(f, "\"{value}\""),
       Self::SqliteError(value) => write!(f, "{value}"),
       Self::LocationStateTrackerData(value) => write!(f, "{value}"),
       Self::LocationTrackerState(value) => write!(f, "{value}"),

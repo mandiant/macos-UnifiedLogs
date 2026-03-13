@@ -208,7 +208,7 @@ impl<'a, 'b> LogEntry<'a, 'b> {
           #[cfg(feature = "rewrite-compat")]
           fill_private_data_compat(
             &mut items,
-            ctx.extended_private_data.unwrap_or(ctx.private_data),
+            ctx.private_data,
             ctx.private_strings_offset,
             ctx.private_data_virtual_offset,
             ctx.collapsed,

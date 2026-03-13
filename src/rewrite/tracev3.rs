@@ -77,12 +77,25 @@ pub fn visit_tracev3<'a>(
   let mut current_catalog: Option<RawCatalogChunk<'a>> = None;
 
   for top_chunk in ChunksReader::new(data) {
-    match top_chunk? {
+    let top_chunk = match top_chunk {
+      Ok(c) => c,
+      Err(e) => {
+        warn!("Failed to parse top chunk: {e}");
+        break;
+      }
+    };
+    match top_chunk {
       TopChunk::Header(h) => current_header = Some(h),
       TopChunk::Catalog(c) => current_catalog = Some(c),
       TopChunk::Chunkset(mut reader) => {
         while let Some(inner) = reader.next() {
-          let inner = inner?;
+          let inner = match inner {
+            Ok(c) => c,
+            Err(e) => {
+              warn!("Failed to parse inner chunk: {e}");
+              break;
+            }
+          };
           match inner.preamble.tag {
             ChunkTag::Oversize => match RawOversize::parse(inner.data) {
               Ok((_, ov)) => oversize_cache.insert(&ov),
@@ -240,6 +253,22 @@ fn visit_firehose_entries<'a, 'b>(
   let boot_uuid = header.boot_uuid;
   let timezone_name = extract_timezone_name(header.timezone_path);
 
+  // In compat mode, pre-compute adjusted private data that includes any leftover
+  // (unconsumed) public data bytes. The legacy code prepends these to the private
+  // data region (see legacy firehose_log.rs lines 186-198).
+  #[cfg(feature = "rewrite-compat")]
+  let adjusted_private_data = {
+    let mut reader = fh.entries();
+    while reader.next().is_some() {}
+    let leftover = reader.remaining();
+    if !leftover.is_empty() && fh.private_data_virtual_offset != 0x1000 {
+      let start = fh.public_data_len() - leftover.len();
+      Some(&fh.firehose_data[start..])
+    } else {
+      fh.private_data()
+    }
+  };
+
   for entry in fh.entries() {
     let body = match entry.parse_body() {
       Ok(body) => body,
@@ -362,6 +391,9 @@ fn visit_firehose_entries<'a, 'b>(
         RawFirehoseBody::Signpost(b) => b.private_strings,
         _ => None,
       };
+      #[cfg(feature = "rewrite-compat")]
+      let pd = adjusted_private_data;
+      #[cfg(not(feature = "rewrite-compat"))]
       let pd = fh.private_data();
       match (pd, private_strings) {
         (Some(pd), Some((offset, size))) if size > 0 => Some(PrivateDataContext {

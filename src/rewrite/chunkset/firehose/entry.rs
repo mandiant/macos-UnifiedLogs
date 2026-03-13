@@ -162,12 +162,25 @@ impl<'a> Iterator for RawFirehoseEntryReader<'a> {
 
     let entry = match RawFirehoseEntry::parse(self.data) {
       Ok((remaining, entry)) => {
-        // Advance past the 8-byte alignment padding
         let padding = padding_size_8(u64::from(entry.data_size)) as usize;
-        if remaining.len() >= padding {
-          self.data = &remaining[padding..];
-        } else {
-          self.data = &[];
+
+        // In compat mode, match the legacy's padding behavior: if the calculated
+        // 8-byte alignment padding extends into non-zero bytes, skip only the
+        // leading zeros instead. The legacy code eats zeros via `take_while`,
+        // then falls back when `padding > leading_zeros`.
+        #[cfg(feature = "rewrite-compat")]
+        {
+          let leading_zeros = remaining.iter().take_while(|&&b| b == 0).count();
+          let skip = if padding > leading_zeros { leading_zeros } else { padding };
+          self.data = &remaining[skip..];
+        }
+        #[cfg(not(feature = "rewrite-compat"))]
+        {
+          if remaining.len() >= padding {
+            self.data = &remaining[padding..];
+          } else {
+            self.data = &[];
+          }
         }
         entry
       }

@@ -24,7 +24,7 @@ impl<'a> RawChunksReader<'a> {
   pub fn new_top_level(input: &'a [u8]) -> Self {
     Self::new(input, 8)
   }
-  /// Create a reader over the entire contents of a tracev3 file, assuming no padding.
+  /// Create a reader over the inner contents of a chunkset, assuming 8-byte alignment.
   pub fn new_chunckset(input: &'a [u8]) -> Self {
     Self::new(input, 8)
   }

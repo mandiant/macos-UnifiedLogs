@@ -1,6 +1,8 @@
+use nom::bytes::complete::take;
+
 use super::{
   catalog::RawCatalogChunk,
-  chunks::ChunkTag,
+  chunks::{ChunkPreamble, ChunkTag},
   chunks_reader::{RawChunk, RawChunksReader},
   chunkset::{ChunksetPayload, firehose::RawFirehose, oversize::RawOversize, simpledump::RawSimpleDump, statedump::RawStatedump},
   error::{NomExt, ParseError},
@@ -59,15 +61,51 @@ impl<'a> ChunkSetReader<'a> {
 
   pub fn next(&mut self) -> Option<Result<RawChunk<'_>, ParseError>> {
     let data = self.payload.as_bytes();
+
+    // Skip zero-padding between inner chunks, matching the legacy parser's
+    // `take_while(|b| b == 0)` behavior. Inner chunks may have variable
+    // zero-padding that doesn't match fixed 8-byte alignment.
+    while self.current_offset < data.len() && data[self.current_offset] == 0 {
+      self.current_offset += 1;
+    }
+
     if self.current_offset >= data.len() {
       return None;
     }
 
+    if data.len() - self.current_offset < super::chunks::PREAMBLE_SIZE {
+      return None;
+    }
+
+    // Parse preamble + data directly (no alignment padding).
     let input = &data[self.current_offset..];
-    let mut raw_reader = RawChunksReader::new_chunckset(input);
-    let next = raw_reader.next();
-    self.current_offset += raw_reader.current_offset();
-    next
+    let (remaining, preamble) = match ChunkPreamble::parse(input) {
+      Ok(ok) => ok,
+      Err(e) => {
+        self.current_offset = data.len(); // prevent retry on same bad data
+        return Some(Err(e.to_parse_error()));
+      }
+    };
+
+    #[cfg(feature = "rewrite-compat")]
+    let data_and_tail = remaining;
+
+    let (remaining, chunk_data) = match take::<u64, &[u8], nom::error::Error<&[u8]>>(preamble.data_size)(remaining) {
+      Ok(ok) => ok,
+      Err(e) => {
+        self.current_offset = data.len();
+        return Some(Err(e.to_parse_error()));
+      }
+    };
+
+    self.current_offset = data.len() - remaining.len();
+
+    Some(Ok(RawChunk {
+      preamble,
+      data: chunk_data,
+      #[cfg(feature = "rewrite-compat")]
+      data_and_tail,
+    }))
   }
 }
 
