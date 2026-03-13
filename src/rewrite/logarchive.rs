@@ -77,7 +77,7 @@ pub fn visit_logarchive(path: &Path, mut callback: impl for<'a, 'b> FnMut(LogEnt
 // ---------------------------------------------------------------------------
 
 /// Load and merge all `.timesync` files from the timesync directory.
-fn load_timesync_data(dir: &Path) -> Result<HashMap<Uuid, RawTimesyncBoot>, std::io::Error> {
+pub(crate) fn load_timesync_data(dir: &Path) -> Result<HashMap<Uuid, RawTimesyncBoot>, std::io::Error> {
   let mut all_data: HashMap<Uuid, RawTimesyncBoot> = HashMap::new();
 
   for entry in std::fs::read_dir(dir)? {
@@ -113,7 +113,7 @@ fn load_timesync_data(dir: &Path) -> Result<HashMap<Uuid, RawTimesyncBoot>, std:
 }
 
 /// Load files from a directory where filenames are UUIDs (e.g. `dsc/`).
-fn load_file_buffers_by_uuid(dir: &Path) -> Vec<(Uuid, Vec<u8>)> {
+pub(crate) fn load_file_buffers_by_uuid(dir: &Path) -> Vec<(Uuid, Vec<u8>)> {
   let mut buffers = Vec::new();
   let entries = match std::fs::read_dir(dir) {
     Ok(e) => e,
@@ -143,7 +143,7 @@ fn load_file_buffers_by_uuid(dir: &Path) -> Vec<(Uuid, Vec<u8>)> {
 ///
 /// Directory layout: `{XX}/{YYYYYYYYYYYYYYYYYYYYYYYYYYYYYY}`
 /// Full UUID = `XX` + `YYYYYYYYYYYYYYYYYYYYYYYYYYYYYY` (32 hex chars).
-fn load_uuidtext_buffers(base: &Path) -> Vec<(Uuid, Vec<u8>)> {
+pub(crate) fn load_uuidtext_buffers(base: &Path) -> Vec<(Uuid, Vec<u8>)> {
   let mut buffers = Vec::new();
   let entries = match std::fs::read_dir(base) {
     Ok(e) => e,

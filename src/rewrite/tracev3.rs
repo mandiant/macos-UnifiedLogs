@@ -33,7 +33,7 @@ use super::uuidtext::RawUUIDText;
 /// via `data_ref`.
 #[derive(Debug, Default)]
 pub struct OversizeCache {
-  entries: HashMap<(u32, u64, u32), Vec<u8>>,
+  pub(crate) entries: HashMap<(u32, u64, u32), Vec<u8>>,
 }
 
 impl OversizeCache {
