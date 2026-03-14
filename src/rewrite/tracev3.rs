@@ -377,7 +377,13 @@ fn visit_firehose_entries<'a, 'b>(
     #[cfg(feature = "rewrite-compat")]
     let format_string_error = if resolved.format_string.is_none() {
       let string_offset = u64::from(entry.format_string_location);
-      Some(format_string_error_message(string_offset, &formatter, resolved.library_uuid))
+      Some(format_string_error_message(
+      string_offset,
+      &formatter,
+      resolved.library_uuid,
+      resolved.process_uuid,
+      resolved.source_found,
+    ))
     } else {
       None
     };
@@ -532,37 +538,60 @@ fn extract_timezone_name(timezone_path: &str) -> &str {
 
 /// Generate error message matching the old pipeline's format when format string lookup fails.
 ///
-/// Dispatches based on formatter flags to produce the right error variant:
-/// - Shared cache → `"Error: Invalid shared string offset"`
-/// - Main exe → `"Error: Invalid offset {offset} for UUID {hex}"`
-/// - Absolute → `"Error: Invalid offset {offset} for absolute UUID {hex}"`
-/// - UUID-relative → `"Error: Invalid offset {offset} for alternative UUID {hex}"`
+/// Two levels of error, distinguished by `uuid_found`:
+/// - **Level 1** (`uuid_found = false`): UUID/DSC file not found → "Failed to get…" / "Unknown…"
+/// - **Level 2** (`uuid_found = true`): File found but offset invalid → "Error: Invalid offset…"
 #[cfg(feature = "rewrite-compat")]
 fn format_string_error_message(
   string_offset: u64,
   formatter: &RawFormatterFlags,
   library_uuid: Uuid,
+  process_uuid: Uuid,
+  uuid_found: bool,
 ) -> String {
   if formatter.shared_cache || formatter.large_shared_cache != 0 {
-    "Error: Invalid shared string offset".to_string()
+    if uuid_found {
+      "Error: Invalid shared string offset".to_string()
+    } else {
+      "Unknown shared string message".to_string()
+    }
   } else if formatter.absolute {
-    format!(
-      "Error: Invalid offset {} for absolute UUID {:X}",
-      string_offset,
-      library_uuid.simple()
-    )
+    if uuid_found {
+      format!(
+        "Error: Invalid offset {} for absolute UUID {:X}",
+        string_offset,
+        library_uuid.simple()
+      )
+    } else {
+      format!(
+        "Failed to get string message from absolute UUIDText file: {:X}",
+        library_uuid.simple()
+      )
+    }
   } else if formatter.uuid_relative != [0u8; 16] {
     let uuid = Uuid::from_bytes(formatter.uuid_relative);
-    format!(
-      "Error: Invalid offset {} for alternative UUID {:X}",
-      string_offset,
-      uuid.simple()
-    )
-  } else {
+    if uuid_found {
+      format!(
+        "Error: Invalid offset {} for alternative UUID {:X}",
+        string_offset,
+        uuid.simple()
+      )
+    } else {
+      format!(
+        "Failed to get string message from alternative UUIDText file: {:X}",
+        uuid.simple()
+      )
+    }
+  } else if uuid_found {
     format!(
       "Error: Invalid offset {} for UUID {:X}",
       string_offset,
-      library_uuid.simple()
+      process_uuid.simple()
+    )
+  } else {
+    format!(
+      "Failed to get string message from UUIDText file: {:X}",
+      process_uuid.simple()
     )
   }
 }

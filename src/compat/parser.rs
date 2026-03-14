@@ -302,6 +302,14 @@ pub fn build_log(
     warn!("Failed to process tracev3 data: {e}");
   }
 
+  // Legacy emits firehose → simpledump → statedump per catalog.
+  // The rewrite emits them interleaved. Stable sort preserves order within each type.
+  logs.sort_by_key(|log| match log.event_type {
+    EventType::Simpledump => 1u8,
+    EventType::Statedump => 2,
+    _ => 0,
+  });
+
   // Return empty UnifiedLogData as the "missing" bucket (tests ignore it)
   let remaining = UnifiedLogData {
     header: Vec::new(),
