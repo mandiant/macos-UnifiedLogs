@@ -49,3 +49,9 @@ mod compat_prelude {
 }
 #[cfg(feature =  "rewrite-compat")]
 pub use compat_prelude::*;
+
+#[cfg(feature = "rewrite-compat")]
+pub mod timesync {
+    pub use crate::rewrite::timesync::*;
+    pub use crate::compat::unified_log::TimesyncBoot;
+}
