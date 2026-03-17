@@ -64,7 +64,7 @@ pub enum LogType {
 
 /// Context for filling private item values from the firehose private data section.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct PrivateDataContext<'b> {
+pub struct PrivateDataContext<'b> {
     pub private_data: &'b [u8],
     pub private_strings_offset: u16,
     pub private_data_virtual_offset: u16,
