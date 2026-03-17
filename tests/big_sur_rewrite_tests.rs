@@ -28,7 +28,6 @@ use macos_unifiedlogs::{
     tracev3::{OversizeCache, visit_tracev3},
     uuidtext::RawUUIDText,
 };
-use regex::Regex;
 use uuid::Uuid;
 
 fn test_data_path() -> PathBuf {
