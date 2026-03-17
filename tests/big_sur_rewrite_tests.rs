@@ -8,7 +8,7 @@
 //   - format_string: Option<&str> instead of raw_message: String
 //   - Loss entries: "Lost N log entries between X and Y" (non-empty)
 //   - No signpost prefix
-//   - OldAppleDecoder (decoders always active — DNS/uuid_t/OpenDirectory output)
+//   - Decoders always active (DNS/uuid_t/OpenDirectory output)
 //   - "<decode: missing data>" instead of "<Missing message data>" for missing items
 
 #![cfg(all(feature = "rewrite", not(feature = "rewrite-compat")))]

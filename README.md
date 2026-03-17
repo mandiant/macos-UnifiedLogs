@@ -122,7 +122,7 @@ visit_tracev3(&data, &resolver, &dsc_files, &uuidtext_files, &mut oversize_cache
                         │
                         │  %{annotation} specifiers → custom decoders
                         ▼
-             ┌── AppleDecoder ──────────────────────────────────┐
+             ┌── decode_annotation() ──────────────────────────┐
              │ DNS · network · location · time · UUID           │
              │ OpenDirectory · Darwin · bool · config           │
              └──────────────────────────────────────────────────┘

@@ -19,8 +19,7 @@ use super::chunks::firehose::item::fill_private_data;
 #[cfg(feature = "rewrite-compat")]
 use super::chunks::firehose::item::fill_private_data_compat;
 use super::chunks::firehose::item::{parse_items_data, parse_trace_items};
-use super::format::OldAppleDecoder;
-use super::format::{AppleDecoder, format_message};
+use super::format::format_message;
 
 /// Event type classification for a log entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -172,7 +171,7 @@ impl<'a, 'b> LogEntry<'a, 'b> {
             return msg.clone();
         }
 
-        let msg = self.message_with_decoder(&OldAppleDecoder);
+        let msg = self.format_message_inner();
 
         let msg = Rc::new(msg);
         if let Ok(mut borrow) = self.resolved_message.try_borrow_mut() {
@@ -196,8 +195,8 @@ impl<'a, 'b> LogEntry<'a, 'b> {
         }
     }
 
-    /// Format with a custom Apple decoder.
-    pub fn message_with_decoder(&self, decoder: &dyn AppleDecoder) -> String {
+    /// Build the formatted message string from raw items and format string.
+    fn format_message_inner(&self) -> String {
         let fmt_str = self.effective_format_string();
         match &self.items {
             ItemsData::Regular { data, flags, .. } => {
@@ -227,12 +226,12 @@ impl<'a, 'b> LogEntry<'a, 'b> {
                         ctx.collapsed,
                     );
                 }
-                let msg = format_message(fmt_str, &items, decoder);
+                let msg = format_message(fmt_str, &items);
                 self.apply_parity_prefix(msg, backtrace)
             }
             ItemsData::Trace { data } => {
                 let items = parse_trace_items(data);
-                format_message(fmt_str, &items, decoder)
+                format_message(fmt_str, &items)
             }
             ItemsData::Loss {
                 count,
@@ -265,7 +264,7 @@ impl<'a, 'b> LogEntry<'a, 'b> {
                     "title: {title_name}\nObject Type: {decoder_library}\nObject Type: {decoder_type}\n{data_string}"
                 )
             }
-            ItemsData::None => format_message(fmt_str, &[], decoder),
+            ItemsData::None => format_message(fmt_str, &[]),
         }
     }
 

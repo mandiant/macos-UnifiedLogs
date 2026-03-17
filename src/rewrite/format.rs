@@ -11,42 +11,36 @@ use super::chunks::firehose::item::{RawFirehoseItem, RawItemKind, RawItemValue};
 use std::fmt::Write;
 
 // ---------------------------------------------------------------------------
-// Apple decoder trait
+// Apple annotation decoder
 // ---------------------------------------------------------------------------
 
-/// Trait for custom Apple log object decoders (e.g. `%{network:in_addr}d`).
-pub trait AppleDecoder {
-    fn decode(&self, annotation: &str, item: &RawFirehoseItem<'_>) -> Option<String>;
-}
+/// Decode an Apple-annotated log value (e.g. `%{network:in_addr}d`, `%{uuid_t}s`).
+///
+/// Converts the raw item value to a string, then dispatches to the appropriate
+/// decoder based on the annotation. Returns `None` if the annotation is not
+/// recognized or the decoder fails — the caller falls back to normal formatting.
+fn decode_annotation(annotation: &str, item: &RawFirehoseItem<'_>) -> Option<String> {
+    let value_str: String = match &item.value {
+        RawItemValue::I64(n) => n.to_string(),
+        RawItemValue::U64(n) => n.to_string(),
+        RawItemValue::Str(s) => s.to_string(),
+        RawItemValue::Bytes(b) => base64::engine::general_purpose::STANDARD.encode(b),
+        RawItemValue::Private { .. } => return None,
+        // Old pipeline calls decoders with empty string for size-0 items (e.g. sockaddr("") →
+        // "Unknown sockaddr family: 0"). Most decoders will fail on empty input and we'll
+        // return None below, matching the fallthrough behavior.
+        RawItemValue::Empty | RawItemValue::Null => String::new(),
+    };
 
-/// Apple decoder that delegates to the existing `check_objects` decoders from `src/decoders/`.
-/// Handles `bool`/`BOOL`, `uuid_t`, `darwin.errno`, `darwin.mode`, and all other annotated types.
-pub struct OldAppleDecoder;
+    // Replicate check_objects: mask.hash + BaseRaw (0xf2) → return base64 as-is,
+    // bypassing all decoders and formatting (matches old pipeline behavior).
+    if annotation.contains("mask.hash") && item.item_type == RawItemKind::BaseRaw {
+        return Some(value_str);
+    }
 
-impl AppleDecoder for OldAppleDecoder {
-    fn decode(&self, annotation: &str, item: &RawFirehoseItem<'_>) -> Option<String> {
-        let value_str: String = match &item.value {
-            RawItemValue::I64(n) => n.to_string(),
-            RawItemValue::U64(n) => n.to_string(),
-            RawItemValue::Str(s) => s.to_string(),
-            RawItemValue::Bytes(b) => base64::engine::general_purpose::STANDARD.encode(b),
-            RawItemValue::Private { .. } => return None,
-            // Old pipeline calls decoders with empty string for size-0 items (e.g. sockaddr("") →
-            // "Unknown sockaddr family: 0"). Most decoders will fail on empty input and we'll
-            // return None below, matching the fallthrough behavior.
-            RawItemValue::Empty | RawItemValue::Null => String::new(),
-        };
-
-        // Replicate check_objects: mask.hash + BaseRaw (0xf2) → return base64 as-is,
-        // bypassing all decoders and formatting (matches old pipeline behavior).
-        if annotation.contains("mask.hash") && item.item_type == RawItemKind::BaseRaw {
-            return Some(value_str);
-        }
-
-        match crate::rewrite::decoders::decoder::to_decoded_value(annotation, &value_str) {
-            Ok(Some(decoded)) => Some(decoded.to_string()),
-            _ => None,
-        }
+    match crate::rewrite::decoders::decoder::to_decoded_value(annotation, &value_str) {
+        Ok(Some(decoded)) => Some(decoded.to_string()),
+        _ => None,
     }
 }
 
@@ -651,7 +645,6 @@ fn parse_specifier(bytes: &[u8]) -> (FormatSpec, usize, bool) {
 pub fn format_message(
     format_string: Option<&str>,
     items: &[RawFirehoseItem<'_>],
-    decoder: &dyn AppleDecoder,
 ) -> String {
     let fmt = match format_string {
         None => return String::from("<missing format string>"),
@@ -769,7 +762,6 @@ pub fn format_message(
                     &spec,
                     items,
                     &mut item_index,
-                    decoder,
                 );
                 continue;
             }
@@ -793,7 +785,6 @@ pub fn format_message(
                 &spec,
                 items,
                 &mut item_index,
-                decoder,
             );
             continue;
         }
@@ -902,7 +893,6 @@ fn format_annotated_item(
     spec: &FormatSpec,
     items: &[RawFirehoseItem<'_>],
     item_index: &mut usize,
-    decoder: &dyn AppleDecoder,
 ) {
     // Skip precision items
     skip_precision_items(items, item_index);
@@ -927,7 +917,7 @@ fn format_annotated_item(
     }
 
     // Try apple decoder
-    if let Some(decoded) = decoder.decode(annotation, item) {
+    if let Some(decoded) = decode_annotation(annotation, item) {
         result.push_str(&decoded);
         *item_index += 1;
         return;
@@ -1056,14 +1046,14 @@ mod tests {
     #[test_case("%#04o", 100     => "0o144" ; "octal hashtag zero pad")]
     #[test_case("%lld", 42       => "42" ; "length modifier ignored")]
     fn test_format_int(fmt: &str, n: i64) -> String {
-        format_message(Some(fmt), &[i64_item(n)], &OldAppleDecoder)
+        format_message(Some(fmt), &[i64_item(n)])
     }
 
     // Octal without explicit `#` flag: under rewrite_behave_previous, the old pipeline
     // always adds `#` (0o prefix), matching its format_right() behavior.
     #[test]
     fn octal() {
-        let result = format_message(Some("%o"), &[i64_item(493)], &OldAppleDecoder);
+        let result = format_message(Some("%o"), &[i64_item(493)]);
         #[cfg(feature = "rewrite-compat")]
         assert_eq!(result, "0o755");
         #[cfg(not(feature = "rewrite-compat"))]
@@ -1072,7 +1062,7 @@ mod tests {
 
     #[test]
     fn octal_zero_pad() {
-        let result = format_message(Some("%07o"), &[i64_item(100)], &OldAppleDecoder);
+        let result = format_message(Some("%07o"), &[i64_item(100)]);
         #[cfg(feature = "rewrite-compat")]
         assert_eq!(result, "0o00144");
         #[cfg(not(feature = "rewrite-compat"))]
@@ -1088,7 +1078,7 @@ mod tests {
     #[test_case("%9.4f", 4_570_111_009_880_014_848   => "   0.0035" ; "space pad")]
     #[test_case("%-8.4f", 4_570_111_009_880_014_848  => "0.0035  " ; "left justify")]
     fn test_format_float(fmt: &str, bits: i64) -> String {
-        format_message(Some(fmt), &[i64_item(bits)], &OldAppleDecoder)
+        format_message(Some(fmt), &[i64_item(bits)])
     }
 
     // --- Float: expected computed from bits (Rust default display) ---
@@ -1097,7 +1087,7 @@ mod tests {
     #[test_case("%f", -4_484_628_366_119_329_180 ; "negative float natural")]
     fn test_format_float_natural(fmt: &str, bits: i64) {
         let expected = format!("{}", f64::from_bits(bits as u64));
-        let result = format_message(Some(fmt), &[i64_item(bits)], &OldAppleDecoder);
+        let result = format_message(Some(fmt), &[i64_item(bits)]);
         assert_eq!(result, expected);
     }
 
@@ -1113,7 +1103,7 @@ mod tests {
     => "opendirectoryd (build 796.100) launched..." ; "legacy public substitution"
   )]
     fn test_format_str(fmt: &str, s: &str) -> String {
-        format_message(Some(fmt), &[str_item(s)], &OldAppleDecoder)
+        format_message(Some(fmt), &[str_item(s)])
     }
 
     // --- No-items tests ---
@@ -1125,20 +1115,20 @@ mod tests {
     #[test_case(Some("end%")        => "end%" ; "percent at end")]
     #[test_case(Some("%{public}")   => "%{public}" ; "typeless annotation")]
     fn test_format_no_items(fmt: Option<&str>) -> String {
-        format_message(fmt, &[], &OldAppleDecoder)
+        format_message(fmt, &[])
     }
 
     // --- Edge cases (multi-item, special item types) ---
 
     #[test]
     fn test_private_item() {
-        let result = format_message(Some("%{public}s"), &[private_item()], &OldAppleDecoder);
+        let result = format_message(Some("%{public}s"), &[private_item()]);
         assert_eq!(result, "<private>");
     }
 
     #[test]
     fn test_missing_items() {
-        let result = format_message(Some("%s %s"), &[str_item("hello")], &OldAppleDecoder);
+        let result = format_message(Some("%s %s"), &[str_item("hello")]);
         #[cfg(feature = "rewrite-compat")]
         assert_eq!(result, "hello <Missing message data>");
         #[cfg(not(feature = "rewrite-compat"))]
@@ -1148,7 +1138,7 @@ mod tests {
     #[test]
     fn test_multiple_specs() {
         let items = [str_item("x"), i64_item(5)];
-        let result = format_message(Some("%s=%d"), &items, &OldAppleDecoder);
+        let result = format_message(Some("%s=%d"), &items);
         assert_eq!(result, "x=5");
     }
 
@@ -1157,27 +1147,26 @@ mod tests {
         let result = format_message(
             Some("%{public,signpost.description:attr}d"),
             &[i64_item(42)],
-            &OldAppleDecoder,
         );
         assert_eq!(result, "42 (signpost.description:attr)");
     }
 
     #[test]
     fn test_empty_format_with_items() {
-        let result = format_message(Some(""), &[str_item("val")], &OldAppleDecoder);
+        let result = format_message(Some(""), &[str_item("val")]);
         assert_eq!(result, "val");
     }
 
     #[test]
     fn test_precision_item_skip() {
         let items = [precision_item(), i64_item(42)];
-        let result = format_message(Some("%d"), &items, &OldAppleDecoder);
+        let result = format_message(Some("%d"), &items);
         assert_eq!(result, "42");
     }
 
     #[test]
     fn test_u64_as_int() {
-        let result = format_message(Some("%d"), &[u64_item(200)], &OldAppleDecoder);
+        let result = format_message(Some("%d"), &[u64_item(200)]);
         assert_eq!(result, "200");
     }
 
@@ -1188,7 +1177,7 @@ mod tests {
             str_item("setColorElement"),
             i64_item(89),
         ];
-        let result = format_message(Some("%s::%s width = %u"), &items, &OldAppleDecoder);
+        let result = format_message(Some("%s::%s width = %u"), &items);
         assert_eq!(
             result,
             "DCPAVSimpleVideoInterface::setColorElement width = 89"
