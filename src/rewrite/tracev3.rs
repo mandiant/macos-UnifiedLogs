@@ -328,20 +328,37 @@ fn visit_firehose_entries<'a, 'b>(
                 RawFirehoseBody::Loss(b) => {
                     let abs_ct = entry.absolute_continuous_time(fh.base_continuous_time);
                     let time = resolver.resolve(&boot_uuid, abs_ct, fh.base_continuous_time);
+
+                    // Catalog lookups — same as other entry types
+                    let pid = catalog
+                        .get_pid(fh.first_proc_id, fh.second_proc_id)
+                        .unwrap_or(0);
+                    let euid = catalog
+                        .get_euid(fh.first_proc_id, fh.second_proc_id)
+                        .unwrap_or(0);
+
+                    // Process/library from UUIDText via main_uuid
+                    let entry_info =
+                        catalog.get_process_info(fh.first_proc_id, fh.second_proc_id);
+                    let main_uuid = entry_info.map_or(Uuid::nil(), |e| e.main_uuid);
+                    let process = uuidtext_files
+                        .get(&main_uuid)
+                        .and_then(|u| u.image_path());
+
                     callback(LogEntry {
                         subsystem: None,
                         category: None,
                         thread_id: entry.thread_id,
-                        pid: 0,
-                        euid: 0,
-                        library: None,
-                        library_uuid: Uuid::nil(),
+                        pid,
+                        euid,
+                        library: process,
+                        library_uuid: main_uuid,
                         activity_id: 0,
                         time,
                         event_type: EventType::Loss,
                         log_type: LogType::Loss,
-                        process: None,
-                        process_uuid: Uuid::nil(),
+                        process,
+                        process_uuid: main_uuid,
                         format_string: None,
                         boot_uuid,
                         timezone_name,
