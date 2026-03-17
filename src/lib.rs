@@ -22,36 +22,35 @@
     clippy::unnecessary_cast
 )]
 
-#[cfg(not(feature =  "rewrite"))]
+#[cfg(not(feature = "rewrite"))]
 pub mod legacy;
-#[cfg(not(feature =  "rewrite"))]
+#[cfg(not(feature = "rewrite"))]
 mod old_prelude {
     pub use super::legacy::*;
 }
-#[cfg(not(feature =  "rewrite"))]
+#[cfg(not(feature = "rewrite"))]
 pub use old_prelude::*;
 
-
-#[cfg(feature =  "rewrite")]
+#[cfg(feature = "rewrite")]
 mod rewrite;
-#[cfg(feature =  "rewrite")]
+#[cfg(feature = "rewrite")]
 mod rewrite_prelude {
     pub use super::rewrite::*;
 }
-#[cfg(feature =  "rewrite")]
+#[cfg(feature = "rewrite")]
 pub use rewrite_prelude::*;
 
-#[cfg(feature =  "rewrite-compat")]
+#[cfg(feature = "rewrite-compat")]
 pub mod compat;
-#[cfg(feature =  "rewrite-compat")]
+#[cfg(feature = "rewrite-compat")]
 mod compat_prelude {
     pub use super::compat::*;
 }
-#[cfg(feature =  "rewrite-compat")]
+#[cfg(feature = "rewrite-compat")]
 pub use compat_prelude::*;
 
 #[cfg(feature = "rewrite-compat")]
 pub mod timesync {
-    pub use crate::rewrite::timesync::*;
     pub use crate::compat::unified_log::TimesyncBoot;
+    pub use crate::rewrite::timesync::*;
 }

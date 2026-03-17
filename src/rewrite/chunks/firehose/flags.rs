@@ -35,13 +35,13 @@ const FORMATTER_TYPE_MASK: u16 = 0x000E;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, num_enum::IntoPrimitive, num_enum::FromPrimitive)]
 #[repr(u8)]
 pub enum FormatterType {
-  MainExe = 0x2,
-  SharedCache = 0x4,
-  Absolute = 0x8,
-  UuidRelative = 0xa,
-  LargeSharedCache = 0xc,
-  #[num_enum(default)]
-  Unknown,
+    MainExe = 0x2,
+    SharedCache = 0x4,
+    Absolute = 0x8,
+    UuidRelative = 0xa,
+    LargeSharedCache = 0xc,
+    #[num_enum(default)]
+    Unknown,
 }
 
 // --- Formatter flags ---
@@ -51,54 +51,57 @@ pub enum FormatterType {
 /// `uuid_relative` is stored as raw `[u8; 16]` (big-endian) instead of `Uuid`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct RawFormatterFlags {
-  pub main_exe: bool,
-  pub shared_cache: bool,
-  pub absolute: bool,
-  pub has_large_offset: u16,
-  pub large_shared_cache: u16,
-  pub alt_index: u16,
-  pub uuid_relative: [u8; 16],
+    pub main_exe: bool,
+    pub shared_cache: bool,
+    pub absolute: bool,
+    pub has_large_offset: u16,
+    pub large_shared_cache: u16,
+    pub alt_index: u16,
+    pub uuid_relative: [u8; 16],
 }
 
 impl RawFormatterFlags {
-  /// Parse formatter flags from entry data.
-  ///
-  /// Direct translation of `FirehoseFormatters::firehose_formatter_flags`
-  /// from `src/chunks/firehose/flags.rs`.
-  pub(super) fn parse(input: &[u8], flags: FirehoseFlags) -> nom::IResult<&[u8], Self> {
-    let mut result = Self::default();
-    let has_large_offset = flags.contains(FirehoseFlags::HAS_LARGE_OFFSET);
+    /// Parse formatter flags from entry data.
+    ///
+    /// Direct translation of `FirehoseFormatters::firehose_formatter_flags`
+    /// from `src/chunks/firehose/flags.rs`.
+    pub(super) fn parse(input: &[u8], flags: FirehoseFlags) -> nom::IResult<&[u8], Self> {
+        let mut result = Self::default();
+        let has_large_offset = flags.contains(FirehoseFlags::HAS_LARGE_OFFSET);
 
-    match FormatterType::from((flags.bits() & FORMATTER_TYPE_MASK) as u8) {
-      FormatterType::LargeSharedCache => {
-        let (input, large_offset) = cond(has_large_offset, le_u16).parse(input)?;
-        result.has_large_offset = large_offset.unwrap_or(0);
-        let (input, val) = le_u16(input)?;
-        result.large_shared_cache = val;
-        Ok((input, result))
-      }
-      FormatterType::Absolute => {
-        result.absolute = true;
-        let (input, val) = le_u16(input)?;
-        result.alt_index = val;
-        Ok((input, result))
-      }
-      FormatterType::MainExe => {
-        result.main_exe = true;
-        Ok((input, result))
-      }
-      FormatterType::SharedCache => {
-        result.shared_cache = true;
-        let (input, large_offset) = cond(has_large_offset, le_u16).parse(input)?;
-        result.has_large_offset = large_offset.unwrap_or(0);
-        Ok((input, result))
-      }
-      FormatterType::UuidRelative => {
-        let (input, val) = be_u128(input)?;
-        result.uuid_relative = val.to_be_bytes();
-        Ok((input, result))
-      }
-      FormatterType::Unknown => Err(nom::Err::Failure(nom::error::Error::new(input, nom::error::ErrorKind::Switch))),
+        match FormatterType::from((flags.bits() & FORMATTER_TYPE_MASK) as u8) {
+            FormatterType::LargeSharedCache => {
+                let (input, large_offset) = cond(has_large_offset, le_u16).parse(input)?;
+                result.has_large_offset = large_offset.unwrap_or(0);
+                let (input, val) = le_u16(input)?;
+                result.large_shared_cache = val;
+                Ok((input, result))
+            }
+            FormatterType::Absolute => {
+                result.absolute = true;
+                let (input, val) = le_u16(input)?;
+                result.alt_index = val;
+                Ok((input, result))
+            }
+            FormatterType::MainExe => {
+                result.main_exe = true;
+                Ok((input, result))
+            }
+            FormatterType::SharedCache => {
+                result.shared_cache = true;
+                let (input, large_offset) = cond(has_large_offset, le_u16).parse(input)?;
+                result.has_large_offset = large_offset.unwrap_or(0);
+                Ok((input, result))
+            }
+            FormatterType::UuidRelative => {
+                let (input, val) = be_u128(input)?;
+                result.uuid_relative = val.to_be_bytes();
+                Ok((input, result))
+            }
+            FormatterType::Unknown => Err(nom::Err::Failure(nom::error::Error::new(
+                input,
+                nom::error::ErrorKind::Switch,
+            ))),
+        }
     }
-  }
 }

@@ -4,11 +4,11 @@
 //! All fields borrow from source data buffers. The `message` is formatted
 //! on demand via `.message()` — no heap allocation until explicitly requested.
 
-use std::rc::Rc;
 use base64::Engine;
 use chrono::{DateTime, Utc};
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
+use std::rc::Rc;
 use uuid::Uuid;
 
 use super::decoders::{config, location};
@@ -169,7 +169,9 @@ impl<'a, 'b> LogEntry<'a, 'b> {
 
     /// Format the log message on demand. This is the only allocation point.
     pub fn message(&self) -> Rc<String> {
-        if let Ok(borrow) = self.resolved_message.try_borrow()&&            let Some(msg) = borrow.as_ref() {
+        if let Ok(borrow) = self.resolved_message.try_borrow()
+            && let Some(msg) = borrow.as_ref()
+        {
             return msg.clone();
         }
 
@@ -181,7 +183,7 @@ impl<'a, 'b> LogEntry<'a, 'b> {
         let msg = Rc::new(msg);
         if let Ok(mut borrow) = self.resolved_message.try_borrow_mut() {
             *borrow = Some(msg.clone());
-        } 
+        }
         msg
     }
 

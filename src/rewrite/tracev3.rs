@@ -1,9 +1,5 @@
 //! `TraceV3` file processor — threads all parsing modules together to produce log entries.
 
-use std::cell::RefCell;
-use std::collections::HashMap;
-use log::warn;
-use uuid::Uuid;
 use super::catalog::RawCatalogChunk;
 use super::chunk::{ChunksReader, TopChunk};
 use super::chunks::ChunkTag;
@@ -20,6 +16,10 @@ use super::log_entry::{EventType, ItemsData, LogEntry, LogType, PrivateDataConte
 use super::resolve::resolve_strings;
 use super::timesync::TimestampResolver;
 use super::uuidtext::RawUUIDText;
+use log::warn;
+use std::cell::RefCell;
+use std::collections::HashMap;
+use uuid::Uuid;
 
 // ---------------------------------------------------------------------------
 // OversizeCache

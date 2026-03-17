@@ -14,25 +14,25 @@ use std::fmt;
 /// Error type compatible with the legacy `ParserError`.
 #[derive(Debug)]
 pub enum ParserError {
-  Path,
-  Dir,
-  Tracev3Parse,
-  Read,
-  Timesync,
+    Path,
+    Dir,
+    Tracev3Parse,
+    Read,
+    Timesync,
 }
 
 impl std::error::Error for ParserError {}
 
 impl fmt::Display for ParserError {
-  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    match self {
-      Self::Path => write!(f, "Failed to open file path"),
-      Self::Dir => write!(f, "Failed to open directory path"),
-      Self::Tracev3Parse => write!(f, "Failed to parse tracev3 file"),
-      Self::Read => write!(f, "Failed to read file"),
-      Self::Timesync => write!(f, "Failed to parse timesync file"),
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Path => write!(f, "Failed to open file path"),
+            Self::Dir => write!(f, "Failed to open directory path"),
+            Self::Tracev3Parse => write!(f, "Failed to parse tracev3 file"),
+            Self::Read => write!(f, "Failed to read file"),
+            Self::Timesync => write!(f, "Failed to parse timesync file"),
+        }
     }
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -44,21 +44,21 @@ impl fmt::Display for ParserError {
 /// Tests only inspect `.len()` on firehose/simpledump/statedump/oversize
 /// collections, never the actual items.
 pub struct CountVec {
-  count: usize,
+    count: usize,
 }
 
 impl CountVec {
-  pub(crate) fn new(count: usize) -> Self {
-    Self { count }
-  }
+    pub(crate) fn new(count: usize) -> Self {
+        Self { count }
+    }
 
-  pub fn len(&self) -> usize {
-    self.count
-  }
+    pub fn len(&self) -> usize {
+        self.count
+    }
 
-  pub fn is_empty(&self) -> bool {
-    self.count == 0
-  }
+    pub fn is_empty(&self) -> bool {
+        self.count == 0
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -71,16 +71,16 @@ pub struct HeaderInfo;
 /// Catalog process info container. Tests check
 /// `catalog.catalog_process_info_entries.len()`.
 pub struct CatalogInfo {
-  pub catalog_process_info_entries: CountVec,
+    pub catalog_process_info_entries: CountVec,
 }
 
 /// Per-catalog chunk counts — mirrors `legacy::UnifiedLogCatalogData`.
 pub struct UnifiedLogCatalogData {
-  pub catalog: CatalogInfo,
-  pub firehose: CountVec,
-  pub simpledump: CountVec,
-  pub statedump: CountVec,
-  pub oversize: CountVec,
+    pub catalog: CatalogInfo,
+    pub firehose: CountVec,
+    pub simpledump: CountVec,
+    pub statedump: CountVec,
+    pub oversize: CountVec,
 }
 
 // ---------------------------------------------------------------------------
@@ -90,10 +90,10 @@ pub struct UnifiedLogCatalogData {
 /// Transferable oversize entry. Keyed by `(data_ref_index, first_proc_id,
 /// second_proc_id)` so it can be pre-populated into `OversizeCache`.
 pub struct OversizeEntry {
-  pub(crate) data_ref_index: u32,
-  pub(crate) first_proc_id: u64,
-  pub(crate) second_proc_id: u32,
-  pub(crate) data: Vec<u8>,
+    pub(crate) data_ref_index: u32,
+    pub(crate) first_proc_id: u64,
+    pub(crate) second_proc_id: u32,
+    pub(crate) data: Vec<u8>,
 }
 
 // ---------------------------------------------------------------------------
@@ -105,12 +105,12 @@ pub struct OversizeEntry {
 /// Holds raw bytes + metadata for deferred processing by `build_log`.
 /// The `oversize` vec supports cross-file merging via `append`.
 pub struct UnifiedLogData {
-  pub header: Vec<HeaderInfo>,
-  pub catalog_data: Vec<UnifiedLogCatalogData>,
-  pub oversize: Vec<OversizeEntry>,
-  pub evidence: String,
-  /// Stored tracev3 bytes for `build_log` to process.
-  pub(crate) raw_data: Vec<u8>,
+    pub header: Vec<HeaderInfo>,
+    pub catalog_data: Vec<UnifiedLogCatalogData>,
+    pub oversize: Vec<OversizeEntry>,
+    pub evidence: String,
+    /// Stored tracev3 bytes for `build_log` to process.
+    pub(crate) raw_data: Vec<u8>,
 }
 
 // ---------------------------------------------------------------------------
@@ -120,7 +120,7 @@ pub struct UnifiedLogData {
 /// Timesync boot session data. Opaque wrapper passed between
 /// `collect_timesync` and `build_log`.
 pub struct TimesyncBoot {
-  pub(crate) inner: crate::rewrite::timesync::RawTimesyncBoot,
+    pub(crate) inner: crate::rewrite::timesync::RawTimesyncBoot,
 }
 
 // ---------------------------------------------------------------------------
@@ -132,25 +132,25 @@ pub struct TimesyncBoot {
 /// Mirrors the legacy `LogData` struct field-for-field so integration tests
 /// compile unchanged.
 pub struct LogData {
-  pub subsystem: String,
-  pub thread_id: u64,
-  pub pid: u64,
-  pub euid: u32,
-  pub library: String,
-  pub library_uuid: String,
-  pub activity_id: u64,
-  pub time: f64,
-  pub category: String,
-  pub event_type: EventType,
-  pub log_type: LogType,
-  pub process: String,
-  pub process_uuid: String,
-  pub message: String,
-  pub raw_message: String,
-  pub boot_uuid: String,
-  pub timezone_name: String,
-  /// Tests never inspect contents — always empty.
-  pub message_entries: Vec<()>,
-  pub timestamp: String,
-  pub evidence: String,
+    pub subsystem: String,
+    pub thread_id: u64,
+    pub pid: u64,
+    pub euid: u32,
+    pub library: String,
+    pub library_uuid: String,
+    pub activity_id: u64,
+    pub time: f64,
+    pub category: String,
+    pub event_type: EventType,
+    pub log_type: LogType,
+    pub process: String,
+    pub process_uuid: String,
+    pub message: String,
+    pub raw_message: String,
+    pub boot_uuid: String,
+    pub timezone_name: String,
+    /// Tests never inspect contents — always empty.
+    pub message_entries: Vec<()>,
+    pub timestamp: String,
+    pub evidence: String,
 }

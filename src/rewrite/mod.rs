@@ -20,4 +20,3 @@ pub mod uuidtext;
 
 /// Byte offset within the data being parsed.
 pub type Offset = usize;
-

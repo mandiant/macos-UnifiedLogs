@@ -11,27 +11,30 @@ use uuid::Uuid;
 
 /// Get UUID string from log object
 pub(crate) fn parse_uuid(input: &str) -> Result<Uuid, DecoderError<'_>> {
-  let decoded_data = decode_standard(input).map_err(|_| DecoderError::Parse {
-    input: input.as_bytes(),
-    parser_name: "parse uuid",
-    message: "Failed to base64 decode uuid data",
-  })?;
-  let uuid = Uuid::from_slice(&decoded_data).map_err(|_| DecoderError::Parse {
-    input: input.as_bytes(),
-    parser_name: "parse uuid",
-    message: "Failed to parse uuid from decoded data",
-  })?;
-  Ok(uuid)
+    let decoded_data = decode_standard(input).map_err(|_| DecoderError::Parse {
+        input: input.as_bytes(),
+        parser_name: "parse uuid",
+        message: "Failed to base64 decode uuid data",
+    })?;
+    let uuid = Uuid::from_slice(&decoded_data).map_err(|_| DecoderError::Parse {
+        input: input.as_bytes(),
+        parser_name: "parse uuid",
+        message: "Failed to parse uuid from decoded data",
+    })?;
+    Ok(uuid)
 }
 
 #[cfg(test)]
 mod tests {
-  use super::*;
+    use super::*;
 
-  #[test]
-  fn test_parse_uuid() {
-    let test_data = "hZV+HTbETtKGqAZXvN3ikw==";
-    let results = parse_uuid(test_data).unwrap();
-    assert_eq!(results, Uuid::parse_str("85957E1D36C44ED286A80657BCDDE293").unwrap());
-  }
+    #[test]
+    fn test_parse_uuid() {
+        let test_data = "hZV+HTbETtKGqAZXvN3ikw==";
+        let results = parse_uuid(test_data).unwrap();
+        assert_eq!(
+            results,
+            Uuid::parse_str("85957E1D36C44ED286A80657BCDDE293").unwrap()
+        );
+    }
 }
