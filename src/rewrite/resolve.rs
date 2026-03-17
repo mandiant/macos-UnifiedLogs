@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use super::catalog::RawCatalogChunk;
-use super::chunkset::firehose::flags::RawFormatterFlags;
+use super::chunks::firehose::flags::RawFormatterFlags;
 use super::dsc::RawSharedCacheStrings;
 use super::uuidtext::RawUUIDText;
 
@@ -320,7 +320,7 @@ fn compute_shared_cache_offset(string_offset: u64, formatter: &RawFormatterFlags
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::rewrite::chunkset::firehose::flags::RawFormatterFlags;
+  use crate::rewrite::chunks::firehose::flags::RawFormatterFlags;
   use test_case::test_case;
 
   // --- compute_shared_cache_offset tests ---

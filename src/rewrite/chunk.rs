@@ -4,7 +4,7 @@ use super::{
   catalog::RawCatalogChunk,
   chunks::{ChunkPreamble, ChunkTag},
   chunks_reader::{RawChunk, RawChunksReader},
-  chunkset::{ChunksetPayload, firehose::RawFirehose, oversize::RawOversize, simpledump::RawSimpleDump, statedump::RawStatedump},
+  chunks::{ChunksetPayload, firehose::RawFirehose, oversize::RawOversize, simpledump::RawSimpleDump, statedump::RawStatedump},
   error::{NomExt, ParseError},
   header::RawHeaderChunk,
 };
@@ -271,7 +271,7 @@ mod tests {
 
   #[test]
   fn visit_firehose_entry_bodies() -> anyhow::Result<()> {
-    use super::super::chunkset::firehose::entry::FirehoseActivityType;
+    use super::super::chunks::firehose::entry::FirehoseActivityType;
 
     let data = std::fs::read(test_data_path().join("Bad Data/TraceV3/Bad_header_0000000000000005.tracev3"))?;
 

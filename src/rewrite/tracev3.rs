@@ -2,19 +2,17 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
-
 use log::warn;
 use uuid::Uuid;
-
 use super::catalog::RawCatalogChunk;
 use super::chunk::{ChunksReader, TopChunk};
 use super::chunks::ChunkTag;
-use super::chunkset::firehose::RawFirehose;
-use super::chunkset::firehose::body::{RawFirehoseBody, RawFormatterFlags};
-use super::chunkset::firehose::entry::FirehoseLogType;
-use super::chunkset::oversize::RawOversize;
-use super::chunkset::simpledump::RawSimpleDump;
-use super::chunkset::statedump::RawStatedump;
+use super::chunks::firehose::RawFirehose;
+use super::chunks::firehose::body::{RawFirehoseBody, RawFormatterFlags};
+use super::chunks::firehose::entry::FirehoseLogType;
+use super::chunks::oversize::RawOversize;
+use super::chunks::simpledump::RawSimpleDump;
+use super::chunks::statedump::RawStatedump;
 use super::dsc::RawSharedCacheStrings;
 use super::error::{NomExt, ParseError};
 use super::header::RawHeaderChunk;

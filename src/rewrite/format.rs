@@ -8,7 +8,7 @@ use crate::rewrite::helpers::utf8_str;
 #[cfg(feature = "rewrite-compat")]
 use base64::Engine;
 
-use super::chunkset::firehose::item::{RawFirehoseItem, RawItemKind, RawItemValue};
+use super::chunks::firehose::item::{RawFirehoseItem, RawItemKind, RawItemValue};
 use std::fmt::Write;
 
 // ---------------------------------------------------------------------------
@@ -958,7 +958,7 @@ fn item_to_string(item: &RawFirehoseItem<'_>) -> String {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::rewrite::chunkset::firehose::item::{RawFirehoseItem, RawItemValue};
+  use crate::rewrite::chunks::firehose::item::{RawFirehoseItem, RawItemValue};
   use test_case::test_case;
 
   fn str_item(s: &str) -> RawFirehoseItem<'_> {

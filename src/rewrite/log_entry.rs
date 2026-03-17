@@ -13,12 +13,12 @@ use uuid::Uuid;
 
 use super::decoders::{config, location};
 
-use super::chunkset::firehose::flags::FirehoseFlags;
+use super::chunks::firehose::flags::FirehoseFlags;
 #[cfg(not(feature = "rewrite-compat"))]
-use super::chunkset::firehose::item::fill_private_data;
+use super::chunks::firehose::item::fill_private_data;
 #[cfg(feature = "rewrite-compat")]
-use super::chunkset::firehose::item::fill_private_data_compat;
-use super::chunkset::firehose::item::{parse_items_data, parse_trace_items};
+use super::chunks::firehose::item::fill_private_data_compat;
+use super::chunks::firehose::item::{parse_items_data, parse_trace_items};
 #[cfg(not(feature = "rewrite-compat"))]
 use super::format::NoDecoder;
 #[cfg(feature = "rewrite-compat")]
