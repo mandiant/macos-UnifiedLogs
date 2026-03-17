@@ -25,7 +25,7 @@ use macos_unifiedlogs::{
         load_file_buffers_by_uuid, load_timesync_data, load_uuidtext_buffers, visit_logarchive,
     },
     timesync::TimestampResolver,
-    tracev3::{visit_tracev3, OversizeCache},
+    tracev3::{OversizeCache, visit_tracev3},
     uuidtext::RawUUIDText,
 };
 use regex::Regex;
@@ -128,11 +128,17 @@ fn test_parse_log_big_sur() {
         count_by_type[&ChunkTag::Firehose]
     );
     assert_eq!(
-        count_by_type.get(&ChunkTag::Simpledump).copied().unwrap_or(0),
+        count_by_type
+            .get(&ChunkTag::Simpledump)
+            .copied()
+            .unwrap_or(0),
         0
     );
     assert_eq!(
-        count_by_type.get(&ChunkTag::Statedump).copied().unwrap_or(0),
+        count_by_type
+            .get(&ChunkTag::Statedump)
+            .copied()
+            .unwrap_or(0),
         0
     );
 }
@@ -224,7 +230,7 @@ fn test_build_log_big_sur() {
                 assert_eq!(entry.activity_id, 0);
                 assert_eq!(entry.library, Some("/usr/libexec/opendirectoryd"));
                 assert_eq!(
-                    entry.message(),
+                    entry.message().as_str(),
                     "opendirectoryd (build 796.100) launched..."
                 );
                 assert_eq!(entry.pid, 105);
