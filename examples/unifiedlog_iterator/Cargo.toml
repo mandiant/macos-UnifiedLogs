@@ -15,3 +15,5 @@ regex = "1.12.3"
 rusqlite = { version = "0.32", features = ["bundled"] }
 macos-unifiedlogs = { path = "../../" }
 clap = { version = "4.5.58", features = ["derive"] }
+serde = { version = "1.0.228", features = ["derive"] }
+libc = "0.2"
