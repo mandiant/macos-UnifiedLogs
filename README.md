@@ -72,6 +72,62 @@ visit_tracev3(&data, &resolver, &dsc_files, &uuidtext_files, &mut oversize_cache
 4. **Format** — Apply printf-style formatting with decoded message items
 5. **Emit** — Deliver `LogEntry` via callback with resolved process/library names, timestamps, subsystem/category
 
+```
+                        visit_logarchive(path, callback)
+                                      │
+          ┌───────────────────────────┼──────────────────────────┐
+          │                           │                          │
+    ┌─────┴──────┐  ┌────────────────┴────────────────┐  ┌─────┴──────────┐
+    │ timesync/  │  │ Persist/ Special/ HighVolume/ … │  │ dsc/ UUIDText/ │
+    └─────┬──────┘  │         .tracev3 files          │  └─────┬──────────┘
+          │         └────────────────┬────────────────┘        │
+          ▼                          │                          ▼
+  TimestampResolver                  │              SharedCacheStrings (DSC)
+                                     │              UUIDText files
+                                     ▼
+                       ┌──────────────────────────┐
+                       │       ChunksReader       │  per .tracev3
+                       └────────────┬─────────────┘
+               ┌────────────────────┼────────────────────┐
+               ▼                    ▼                    ▼
+           Header              Catalog              Chunkset
+                                                       │
+                                                LZ4 decompress
+                                                  (bv41/bv4-)
+                                                       │
+                                                       ▼
+                                           ┌───────────────────┐
+                                           │   ChunkSetReader  │
+                                           └─────────┬─────────┘
+                        ┌──────────┬─────────────────┼──────────┐
+                        ▼          ▼                 ▼          ▼
+                    Firehose    Oversize         Simpledump  Statedump
+                        │     (→ cache)
+                        ▼
+                 entry iterator
+          ┌─────┬──────┼──────┬──────┐
+          ▼     ▼      ▼      ▼      ▼
+      Activity Non-  Signpost Trace  Loss
+             Activity
+                        │
+                        ▼
+             resolve_strings() ◄── DSC + UUIDText + Oversize cache
+                        │
+                        ▼
+              LogEntry<'a,'b>   zero-copy, borrows from buffers
+                        │
+                        │  .message()  lazy, allocated on demand
+                        ▼
+             format_message()   printf-style parser
+                        │
+                        │  %{annotation} specifiers → custom decoders
+                        ▼
+             ┌── AppleDecoder ──────────────────────────────────┐
+             │ DNS · network · location · time · UUID           │
+             │ OpenDirectory · Darwin · bool · config           │
+             └──────────────────────────────────────────────────┘
+```
+
 ## Building
 
 ```bash
