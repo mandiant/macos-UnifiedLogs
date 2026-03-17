@@ -1,8 +1,6 @@
-#[cfg(any(test, feature = "rewrite-compat"))]
 use base64::DecodeError;
 use base64::{Engine, engine::general_purpose};
 use log::{error, warn};
-#[cfg(feature = "rewrite-compat")]
 use nom::error::ErrorKind;
 use nom::{
     Parser,
@@ -10,7 +8,6 @@ use nom::{
     combinator::opt,
 };
 use std::str::from_utf8;
-#[cfg(feature = "rewrite-compat")]
 use uuid::Uuid;
 
 pub(crate) const INVALID_UTF8: &str = "<Invalid UTF-8>";
@@ -66,7 +63,6 @@ pub(crate) fn utf8_str_from_cstring(input: &[u8]) -> nom::IResult<&[u8], &str> {
     Ok((input, str_part))
 }
 
-#[cfg(any(test, feature = "rewrite-compat"))]
 /// Base64 decode data using the STANDARD engine (alphabet along with "+" and "/")
 pub(crate) fn decode_standard(data: &str) -> Result<Vec<u8>, DecodeError> {
     general_purpose::STANDARD.decode(data)
@@ -111,7 +107,6 @@ pub(crate) fn extract_string(data: &[u8]) -> nom::IResult<&[u8], &str> {
     }
 }
 
-#[cfg(feature = "rewrite-compat")]
 /// Truncate a string at the first null byte, discarding the null and any trailing garbage.
 fn truncate_at_null(s: &str) -> String {
     match s.find('\0') {
@@ -120,7 +115,6 @@ fn truncate_at_null(s: &str) -> String {
     }
 }
 
-#[cfg(feature = "rewrite-compat")]
 /// Extract a size based on provided string size from Firehose string item entries
 pub(crate) fn extract_string_size(data: &[u8], message_size: u64) -> nom::IResult<&[u8], String> {
     const NULL_STRING: u64 = 0;
@@ -159,7 +153,6 @@ pub(crate) fn extract_string_size(data: &[u8], message_size: u64) -> nom::IResul
     Ok((input, String::from("Could not find path string")))
 }
 
-#[cfg(feature = "rewrite-compat")]
 /// Extract an UTF8 string from a byte array, stops at `NULL_BYTE` or END OF STRING.
 /// Consumes the end byte. Fails if the string is empty.
 pub(crate) fn non_empty_cstring(input: &[u8]) -> nom::IResult<&[u8], String> {
@@ -177,7 +170,6 @@ pub(crate) fn non_empty_cstring(input: &[u8]) -> nom::IResult<&[u8], String> {
     }
 }
 
-#[cfg(feature = "rewrite-compat")]
 /// Clean and format UUIDs to be pretty
 pub(crate) fn format_uuid(uuid: Uuid) -> String {
     format!("{:X}", uuid.simple())

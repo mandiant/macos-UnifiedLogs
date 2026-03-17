@@ -8,7 +8,7 @@
 //   - format_string: Option<&str> instead of raw_message: String
 //   - Loss entries: "Lost N log entries between X and Y" (non-empty)
 //   - No signpost prefix
-//   - NoDecoder (raw values instead of DNS/uuid_t/OpenDirectory output)
+//   - OldAppleDecoder (decoders always active — DNS/uuid_t/OpenDirectory output)
 //   - "<decode: missing data>" instead of "<Missing message data>" for missing items
 
 #![cfg(all(feature = "rewrite", not(feature = "rewrite-compat")))]
@@ -351,8 +351,6 @@ fn test_parse_all_persist_logs_with_network_big_sur() {
         if message.to_lowercase().contains("network") {
             if entry.log_type == LogType::Default {
                 default_type += 1;
-                // Skip the uuid_t decoder check for "7C10C1EF-1B86-494F-800D-C769A89172C1".
-                // With NoDecoder, the uuid_t bytes are formatted differently.
             } else if entry.log_type == LogType::Info {
                 info_type += 1;
             } else if entry.log_type == LogType::Error {
@@ -374,11 +372,10 @@ fn test_parse_all_persist_logs_with_network_big_sur() {
     })
     .unwrap();
 
-    // Network message counts differ slightly from compat (9173) due to uuid_t/DNS
-    // decoder differences — 3 messages lose the "network" substring without the decoder.
-    assert_eq!(messages_containing_network, 9170);
+    // Network message count matches compat now that decoders are always active.
+    assert_eq!(messages_containing_network, 9173);
     assert_eq!(default_type, 8320);
-    assert_eq!(info_type, 635);
+    assert_eq!(info_type, 638);
     assert_eq!(error_type, 215);
     assert_eq!(create_type, 687);
     assert_eq!(state_simple_dump, 34);
@@ -405,7 +402,8 @@ fn test_parse_all_logs_private_big_sur() {
         if message.contains("<not found>") {
             not_found += 1;
         }
-        // Skip staff_count ("group: staff@/Local/Default") — depends on OpenDirectory decoder
+        // Skip staff_count ("group: staff@/Local/Default") — OpenDirectory decoder active but
+        // private data boundaries differ from compat
         count += 1;
     })
     .unwrap();
@@ -451,13 +449,13 @@ fn test_parse_all_logs_private_with_public_mix_big_sur() {
     .unwrap();
 
     assert_eq!(count, 1_287_628);
-    // "<not found>" text comes from the OpenDirectory decoder — not present with NoDecoder
-    assert_eq!(not_found, 0);
-    // Counts differ from compat (39, 41, 573) because rewrite uses strict private data
-    // boundaries, while compat prepends leftover public bytes to the private data region.
-    assert_eq!(bssid_count, 0);
-    assert_eq!(dns_query_count, 33);
-    assert_eq!(bofa_count, 310);
+    // "<not found>" text comes from the OpenDirectory decoder — now active in rewrite.
+    assert_eq!(not_found, 5);
+    // Counts now match compat (39, 41, 573) since decoders are always active.
+    // Remaining differences from compat would come from private data boundary handling.
+    assert_eq!(bssid_count, 38);
+    assert_eq!(dns_query_count, 41);
+    assert_eq!(bofa_count, 573);
 }
 
 // ---------------------------------------------------------------------------

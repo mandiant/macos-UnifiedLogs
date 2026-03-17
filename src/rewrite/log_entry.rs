@@ -19,9 +19,6 @@ use super::chunks::firehose::item::fill_private_data;
 #[cfg(feature = "rewrite-compat")]
 use super::chunks::firehose::item::fill_private_data_compat;
 use super::chunks::firehose::item::{parse_items_data, parse_trace_items};
-#[cfg(not(feature = "rewrite-compat"))]
-use super::format::NoDecoder;
-#[cfg(feature = "rewrite-compat")]
 use super::format::OldAppleDecoder;
 use super::format::{AppleDecoder, format_message};
 
@@ -175,10 +172,7 @@ impl<'a, 'b> LogEntry<'a, 'b> {
             return msg.clone();
         }
 
-        #[cfg(feature = "rewrite-compat")]
         let msg = self.message_with_decoder(&OldAppleDecoder);
-        #[cfg(not(feature = "rewrite-compat"))]
-        let msg = self.message_with_decoder(&NoDecoder);
 
         let msg = Rc::new(msg);
         if let Ok(mut borrow) = self.resolved_message.try_borrow_mut() {

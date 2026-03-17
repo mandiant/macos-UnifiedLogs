@@ -23,10 +23,11 @@ pub enum Chunk<'a> {
     Unknown(RawChunk<'a>),
 }
 
-/// A parsed, typed chunk from a tracev3 file.
+/// A top-level chunk from a tracev3 file.
 ///
-/// Inner chunkset types (Firehose, Oversize, etc.) are not yet dispatched —
-/// they land in the `Unknown` variant when encountered.
+/// Covers only the three top-level container types (Header, Catalog, Chunkset).
+/// Inner chunkset types (Firehose, Oversize, etc.) are dispatched inside
+/// `ChunkSetReader` and represented by the [`Chunk`] enum.
 #[derive(Debug)]
 pub enum TopChunk<'a> {
     Header(super::header::RawHeaderChunk<'a>),

@@ -10,17 +10,11 @@ pub(crate) mod config;
 pub(crate) mod location;
 mod network;
 
-#[cfg(feature = "rewrite-compat")]
 mod darwin;
-#[cfg(feature = "rewrite-compat")]
 pub(crate) mod decoder;
-#[cfg(feature = "rewrite-compat")]
 mod dns;
-#[cfg(feature = "rewrite-compat")]
 mod opendirectory;
-#[cfg(feature = "rewrite-compat")]
 mod time;
-#[cfg(feature = "rewrite-compat")]
 mod uuid;
 
 pub enum DecoderError<'a> {

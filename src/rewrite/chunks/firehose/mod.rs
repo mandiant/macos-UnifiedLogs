@@ -17,9 +17,8 @@ use entry::RawFirehoseEntryReader;
 
 /// Parsed firehose chunk header — the 32-byte header after the preamble.
 ///
-/// The individual log entries within `firehose_data` (activity, nonactivity,
-/// signpost, trace) are not yet parsed — the payload is kept as raw `&[u8]`.
-/// Detailed entry parsing will be added later.
+/// Individual log entries within `firehose_data` are parsed on demand via
+/// [`RawFirehoseEntryReader`] (see `entries()` method).
 ///
 /// Field names match the original `FirehosePreamble` (with typo fixes:
 /// `base_continous_time` → `base_continuous_time`, `unkonwn2` → `unknown2`).

@@ -5,12 +5,9 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-#[cfg(feature = "rewrite-compat")]
 use super::DecoderError;
 use super::bool::bool_from_int;
-#[cfg(feature = "rewrite-compat")]
 use crate::rewrite::helpers::decode_standard;
-#[cfg(feature = "rewrite-compat")]
 use log::warn;
 use nom::{
     IResult, Parser,
@@ -51,7 +48,6 @@ pub struct LocationTrackerState {
     is_authorized_for_widgets: u8,
 }
 
-#[cfg(feature = "rewrite-compat")]
 #[derive(Debug, Clone, PartialEq, Eq, strum::Display)]
 pub enum ClientAuthorizationStatus {
     #[strum(to_string = "Not Determined")]
@@ -66,7 +62,6 @@ pub enum ClientAuthorizationStatus {
     AuthorizedWhenInUse,
 }
 
-#[cfg(feature = "rewrite-compat")]
 /// Convert Core Location Client Autherization Status code to string
 pub(crate) fn client_authorization_status(
     status: &str,
@@ -85,7 +80,6 @@ pub(crate) fn client_authorization_status(
     }
 }
 
-#[cfg(feature = "rewrite-compat")]
 #[derive(Debug, Clone, PartialEq, Eq, strum::Display)]
 pub enum DaemonStatusType {
     #[strum(to_string = "Reachability Unavailable")]
@@ -98,7 +92,6 @@ pub enum DaemonStatusType {
     ReachabilityUnachievable,
 }
 
-#[cfg(feature = "rewrite-compat")]
 /// Convert Core Location Daemon Status type to string
 pub(crate) fn daemon_status_type(status: &str) -> Result<DaemonStatusType, DecoderError<'_>> {
     // Found in dyldcache liblog
@@ -115,7 +108,6 @@ pub(crate) fn daemon_status_type(status: &str) -> Result<DaemonStatusType, Decod
     }
 }
 
-#[cfg(feature = "rewrite-compat")]
 #[derive(Debug, Clone, PartialEq, Eq, strum::Display)]
 pub enum SubharvesterIdentifier {
     #[strum(to_string = "CellLegacy")]
@@ -150,7 +142,6 @@ pub enum SubharvesterIdentifier {
     Unknown,
 }
 
-#[cfg(feature = "rewrite-compat")]
 /// Convert Core Location Subhaverester id to string
 pub(crate) fn subharvester_identifier(
     status: &str,
@@ -180,7 +171,6 @@ pub(crate) fn subharvester_identifier(
     }
 }
 
-#[cfg(feature = "rewrite-compat")]
 /// Convert Core Location SQLITE code to string
 pub(crate) fn sqlite_location(input: &str) -> Result<SqliteError, DecoderError<'_>> {
     let decoded_data = decode_standard(input).map_err(|_| DecoderError::Parse {
@@ -198,7 +188,6 @@ pub(crate) fn sqlite_location(input: &str) -> Result<SqliteError, DecoderError<'
     Ok(result)
 }
 
-#[cfg(feature = "rewrite-compat")]
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, PartialEq, Eq, strum::Display)]
 pub enum SqliteError {
@@ -270,7 +259,6 @@ pub enum SqliteError {
     Unknown,
 }
 
-#[cfg(feature = "rewrite-compat")]
 /// Get the SQLITE error message
 fn get_sqlite_data(input: &[u8]) -> IResult<&[u8], SqliteError> {
     let (input, sqlite_code) = le_u32(input)?;
@@ -316,7 +304,6 @@ fn get_sqlite_data(input: &[u8]) -> IResult<&[u8], SqliteError> {
     Ok((input, result))
 }
 
-#[cfg(feature = "rewrite-compat")]
 /// Parse the manager tracker state data
 pub(crate) fn client_manager_state_tracker_state(
     input: &str,
@@ -365,7 +352,6 @@ pub(crate) fn get_state_tracker_data(input: &[u8]) -> IResult<&[u8], LocationSta
     ))
 }
 
-#[cfg(feature = "rewrite-compat")]
 /// Parse location tracker state data
 pub(crate) fn location_manager_state_tracker_state(
     input: &str,
@@ -580,7 +566,6 @@ impl Display for LocationTrackerState {
     }
 }
 
-#[cfg(feature = "rewrite-compat")]
 /// Parse location tracker state data
 pub(crate) fn io_message(data: &str) -> Result<&'static str, DecoderError<'_>> {
     // Found in dyldcache
@@ -769,16 +754,14 @@ mod tests {
     use super::*;
     use crate::rewrite::helpers::decode_standard;
 
-    #[cfg(feature = "rewrite-compat")]
-    #[test]
+        #[test]
     fn test_client_authorization_status() {
         let test_data = "0";
         let result = client_authorization_status(test_data).unwrap();
         assert_eq!(result, ClientAuthorizationStatus::NotDetermined)
     }
 
-    #[cfg(feature = "rewrite-compat")]
-    #[test]
+        #[test]
     fn test_daemon_status_type() {
         let test_data = "2";
         let result = daemon_status_type(test_data).unwrap();
@@ -786,8 +769,7 @@ mod tests {
         assert_eq!(result, DaemonStatusType::ReachabilityLarge)
     }
 
-    #[cfg(feature = "rewrite-compat")]
-    #[test]
+        #[test]
     fn test_subharvester_identifier() {
         let test_data = "2";
         let result = subharvester_identifier(test_data).unwrap();
@@ -795,8 +777,7 @@ mod tests {
         assert_eq!(result, SubharvesterIdentifier::Wifi)
     }
 
-    #[cfg(feature = "rewrite-compat")]
-    #[test]
+        #[test]
     fn test_sqlite() {
         let test_data = "AAAAAA==";
         let result = sqlite_location(test_data).unwrap();
@@ -804,8 +785,7 @@ mod tests {
         assert_eq!(result, SqliteError::SQLITE_OK)
     }
 
-    #[cfg(feature = "rewrite-compat")]
-    #[test]
+        #[test]
     fn test_get_sqlite_data() {
         let test_data = "AAAAAA==";
         let decoded_data_result = decode_standard(test_data).unwrap();
@@ -815,8 +795,7 @@ mod tests {
         assert_eq!(result, SqliteError::SQLITE_OK)
     }
 
-    #[cfg(feature = "rewrite-compat")]
-    #[test]
+        #[test]
     fn test_client_manager_state_tracker_state() {
         let test_data = "AQAAAAAAAAA=";
         let result = client_manager_state_tracker_state(test_data).unwrap();
@@ -849,8 +828,7 @@ mod tests {
         )
     }
 
-    #[cfg(feature = "rewrite-compat")]
-    #[test]
+        #[test]
     fn test_location_manager_state_tracker_state() {
         let test_data = "AAAAAAAA8L8AAAAAAABZQAAAAAAAAAAAAAAAAAAA8D8BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAQAAAAAAAAAA";
         let result = location_manager_state_tracker_state(test_data).unwrap();
@@ -874,8 +852,7 @@ mod tests {
         )
     }
 
-    #[cfg(feature = "rewrite-compat")]
-    #[test]
+        #[test]
     fn test_io_message() {
         let test_data = "3758096981";
         let result = io_message(test_data).unwrap();
