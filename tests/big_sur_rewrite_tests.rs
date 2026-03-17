@@ -659,3 +659,76 @@ fn test_big_sur_oversize_strings_in_another_file() {
     // Compat: 52 → 29. Rewrite should show the same reduction.
     assert_eq!(missing_data_count, 29);
 }
+
+// ---------------------------------------------------------------------------
+// Test 12: Loss entries resolve pid, euid, process, library from catalog
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_big_sur_loss_entries_resolved() {
+    let base = test_data_path().join("system_logs_big_sur.logarchive");
+
+    struct LossInfo {
+        pid: u64,
+        euid: u32,
+        process: Option<String>,
+        library: Option<String>,
+        process_uuid: Uuid,
+        library_uuid: Uuid,
+        count: u64,
+    }
+
+    let mut loss_entries = Vec::new();
+
+    visit_logarchive(&base, |entry| {
+        if entry.event_type == EventType::Loss {
+            loss_entries.push(LossInfo {
+                pid: entry.pid,
+                euid: entry.euid,
+                process: entry.process.map(String::from),
+                library: entry.library.map(String::from),
+                process_uuid: entry.process_uuid,
+                library_uuid: entry.library_uuid,
+                count: match entry.items {
+                    macos_unifiedlogs::log_entry::ItemsData::Loss { count, .. } => count,
+                    _ => panic!("Loss entry should have ItemsData::Loss"),
+                },
+            });
+        }
+    })
+    .unwrap();
+
+    // The logarchive has exactly 5 Loss entries
+    assert_eq!(loss_entries.len(), 5);
+
+    // Every Loss entry should have resolved process and library from catalog + UUIDText.
+    // In this logarchive all 5 Loss entries come from the kernel (pid 0, euid 0).
+    for (i, loss) in loss_entries.iter().enumerate() {
+        assert!(
+            loss.process.is_some(),
+            "Loss entry {i} should have resolved process name"
+        );
+        assert!(
+            loss.library.is_some(),
+            "Loss entry {i} should have resolved library name"
+        );
+        assert_ne!(
+            loss.process_uuid,
+            Uuid::nil(),
+            "Loss entry {i} should have non-nil process_uuid"
+        );
+        assert_eq!(
+            loss.process_uuid, loss.library_uuid,
+            "Loss entry {i}: library_uuid should equal process_uuid (MainExe pattern)"
+        );
+        assert!(
+            loss.count > 0,
+            "Loss entry {i} should have non-zero count"
+        );
+    }
+
+    // Verify the specific values for the Big Sur test data
+    assert!(loss_entries.iter().all(|l| l.process.as_deref() == Some("/kernel")));
+    assert!(loss_entries.iter().all(|l| l.pid == 0 && l.euid == 0));
+    assert!(loss_entries.iter().all(|l| l.count == 63));
+}
