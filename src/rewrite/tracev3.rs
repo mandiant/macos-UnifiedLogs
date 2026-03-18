@@ -157,7 +157,7 @@ pub fn visit_tracev3<'a>(
                                     resolver.resolve(&header.boot_uuid, sd.continuous_time, 1);
                                 let timezone_name = extract_timezone_name(header.timezone_path);
                                 callback(LogEntry {
-                                    subsystem: None,
+                                    subsystem: Some(sd.subsystem),
                                     category: None,
                                     thread_id: sd.thread_id,
                                     pid: sd.first_proc_id,
@@ -247,7 +247,7 @@ pub fn visit_tracev3<'a>(
 // ---------------------------------------------------------------------------
 
 #[allow(clippy::too_many_arguments)]
-fn visit_firehose_entries<'a, 'b>(
+fn visit_firehose_entries<'a: 'b, 'b>(
     fh: &RawFirehose<'b>,
     header: &RawHeaderChunk<'a>,
     catalog: &RawCatalogChunk<'a>,

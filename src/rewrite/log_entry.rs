@@ -122,8 +122,8 @@ pub enum ItemsData<'b> {
 /// the message string on demand. This is the only allocation point.
 #[derive(Debug, Clone)]
 pub struct LogEntry<'a, 'b> {
-    pub subsystem: Option<&'a str>,
-    pub category: Option<&'a str>,
+    pub subsystem: Option<&'b str>,
+    pub category: Option<&'b str>,
     pub thread_id: u64,
     pub pid: u64,
     pub euid: u32,
@@ -155,14 +155,6 @@ pub struct LogEntry<'a, 'b> {
 }
 
 impl<'a, 'b> LogEntry<'a, 'b> {
-    /// Return the effective subsystem — simpledump entries carry it in `ItemsData`.
-    pub fn effective_subsystem(&self) -> Option<&str> {
-        match &self.items {
-            ItemsData::Simpledump { subsystem, .. } => Some(subsystem),
-            _ => self.subsystem,
-        }
-    }
-
     /// Format the log message on demand. This is the only allocation point.
     pub fn message(&self) -> Rc<String> {
         if let Ok(borrow) = self.resolved_message.try_borrow()
@@ -429,7 +421,7 @@ fn format_statedump_object(data: &[u8], title_name: &str) -> String {
 impl Serialize for LogEntry<'_, '_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut state = serializer.serialize_struct("LogEntry", 17)?;
-        state.serialize_field("subsystem", &self.effective_subsystem())?;
+        state.serialize_field("subsystem", &self.subsystem)?;
         state.serialize_field("category", &self.category)?;
         state.serialize_field("thread_id", &self.thread_id)?;
         state.serialize_field("pid", &self.pid)?;

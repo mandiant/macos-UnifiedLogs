@@ -270,11 +270,7 @@ pub fn build_log(
                 .or_else(|| entry.format_string_error.clone())
                 .unwrap_or_default();
 
-            // Simpledump carries subsystem in ItemsData
-            let subsystem = match entry.event_type {
-                EventType::Simpledump => entry.effective_subsystem().unwrap_or("").to_string(),
-                _ => entry.subsystem.unwrap_or("").to_string(),
-            };
+            let subsystem = entry.subsystem.unwrap_or("").to_string();
 
             let timestamp = entry
                 .timestamp()
