@@ -78,7 +78,7 @@ pub struct PrivateDataContext<'b> {
 /// Borrows raw item bytes with lifetime `'b` from the tracev3 chunk data
 /// or oversize cache — zero-copy. The `'b` lifetime is scoped to a single
 /// iteration of the chunkset reader, which outlives the callback invocation.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ItemsData<'b> {
     /// Activity/NonActivity/Signpost: raw item bytes.
     Regular {
@@ -120,7 +120,7 @@ pub enum ItemsData<'b> {
 ///
 /// The log message is **not** eagerly formatted. Call `.message()` to format
 /// the message string on demand. This is the only allocation point.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LogEntry<'a, 'b> {
     pub subsystem: Option<&'a str>,
     pub category: Option<&'a str>,
