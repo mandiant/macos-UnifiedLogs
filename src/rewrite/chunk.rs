@@ -63,6 +63,12 @@ impl<'a> ChunkSetReader<'a> {
         }
     }
 
+    /// Reset the reader to the beginning of the chunkset data.
+    /// Used for multi-pass iteration (e.g. firehose first, then simpledump, then statedump).
+    pub fn reset(&mut self) {
+        self.current_offset = 0;
+    }
+
     pub fn next(&mut self) -> Option<Result<RawChunk<'_>, ParseError>> {
         let data = self.payload.as_bytes();
 

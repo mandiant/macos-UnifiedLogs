@@ -90,6 +90,14 @@ pub fn visit_tracev3<'a>(
             TopChunk::Header(h) => current_header = Some(h),
             TopChunk::Catalog(c) => current_catalog = Some(c),
             TopChunk::Chunkset(mut reader) => {
+                // Multi-pass iteration to match legacy ordering within each chunkset:
+                // legacy emits all firehose entries first, then simpledumps, then statedumps.
+                // The rewrite's raw chunk order interleaves them. Re-parsing chunk preambles
+                // is negligible — the data is already in memory (Rc<Vec<u8>>).
+
+                // --- Pass 1: Oversize + Firehose ---
+                let mut has_simpledump = false;
+                let mut has_statedump = false;
                 while let Some(inner) = reader.next() {
                     let inner = match inner {
                         Ok(c) => c,
@@ -121,9 +129,6 @@ pub fn visit_tracev3<'a>(
                                 continue;
                             };
 
-                            // Compute the extended private data region for compat mode.
-                            // The old pipeline had access to the full chunkset buffer past the public data,
-                            // not just the current chunk's private data. This affected oversized items.
                             #[cfg(feature = "rewrite-compat")]
                             let extended_private_data = {
                                 const FIREHOSE_HEADER_SIZE: usize = 32;
@@ -148,7 +153,27 @@ pub fn visit_tracev3<'a>(
                                 &mut callback,
                             );
                         }
-                        ChunkTag::Simpledump => match RawSimpleDump::parse(inner.data) {
+                        ChunkTag::Simpledump => has_simpledump = true,
+                        ChunkTag::Statedump => has_statedump = true,
+                        _ => {}
+                    }
+                }
+
+                // --- Pass 2: Simpledump ---
+                if has_simpledump {
+                    reader.reset();
+                    while let Some(inner) = reader.next() {
+                        let inner = match inner {
+                            Ok(c) => c,
+                            Err(e) => {
+                                warn!("Failed to parse inner chunk (simpledump pass): {e}");
+                                break;
+                            }
+                        };
+                        if inner.preamble.tag != ChunkTag::Simpledump {
+                            continue;
+                        }
+                        match RawSimpleDump::parse(inner.data) {
                             Ok((_, sd)) => {
                                 let Some(header) = &current_header else {
                                     continue;
@@ -187,8 +212,25 @@ pub fn visit_tracev3<'a>(
                             Err(e) => {
                                 warn!("Failed to parse simpledump chunk: {}", e.to_parse_error())
                             }
-                        },
-                        ChunkTag::Statedump => match RawStatedump::parse(inner.data) {
+                        }
+                    }
+                }
+
+                // --- Pass 3: Statedump ---
+                if has_statedump {
+                    reader.reset();
+                    while let Some(inner) = reader.next() {
+                        let inner = match inner {
+                            Ok(c) => c,
+                            Err(e) => {
+                                warn!("Failed to parse inner chunk (statedump pass): {e}");
+                                break;
+                            }
+                        };
+                        if inner.preamble.tag != ChunkTag::Statedump {
+                            continue;
+                        }
+                        match RawStatedump::parse(inner.data) {
                             Ok((_, sd)) => {
                                 let Some(header) = &current_header else {
                                     continue;
@@ -230,8 +272,7 @@ pub fn visit_tracev3<'a>(
                             Err(e) => {
                                 warn!("Failed to parse statedump chunk: {}", e.to_parse_error())
                             }
-                        },
-                        _ => {} // truly unknown chunk types
+                        }
                     }
                 }
             }
