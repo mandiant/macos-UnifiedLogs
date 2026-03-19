@@ -1,7 +1,7 @@
 //! `TraceV3` file processor — threads all parsing modules together to produce log entries.
 
 use super::catalog::RawCatalogChunk;
-use super::chunk::{ChunksReader, TopChunk};
+use super::chunk::{ChunkSetReader, ChunksReader, TopChunk};
 use super::chunks::ChunkTag;
 use super::chunks::firehose::RawFirehose;
 use super::chunks::firehose::body::{RawFirehoseBody, RawFormatterFlags};
@@ -77,6 +77,7 @@ pub fn visit_tracev3<'a>(
 ) -> Result<(), ParseError> {
     let mut current_header: Option<RawHeaderChunk<'a>> = None;
     let mut current_catalog: Option<RawCatalogChunk<'a>> = None;
+    let mut deferred_readers: Vec<ChunkSetReader<'a>> = Vec::new();
 
     for top_chunk in ChunksReader::new(data) {
         let top_chunk = match top_chunk {
@@ -87,17 +88,31 @@ pub fn visit_tracev3<'a>(
             }
         };
         match top_chunk {
-            TopChunk::Header(h) => current_header = Some(h),
-            TopChunk::Catalog(c) => current_catalog = Some(c),
+            TopChunk::Header(h) => {
+                // Flush deferred simpledump/statedump before switching header context
+                flush_deferred_entries(
+                    &mut deferred_readers,
+                    &current_header,
+                    resolver,
+                    &mut callback,
+                );
+                current_header = Some(h);
+            }
+            TopChunk::Catalog(c) => {
+                // Flush deferred simpledump/statedump at catalog boundary —
+                // legacy groups firehose→simpledump→statedump per catalog, not per chunkset.
+                flush_deferred_entries(
+                    &mut deferred_readers,
+                    &current_header,
+                    resolver,
+                    &mut callback,
+                );
+                current_catalog = Some(c);
+            }
             TopChunk::Chunkset(mut reader) => {
-                // Multi-pass iteration to match legacy ordering within each chunkset:
-                // legacy emits all firehose entries first, then simpledumps, then statedumps.
-                // The rewrite's raw chunk order interleaves them. Re-parsing chunk preambles
-                // is negligible — the data is already in memory (Rc<Vec<u8>>).
-
-                // --- Pass 1: Oversize + Firehose ---
-                let mut has_simpledump = false;
-                let mut has_statedump = false;
+                // Single pass: Oversize + Firehose emitted immediately.
+                // Simpledump/Statedump deferred until catalog boundary.
+                let mut has_deferred = false;
                 while let Some(inner) = reader.next() {
                     let inner = match inner {
                         Ok(c) => c,
@@ -153,134 +168,160 @@ pub fn visit_tracev3<'a>(
                                 &mut callback,
                             );
                         }
-                        ChunkTag::Simpledump => has_simpledump = true,
-                        ChunkTag::Statedump => has_statedump = true,
+                        ChunkTag::Simpledump | ChunkTag::Statedump => has_deferred = true,
                         _ => {}
                     }
                 }
 
-                // --- Pass 2: Simpledump ---
-                if has_simpledump {
+                // Defer this reader for later simpledump/statedump passes
+                if has_deferred {
                     reader.reset();
-                    while let Some(inner) = reader.next() {
-                        let inner = match inner {
-                            Ok(c) => c,
-                            Err(e) => {
-                                warn!("Failed to parse inner chunk (simpledump pass): {e}");
-                                break;
-                            }
-                        };
-                        if inner.preamble.tag != ChunkTag::Simpledump {
-                            continue;
-                        }
-                        match RawSimpleDump::parse(inner.data) {
-                            Ok((_, sd)) => {
-                                let Some(header) = &current_header else {
-                                    continue;
-                                };
-                                let time =
-                                    resolver.resolve(&header.boot_uuid, sd.continuous_time, 1);
-                                let timezone_name = extract_timezone_name(header.timezone_path);
-                                callback(LogEntry {
-                                    subsystem: Some(sd.subsystem),
-                                    category: None,
-                                    thread_id: sd.thread_id,
-                                    pid: sd.first_proc_id,
-                                    euid: 0,
-                                    library: None,
-                                    library_uuid: sd.sender_uuid,
-                                    activity_id: 0,
-                                    time,
-                                    event_type: EventType::Simpledump,
-                                    log_type: LogType::Simpledump,
-                                    process: None,
-                                    process_uuid: sd.dsc_uuid,
-                                    format_string: None,
-                                    boot_uuid: header.boot_uuid,
-                                    timezone_name,
-                                    items: ItemsData::Simpledump {
-                                        subsystem: sd.subsystem,
-                                        message: sd.message_string,
-                                    },
-                                    signpost_id: 0,
-                                    signpost_name: 0,
-                                    resolved_message: RefCell::new(None),
-                                    #[cfg(feature = "rewrite-compat")]
-                                    format_string_error: None,
-                                });
-                            }
-                            Err(e) => {
-                                warn!("Failed to parse simpledump chunk: {}", e.to_parse_error())
-                            }
-                        }
-                    }
-                }
-
-                // --- Pass 3: Statedump ---
-                if has_statedump {
-                    reader.reset();
-                    while let Some(inner) = reader.next() {
-                        let inner = match inner {
-                            Ok(c) => c,
-                            Err(e) => {
-                                warn!("Failed to parse inner chunk (statedump pass): {e}");
-                                break;
-                            }
-                        };
-                        if inner.preamble.tag != ChunkTag::Statedump {
-                            continue;
-                        }
-                        match RawStatedump::parse(inner.data) {
-                            Ok((_, sd)) => {
-                                let Some(header) = &current_header else {
-                                    continue;
-                                };
-                                let time =
-                                    resolver.resolve(&header.boot_uuid, sd.continuous_time, 1);
-                                let timezone_name = extract_timezone_name(header.timezone_path);
-                                callback(LogEntry {
-                                    subsystem: None,
-                                    category: None,
-                                    thread_id: 0,
-                                    pid: sd.first_proc_id,
-                                    euid: 0,
-                                    library: None,
-                                    library_uuid: Uuid::nil(),
-                                    activity_id: sd.activity_id,
-                                    time,
-                                    event_type: EventType::Statedump,
-                                    log_type: LogType::Statedump,
-                                    process: None,
-                                    process_uuid: Uuid::nil(),
-                                    format_string: None,
-                                    boot_uuid: header.boot_uuid,
-                                    timezone_name,
-                                    items: ItemsData::Statedump {
-                                        title_name: sd.title_name,
-                                        decoder_library: sd.decoder_library,
-                                        decoder_type: sd.decoder_type,
-                                        statedump_data: sd.statedump_data,
-                                        data_type: sd.data_type,
-                                    },
-                                    signpost_id: 0,
-                                    signpost_name: 0,
-                                    resolved_message: RefCell::new(None),
-                                    #[cfg(feature = "rewrite-compat")]
-                                    format_string_error: None,
-                                });
-                            }
-                            Err(e) => {
-                                warn!("Failed to parse statedump chunk: {}", e.to_parse_error())
-                            }
-                        }
-                    }
+                    deferred_readers.push(reader);
                 }
             }
             TopChunk::Unknown(_) => {}
         }
     }
 
+    // Flush remaining deferred entries at EOF
+    flush_deferred_entries(&mut deferred_readers, &current_header, resolver, &mut callback);
+
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Deferred simpledump/statedump flushing
+// ---------------------------------------------------------------------------
+
+/// Flush deferred chunkset readers, emitting all simpledump entries first,
+/// then all statedump entries. This matches the legacy per-catalog ordering:
+/// all firehose → all simpledump → all statedump within each catalog.
+fn flush_deferred_entries<'a>(
+    deferred_readers: &mut Vec<ChunkSetReader<'a>>,
+    current_header: &Option<RawHeaderChunk<'a>>,
+    resolver: &TimestampResolver,
+    callback: &mut impl for<'b> FnMut(LogEntry<'a, 'b>),
+) {
+    if deferred_readers.is_empty() {
+        return;
+    }
+
+    // --- Simpledump pass ---
+    for reader in deferred_readers.iter_mut() {
+        reader.reset();
+        while let Some(inner) = reader.next() {
+            let inner = match inner {
+                Ok(c) => c,
+                Err(e) => {
+                    warn!("Failed to parse inner chunk (simpledump pass): {e}");
+                    break;
+                }
+            };
+            if inner.preamble.tag != ChunkTag::Simpledump {
+                continue;
+            }
+            match RawSimpleDump::parse(inner.data) {
+                Ok((_, sd)) => {
+                    let Some(header) = current_header else {
+                        continue;
+                    };
+                    let time = resolver.resolve(&header.boot_uuid, sd.continuous_time, 1);
+                    let timezone_name = extract_timezone_name(header.timezone_path);
+                    callback(LogEntry {
+                        subsystem: Some(sd.subsystem),
+                        category: None,
+                        thread_id: sd.thread_id,
+                        pid: sd.first_proc_id,
+                        euid: 0,
+                        library: None,
+                        library_uuid: sd.sender_uuid,
+                        activity_id: 0,
+                        time,
+                        event_type: EventType::Simpledump,
+                        log_type: LogType::Simpledump,
+                        process: None,
+                        process_uuid: sd.dsc_uuid,
+                        format_string: None,
+                        boot_uuid: header.boot_uuid,
+                        timezone_name,
+                        items: ItemsData::Simpledump {
+                            subsystem: sd.subsystem,
+                            message: sd.message_string,
+                        },
+                        signpost_id: 0,
+                        signpost_name: 0,
+                        resolved_message: RefCell::new(None),
+                        #[cfg(feature = "rewrite-compat")]
+                        format_string_error: None,
+                    });
+                }
+                Err(e) => {
+                    warn!("Failed to parse simpledump chunk: {}", e.to_parse_error())
+                }
+            }
+        }
+    }
+
+    // --- Statedump pass ---
+    for reader in deferred_readers.iter_mut() {
+        reader.reset();
+        while let Some(inner) = reader.next() {
+            let inner = match inner {
+                Ok(c) => c,
+                Err(e) => {
+                    warn!("Failed to parse inner chunk (statedump pass): {e}");
+                    break;
+                }
+            };
+            if inner.preamble.tag != ChunkTag::Statedump {
+                continue;
+            }
+            match RawStatedump::parse(inner.data) {
+                Ok((_, sd)) => {
+                    let Some(header) = current_header else {
+                        continue;
+                    };
+                    let time = resolver.resolve(&header.boot_uuid, sd.continuous_time, 1);
+                    let timezone_name = extract_timezone_name(header.timezone_path);
+                    callback(LogEntry {
+                        subsystem: None,
+                        category: None,
+                        thread_id: 0,
+                        pid: sd.first_proc_id,
+                        euid: 0,
+                        library: None,
+                        library_uuid: Uuid::nil(),
+                        activity_id: sd.activity_id,
+                        time,
+                        event_type: EventType::Statedump,
+                        log_type: LogType::Statedump,
+                        process: None,
+                        process_uuid: Uuid::nil(),
+                        format_string: None,
+                        boot_uuid: header.boot_uuid,
+                        timezone_name,
+                        items: ItemsData::Statedump {
+                            title_name: sd.title_name,
+                            decoder_library: sd.decoder_library,
+                            decoder_type: sd.decoder_type,
+                            statedump_data: sd.statedump_data,
+                            data_type: sd.data_type,
+                        },
+                        signpost_id: 0,
+                        signpost_name: 0,
+                        resolved_message: RefCell::new(None),
+                        #[cfg(feature = "rewrite-compat")]
+                        format_string_error: None,
+                    });
+                }
+                Err(e) => {
+                    warn!("Failed to parse statedump chunk: {}", e.to_parse_error())
+                }
+            }
+        }
+    }
+
+    deferred_readers.clear();
 }
 
 // ---------------------------------------------------------------------------
