@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use crate::rewrite::chunk::{ChunksReader, TopChunk};
 use crate::rewrite::chunks::ChunkTag;
-use crate::rewrite::chunkset::oversize::RawOversize;
+use crate::rewrite::chunks::oversize::RawOversize;
 use crate::rewrite::dsc::RawSharedCacheStrings;
 use crate::rewrite::logarchive::{
     load_file_buffers_by_uuid, load_timesync_data, load_uuidtext_buffers,
@@ -23,7 +23,7 @@ use crate::rewrite::uuidtext::RawUUIDText;
 use super::filesystem::LogarchiveProvider;
 use super::traits::FileProvider;
 use super::unified_log::{
-    CatalogInfo, CountVec, EventType, HeaderInfo, LogData, OversizeEntry, ParserError,
+    CatalogInfo, CountVec, HeaderInfo, LogData, OversizeEntry, ParserError,
     TimesyncBoot, UnifiedLogCatalogData, UnifiedLogData,
 };
 
@@ -291,7 +291,7 @@ pub fn build_log(
                 log_type: entry.log_type,
                 process: entry.process.unwrap_or("").to_string(),
                 process_uuid: format!("{:X}", entry.process_uuid.simple()),
-                message,
+                message: (*message).clone(),
                 raw_message,
                 boot_uuid: format!("{:X}", entry.boot_uuid.simple()),
                 timezone_name: entry.timezone_name.to_string(),
