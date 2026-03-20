@@ -128,6 +128,56 @@ visit_tracev3(&data, &resolver, &dsc_files, &uuidtext_files, &mut oversize_cache
              └──────────────────────────────────────────────────┘
 ```
 
+## Format strings and message formatting
+
+Log messages are assembled from two separate components stored in the tracev3 binary:
+
+### Format strings (shared, dictionary-based)
+
+Each firehose entry stores a **4-byte offset** (`format_string_location`) pointing into a shared string table — either a **DSC** (shared cache, for system libraries) or a **UUIDText** file (for individual executables). The format string itself (e.g. `"User %s with ID %d logged in"`) is never duplicated per entry; thousands of log lines from the same `os_log()` call site all reference the same offset.
+
+### Items (unique per entry, inline binary)
+
+Each entry carries its own packed `items_data` — a compact binary array of typed values (integers, strings, raw bytes). Items are consumed **positionally, left to right** by the format specifiers:
+
+```
+Format string:  "User %s with ID %d logged in"
+                       ^^            ^^
+                       │              └── items[1] = Int(42)
+                       └───────────────── items[0] = String("alice")
+
+→ "User alice with ID 42 logged in"
+```
+
+### Format specifier syntax
+
+Apple extends standard printf with privacy annotations and custom type decoders:
+
+```
+%[flags][width][.precision][length]<conversion>      standard printf
+%{annotation}[flags][width][.precision][length]<conversion>   Apple extension
+```
+
+**Privacy annotations** control redaction in logs:
+- `%{public}s` — visible in collected logs
+- `%{private}d` — always redacted as `<private>`
+- `%s` — redacted by default in non-debug contexts
+
+**Common conversions:**
+- `%s` — C string, `%d`/`%u` — integers, `%f` — float, `%x` — hex
+- `%@` — Objective-C object description (Apple-specific, calls `[object description]`)
+
+**Custom type decoders** via annotations:
+- `%{time_t}d` — Unix timestamp → human-readable date
+- `%{uuid_t}.*P` — raw bytes → UUID string
+- `%{network:in_addr}d` — integer → IPv4 address
+- `%{darwin.errno}d` — errno → error name
+- `%{bool}d` — 0/1 → `"true"`/`"false"`
+
+**Dynamic width/precision** consume extra items: `%*d` uses one item for the width and the next for the value.
+
+**Special case — dynamic strings:** When bit 31 of `format_string_location` is set (`0x80000000`), the format string becomes `"%s"` and the actual text is carried inline in the items.
+
 ## Building
 
 ```bash
