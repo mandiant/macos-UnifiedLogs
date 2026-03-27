@@ -7,15 +7,15 @@
 use chrono::Utc;
 use clap::ValueEnum;
 use serde_json::{Map, Value};
+use std::fmt;
 use std::fs::OpenOptions;
 use std::path::Path;
-use std::fmt;
-use tracing::{Event, Subscriber};
 use tracing::field::{Field, Visit};
+use tracing::{Event, Subscriber};
 use tracing_log::LogTracer;
 use tracing_subscriber::fmt as tracing_fmt;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tracing_subscriber::registry::LookupSpan;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 // Field visitor to convert event fields into a JSON map, while filtering out unwanted log crate fields.
 struct JsonFieldVisitor {
@@ -49,7 +49,10 @@ impl JsonFieldVisitor {
         let name = field.name();
 
         // Filter unwanted log crate fields
-        if matches!(name, "log.target" | "log.module_path" | "log.file" | "log.line") {
+        if matches!(
+            name,
+            "log.target" | "log.module_path" | "log.file" | "log.line"
+        ) {
             return;
         }
 
@@ -74,18 +77,13 @@ where
     ) -> fmt::Result {
         let mut out = Map::new();
         // ---- Base fields ----
-        out.insert(
-            "datetime".into(),
-            Value::String(Utc::now().to_rfc3339()),
-        );
+        out.insert("datetime".into(), Value::String(Utc::now().to_rfc3339()));
         out.insert(
             "level".into(),
             Value::String(event.metadata().level().to_string()),
         );
         // ---- Event fields ----
-        let mut visitor = JsonFieldVisitor {
-            map: Map::new(),
-        };
+        let mut visitor = JsonFieldVisitor { map: Map::new() };
         event.record(&mut visitor);
 
         for (k, v) in visitor.map {
@@ -99,14 +97,12 @@ where
             for span in scope.from_root() {
                 let mut span_obj = Map::new();
 
-                span_obj.insert(
-                    "name".into(),
-                    Value::String(span.name().to_string()),
-                );
+                span_obj.insert("name".into(), Value::String(span.name().to_string()));
 
                 // Capture span fields (if any)
                 let mut fields = Map::new();
-                span.extensions().get::<tracing_subscriber::fmt::FormattedFields<N>>()
+                span.extensions()
+                    .get::<tracing_subscriber::fmt::FormattedFields<N>>()
                     .map(|f| {
                         fields.insert("fields".into(), Value::String(f.to_string()));
                     });
@@ -177,8 +173,7 @@ pub fn init_logging(
 
     let level_filter: tracing_subscriber::filter::LevelFilter = level.into();
 
-    let stdout_layer = tracing_fmt::layer()
-        .with_writer(std::io::stderr);
+    let stdout_layer = tracing_fmt::layer().with_writer(std::io::stderr);
 
     let (json_layer, guard) = if let Some(path) = log_file {
         let file = OpenOptions::new()
