@@ -6,14 +6,13 @@
 // See the License for the specific language governing permissions and limitations under the License.
 
 use chrono::{SecondsFormat, TimeZone, Utc};
-use log::{debug, error, info, warn, LevelFilter};
+use tracing::{debug, error, info, warn};
 use macos_unifiedlogs::filesystem::{LiveSystemProvider, LogarchiveProvider};
 use macos_unifiedlogs::iterator::UnifiedLogIterator;
 use macos_unifiedlogs::parser::{build_log, collect_timesync, parse_log};
 use macos_unifiedlogs::timesync::TimesyncBoot;
 use macos_unifiedlogs::traits::FileProvider;
 use macos_unifiedlogs::unified_log::{LogData, UnifiedLogData};
-use simplelog::{ColorChoice, Config, TermLogger, TerminalMode};
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::Display;
@@ -35,8 +34,10 @@ extern "C" fn handle_sigint(_sig: libc::c_int) {
 }
 
 use crate::bookmark::Bookmark;
+use crate::logger::{init_logging, LogLevel};
 
 mod bookmark;
+mod logger;
 
 struct IterationContext {
     missing_data: Vec<UnifiedLogData>,
@@ -152,6 +153,18 @@ struct Args {
     #[clap(short, long, default_value = "false")]
     append: bool,
 
+    /// Log verbosity level (off, error, warn, info, debug, trace)
+    #[clap(short, long, default_value_t = LogLevel::Warn)]
+    log_level: LogLevel,
+
+    /// Disable logging to JSONL file (logs still go to terminal)
+    #[clap(long, default_value = "false")]
+    no_log_file: bool,
+
+    /// Path to JSONL file to write internal logs to (when file logging is enabled)
+    #[clap(long, default_value = "unifiedlog_iterator.log.jsonl")]
+    log_file: PathBuf,
+
     /// Resume from last position using bookmark
     #[clap(long, default_value = "false")]
     resume: bool,
@@ -193,16 +206,22 @@ impl From<Format> for &str {
 }
 
 fn main() {
-    TermLogger::init(
-        LevelFilter::Warn,
-        Config::default(),
-        TerminalMode::Stderr,
-        ColorChoice::Auto,
-    )
-    .expect("Failed to initialize simple logger");
+    let args = Args::parse();
+
+    let log_file_opt = if args.no_log_file {
+        None
+    } else {
+        Some(&args.log_file)
+    };
+
+    let _log_guard = init_logging(log_file_opt.map(PathBuf::as_path), args.log_level)
+        .unwrap_or_else(|e| {
+            eprintln!("Failed to initialize logger: {e}");
+            std::process::exit(1);
+        });
+
     info!("Starting Unified Log parser...");
 
-    let args = Args::parse();
     let output_format = args.format;
 
     // Determine source ID for bookmark

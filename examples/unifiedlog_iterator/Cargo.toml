@@ -6,7 +6,6 @@ edition = "2024"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-simplelog = "0.12.2"
 csv = "1.4.0"
 chrono = "0.4.43"
 log = "0.4.29"
@@ -15,3 +14,8 @@ macos-unifiedlogs = { path = "../../" }
 clap = { version = "4.5.58", features = ["derive"] }
 serde = { version = "1.0.228", features = ["derive"] }
 libc = "0.2"
+# JSON logging (term + optional file output)
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "json"] }
+tracing-log = "0.1"
+tracing-appender = "0.2"
