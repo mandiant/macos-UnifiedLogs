@@ -159,13 +159,9 @@ struct Args {
     #[clap(short, long, default_value_t = LogLevel::Warn)]
     log_level: LogLevel,
 
-    /// Disable logging to JSONL file (logs still go to terminal)
-    #[clap(long, default_value = "false")]
-    no_log_file: bool,
-
-    /// Path to JSONL file to write internal logs to (when file logging is enabled)
-    #[clap(long, default_value = "unifiedlog_iterator.log.jsonl")]
-    log_file: PathBuf,
+    /// Path to JSONL file to write internal logs to
+    #[clap(long)]
+    log_file: Option<PathBuf>,
 
     /// Resume from last position using bookmark
     #[clap(long, default_value = "false")]
@@ -210,13 +206,9 @@ impl From<Format> for &str {
 fn main() {
     let args = Args::parse();
 
-    let log_file_opt = if args.no_log_file {
-        None
-    } else {
-        Some(&args.log_file)
-    };
+    let log_file_opt = args.log_file.as_deref();
 
-    let _log_guard = init_logging(log_file_opt.map(PathBuf::as_path), args.log_level)
+    let _log_guard = init_logging(log_file_opt, args.log_level)
         .unwrap_or_else(|e| {
             eprintln!("Failed to initialize logger: {e}");
             std::process::exit(1);
