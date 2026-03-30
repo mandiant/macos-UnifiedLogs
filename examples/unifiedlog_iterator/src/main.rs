@@ -208,11 +208,10 @@ fn main() {
 
     let log_file_opt = args.log_file.as_deref();
 
-    let _log_guard = init_logging(log_file_opt, args.log_level)
-        .unwrap_or_else(|e| {
-            eprintln!("Failed to initialize logger: {e}");
-            std::process::exit(1);
-        });
+    let _log_guard = init_logging(log_file_opt, args.log_level).unwrap_or_else(|e| {
+        eprintln!("Failed to initialize logger: {e}");
+        std::process::exit(1);
+    });
 
     info!("Starting Unified Log parser...");
 
