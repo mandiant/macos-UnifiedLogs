@@ -101,11 +101,12 @@ where
 
                 // Capture span fields (if any)
                 let mut fields = Map::new();
-                span.extensions()
+                if let Some(f) = span
+                    .extensions()
                     .get::<tracing_subscriber::fmt::FormattedFields<N>>()
-                    .map(|f| {
-                        fields.insert("fields".into(), Value::String(f.to_string()));
-                    });
+                {
+                    fields.insert("fields".into(), Value::String(f.to_string()));
+                }
 
                 if !fields.is_empty() {
                     span_obj.insert("fields".into(), Value::Object(fields));
