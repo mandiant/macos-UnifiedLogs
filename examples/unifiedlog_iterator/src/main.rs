@@ -34,7 +34,7 @@ extern "C" fn handle_sigint(_sig: libc::c_int) {
 }
 
 use crate::bookmark::Bookmark;
-use crate::logger::{LogLevel, init_logging};
+use crate::logger::{VerbosityLevel, init_logging};
 
 mod bookmark;
 mod logger;
@@ -156,12 +156,12 @@ struct Args {
     append: bool,
 
     /// Log verbosity level (off, error, warn, info, debug, trace)
-    #[clap(short, long, default_value_t = LogLevel::Warn)]
-    log_level: LogLevel,
+    #[clap(short, long, default_value_t = VerbosityLevel::Warn)]
+    verbosity_level: VerbosityLevel,
 
     /// Path to JSONL file to write internal logs to
-    #[clap(long)]
-    log_file: Option<PathBuf>,
+    #[clap(long = "log-file", value_name = "FILE")]
+    log_file_path: Option<PathBuf>,
 
     /// Resume from last position using bookmark
     #[clap(long, default_value = "false")]
@@ -206,9 +206,9 @@ impl From<Format> for &str {
 fn main() {
     let args = Args::parse();
 
-    let log_file_opt = args.log_file.as_deref();
+    let log_file_opt = args.log_file_path.as_deref();
 
-    let _log_guard = init_logging(log_file_opt, args.log_level).unwrap_or_else(|e| {
+    let _log_guard = init_logging(log_file_opt, args.verbosity_level).unwrap_or_else(|e| {
         eprintln!("Failed to initialize logger: {e}");
         std::process::exit(1);
     });

@@ -126,7 +126,7 @@ where
 ///
 /// This is separate from `log::LevelFilter` to get nice clap `ValueEnum` support.
 #[derive(ValueEnum, Clone, Debug)]
-pub enum LogLevel {
+pub enum VerbosityLevel {
     Off,
     Error,
     Warn,
@@ -135,28 +135,28 @@ pub enum LogLevel {
     Trace,
 }
 
-impl From<LogLevel> for tracing_subscriber::filter::LevelFilter {
-    fn from(level: LogLevel) -> Self {
+impl From<VerbosityLevel> for tracing_subscriber::filter::LevelFilter {
+    fn from(level: VerbosityLevel) -> Self {
         match level {
-            LogLevel::Off => tracing_subscriber::filter::LevelFilter::OFF,
-            LogLevel::Error => tracing_subscriber::filter::LevelFilter::ERROR,
-            LogLevel::Warn => tracing_subscriber::filter::LevelFilter::WARN,
-            LogLevel::Info => tracing_subscriber::filter::LevelFilter::INFO,
-            LogLevel::Debug => tracing_subscriber::filter::LevelFilter::DEBUG,
-            LogLevel::Trace => tracing_subscriber::filter::LevelFilter::TRACE,
+            VerbosityLevel::Off => tracing_subscriber::filter::LevelFilter::OFF,
+            VerbosityLevel::Error => tracing_subscriber::filter::LevelFilter::ERROR,
+            VerbosityLevel::Warn => tracing_subscriber::filter::LevelFilter::WARN,
+            VerbosityLevel::Info => tracing_subscriber::filter::LevelFilter::INFO,
+            VerbosityLevel::Debug => tracing_subscriber::filter::LevelFilter::DEBUG,
+            VerbosityLevel::Trace => tracing_subscriber::filter::LevelFilter::TRACE,
         }
     }
 }
 
-impl std::fmt::Display for LogLevel {
+impl std::fmt::Display for VerbosityLevel {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
-            LogLevel::Off => "off",
-            LogLevel::Error => "error",
-            LogLevel::Warn => "warn",
-            LogLevel::Info => "info",
-            LogLevel::Debug => "debug",
-            LogLevel::Trace => "trace",
+            VerbosityLevel::Off => "off",
+            VerbosityLevel::Error => "error",
+            VerbosityLevel::Warn => "warn",
+            VerbosityLevel::Info => "info",
+            VerbosityLevel::Debug => "debug",
+            VerbosityLevel::Trace => "trace",
         };
         write!(f, "{}", s)
     }
@@ -167,7 +167,7 @@ impl std::fmt::Display for LogLevel {
 /// Always logs to stderr/terminal, and optionally also writes structured JSON to a file.
 pub fn init_logging(
     log_file: Option<&Path>,
-    level: LogLevel,
+    level: VerbosityLevel,
 ) -> Result<Option<tracing_appender::non_blocking::WorkerGuard>, Box<dyn std::error::Error>> {
     // Forward `log` records (log crate macros) into tracing
     let _ = LogTracer::init();
