@@ -193,6 +193,7 @@ impl Iterator for LogIterator<'_> {
                     ),
                     library: String::new(),
                     activity_id: 0,
+                    parent_activity_id: 0,
                     time: timestamp,
                     timestamp: unixepoch_to_iso(&(timestamp as i64)),
                     category: String::new(),
@@ -325,8 +326,17 @@ impl Iterator for LogIterator<'_> {
                         log_data.log_type = LogType::Loss;
                     }
                     0x2 => {
-                        log_data.activity_id =
-                            u64::from(firehose.firehose_activity.unknown_activity_id);
+                        // When has_other_current_aid (0x200) is set, id3 is the new activity
+                        // and id1 is the parent. Otherwise id1 is the new activity with no parent.
+                        if firehose.firehose_activity.unknown_activity_id_3 != 0 {
+                            log_data.activity_id =
+                                u64::from(firehose.firehose_activity.unknown_activity_id_3);
+                            log_data.parent_activity_id =
+                                u64::from(firehose.firehose_activity.unknown_activity_id);
+                        } else {
+                            log_data.activity_id =
+                                u64::from(firehose.firehose_activity.unknown_activity_id);
+                        }
                         let message_data = FirehoseActivity::get_firehose_activity_strings(
                             &firehose.firehose_activity,
                             self.provider,
@@ -544,6 +554,7 @@ impl Iterator for LogIterator<'_> {
                 pid: simpledump.first_proc_id,
                 library: String::new(),
                 activity_id: 0,
+                parent_activity_id: 0,
                 time: timestamp,
                 timestamp: unixepoch_to_iso(&(timestamp as i64)),
                 category: String::new(),
@@ -614,6 +625,7 @@ impl Iterator for LogIterator<'_> {
                 pid: statedump.first_proc_id,
                 library: String::new(),
                 activity_id: statedump.activity_id,
+                parent_activity_id: 0,
                 time: timestamp,
                 timestamp: unixepoch_to_iso(&(timestamp as i64)),
                 category: String::new(),
@@ -655,6 +667,7 @@ pub struct LogData {
     pub library: String,
     pub library_uuid: String,
     pub activity_id: u64,
+    pub parent_activity_id: u64,
     pub time: f64,
     pub category: String,
     pub event_type: EventType,
