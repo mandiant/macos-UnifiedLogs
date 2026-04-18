@@ -204,6 +204,7 @@ fn test_parse_all_logs_big_sur() {
     let mut empty_format_count = 0;
     let mut sock_count = 0;
     let mut location_harvest_count = 0;
+    let mut parent_activity = 0;
 
     // Breakdown log entries by smaller types to ensure count is accurate
     for logs in &log_data_vec {
@@ -269,6 +270,10 @@ fn test_parse_all_logs_big_sur() {
         if logs.message.contains("nw_resolver_create_dns_getaddrinfo_locked_block_invoke [C1] Got DNS result type NoAddress ifindex=0 configuration.ls.apple.com configuration.ls.apple.com. ::") {
             sock_count += 1;
         }
+
+        if logs.parent_activity_id == 208 {
+            parent_activity += 1;
+        }
     }
 
     assert_eq!(unknown_strings, 0);
@@ -292,6 +297,7 @@ fn test_parse_all_logs_big_sur() {
     assert_eq!(loss_type, 5);
     assert_eq!(sock_count, 2);
     assert_eq!(location_harvest_count, 11);
+    assert_eq!(parent_activity, 5);
 }
 
 #[test]
