@@ -6,12 +6,11 @@
 // See the License for the specific language governing permissions and limitations under the License.
 
 use crate::decoders::{config, location};
-use crate::util::{clean_uuid, encode_standard, extract_string};
+use crate::util::{encode_standard, extract_string};
 use log::{error, info};
 use nom::bytes::complete::take;
-use nom::number::complete::{le_u8, le_u32, le_u64};
+use nom::number::complete::{be_u128, le_u8, le_u32, le_u64};
 use plist::Value;
-use std::mem::size_of;
 
 #[derive(Debug, Clone, Default)]
 pub struct Statedump {
@@ -50,7 +49,7 @@ impl Statedump {
 
         let (input, statedump_continous_time) = le_u64(input)?;
         let (input, statedump_activity_id) = le_u64(input)?;
-        let (input, uuid) = take(size_of::<u128>())(input)?;
+        let (input, uuid) = be_u128(input)?;
         let (input, statedump_unknown_data_type) = le_u32(input)?;
 
         let (mut input, statedump_unknown_data_size) = le_u32(input)?;
@@ -93,8 +92,7 @@ impl Statedump {
         statedump_results.unknown_data_type = statedump_unknown_data_type;
         statedump_results.unknown_data_size = statedump_unknown_data_size;
 
-        let uuid_string = format!("{uuid:02X?}");
-        statedump_results.uuid = clean_uuid(&uuid_string);
+        statedump_results.uuid = format!("{uuid:032X}");
 
         let (input, statedump_data) = take(statedump_unknown_data_size)(input)?;
         statedump_results.statedump_data = statedump_data.to_vec();

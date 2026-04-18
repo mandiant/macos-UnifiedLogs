@@ -476,17 +476,17 @@ impl FirehosePreamble {
 
         if unknown_log_activity_type == activity {
             let (activity_data, activity) =
-                FirehoseActivity::parse_activity(firehose_input, &flags, &unknown_log_type)?;
+                FirehoseActivity::parse_activity(firehose_input, flags, unknown_log_type)?;
             firehose_input = activity_data;
             firehose_results.firehose_activity = activity;
         } else if unknown_log_activity_type == nonactivity {
             let (non_activity_data, non_activity) =
-                FirehoseNonActivity::parse_non_activity(firehose_input, &flags)?;
+                FirehoseNonActivity::parse_non_activity(firehose_input, flags)?;
             firehose_input = non_activity_data;
             firehose_results.firehose_non_activity = non_activity;
         } else if unknown_log_activity_type == signpost {
             let (process_data, firehose_signpost) =
-                FirehoseSignpost::parse_signpost(firehose_input, &flags)?;
+                FirehoseSignpost::parse_signpost(firehose_input, flags)?;
             firehose_input = process_data;
             firehose_results.firehose_signpost = firehose_signpost;
         } else if unknown_log_activity_type == loss {

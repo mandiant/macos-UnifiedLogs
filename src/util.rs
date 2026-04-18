@@ -143,11 +143,6 @@ pub(crate) fn extract_string(data: &[u8]) -> nom::IResult<&[u8], String> {
     Ok((input, String::from("Could not extract string")))
 }
 
-/// Clean and format UUIDs to be pretty
-pub(crate) fn clean_uuid(uuid_format: &str) -> String {
-    uuid_format.replace([',', '[', ']', ' '], "")
-}
-
 /// Base64 encode data use the STANDARD engine (alphabet along with "+" and "/")
 pub(crate) fn encode_standard(data: &[u8]) -> String {
     general_purpose::STANDARD.encode(data)

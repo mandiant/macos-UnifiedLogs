@@ -159,7 +159,7 @@ impl SharedCacheStrings {
         let (input, dsc_path_offset) = le_u32(input)?;
 
         uuid_data.text_size = dsc_text_size;
-        uuid_data.uuid = format!("{dsc_uuid:X}");
+        uuid_data.uuid = format!("{dsc_uuid:032X}");
         uuid_data.path_offset = dsc_path_offset;
 
         Ok((input, uuid_data))

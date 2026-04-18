@@ -11,11 +11,7 @@ use crate::chunks::firehose::message::MessageData;
 use crate::traits::FileProvider;
 use log::{debug, error};
 use nom::Needed;
-use nom::{
-    bytes::complete::take,
-    number::complete::{le_u8, le_u16, le_u32},
-};
-use std::mem::size_of;
+use nom::number::complete::{le_u8, le_u16, le_u32};
 
 #[derive(Debug, Clone, Default)]
 pub struct FirehoseNonActivity {
@@ -34,10 +30,10 @@ pub struct FirehoseNonActivity {
 impl FirehoseNonActivity {
     /// Parse Non-Activity Type Firehose log entry.
     // Ex: tp 728 + 202: log debug (has_current_aid, main_exe, has_subsystem, has_rules)
-    pub fn parse_non_activity<'a>(
-        data: &'a [u8],
-        firehose_flags: &u16,
-    ) -> nom::IResult<&'a [u8], FirehoseNonActivity> {
+    pub fn parse_non_activity(
+        data: &[u8],
+        firehose_flags: u16,
+    ) -> nom::IResult<&[u8], FirehoseNonActivity> {
         let mut non_activity = FirehoseNonActivity::default();
 
         let mut input = data;
@@ -45,10 +41,8 @@ impl FirehoseNonActivity {
 
         if (firehose_flags & activity_id_current) != 0 {
             debug!("[macos-unifiedlogs] Non-Activity Firehose log chunk has has_current_aid flag");
-            let (firehose_input, unknown_activity_id) = take(size_of::<u32>())(input)?;
-            let (firehose_input, unknown_sentinel) = take(size_of::<u32>())(firehose_input)?;
-            let (_, firehose_unknown_activity_id) = le_u32(unknown_activity_id)?;
-            let (_, firehose_unknown_sentinel) = le_u32(unknown_sentinel)?;
+            let (firehose_input, firehose_unknown_activity_id) = le_u32(input)?;
+            let (firehose_input, firehose_unknown_sentinel) = le_u32(firehose_input)?;
             non_activity.unknown_activity_id = firehose_unknown_activity_id;
             non_activity.unknown_sentinal = firehose_unknown_sentinel;
             input = firehose_input;
@@ -58,11 +52,8 @@ impl FirehoseNonActivity {
         // Entry has private string data. The private data is found after parsing all the public data first
         if (firehose_flags & private_string_range) != 0 {
             debug!("[macos-unifiedlogs] Non-Activity Firehose log chunk has has_private_data flag");
-            let (firehose_input, private_strings_offset) = take(size_of::<u16>())(input)?;
-            let (firehose_input, private_strings_size) = take(size_of::<u16>())(firehose_input)?;
-
-            let (_, firehose_private_strings_offset) = le_u16(private_strings_offset)?;
-            let (_, firehose_private_strings_size) = le_u16(private_strings_size)?;
+            let (firehose_input, firehose_private_strings_offset) = le_u16(input)?;
+            let (firehose_input, firehose_private_strings_size) = le_u16(firehose_input)?;
 
             // Offset points to private string values found after parsing the public data. Size is the data size
             non_activity.private_strings_offset = firehose_private_strings_offset;
@@ -70,8 +61,7 @@ impl FirehoseNonActivity {
             input = firehose_input;
         }
 
-        let (input, unknown_pc_id) = take(size_of::<u32>())(input)?;
-        let (_, firehose_unknown_pc_id) = le_u32(unknown_pc_id)?;
+        let (input, firehose_unknown_pc_id) = le_u32(input)?;
         non_activity.unknown_pc_id = firehose_unknown_pc_id;
 
         // Check for flags related to base string format location (shared string file (dsc) or UUID file)
@@ -82,8 +72,7 @@ impl FirehoseNonActivity {
         let subsystem: u16 = 0x200; // has_subsystem flag. In Non-Activity log entries this is the subsystem flag
         if (firehose_flags & subsystem) != 0 {
             debug!("[macos-unifiedlogs] Non-Activity Firehose log chunk has has_subsystem flag");
-            let (firehose_input, subsystem) = take(size_of::<u16>())(input)?;
-            let (_, firehose_subsystem) = le_u16(subsystem)?;
+            let (firehose_input, firehose_subsystem) = le_u16(input)?;
             non_activity.subsystem_value = firehose_subsystem;
             input = firehose_input;
         }
@@ -91,8 +80,7 @@ impl FirehoseNonActivity {
         let ttl: u16 = 0x400; // has_rules flag
         if (firehose_flags & ttl) != 0 {
             debug!("[macos-unifiedlogs] Non-Activity Firehose log chunk has has_rules flag");
-            let (firehose_input, ttl_data) = take(size_of::<u8>())(input)?;
-            let (_, firehose_ttl) = le_u8(ttl_data)?;
+            let (firehose_input, firehose_ttl) = le_u8(input)?;
             non_activity.ttl_value = firehose_ttl;
             input = firehose_input;
         }
@@ -100,8 +88,7 @@ impl FirehoseNonActivity {
         let data_ref: u16 = 0x800; // has_oversize flag
         if (firehose_flags & data_ref) != 0 {
             debug!("[macos-unifiedlogs] Non-Activity Firehose log chunk has has_oversize flag");
-            let (firehose_input, data_ref_value) = take(size_of::<u32>())(input)?;
-            let (_, firehose_data_ref) = le_u32(data_ref_value)?;
+            let (firehose_input, firehose_data_ref) = le_u32(input)?;
             non_activity.data_ref_value = firehose_data_ref;
             input = firehose_input;
         }
@@ -114,8 +101,8 @@ impl FirehoseNonActivity {
         firehose: &FirehoseNonActivity,
         provider: &'a mut dyn FileProvider,
         string_offset: u64,
-        first_proc_id: &u64,
-        second_proc_id: &u32,
+        first_proc_id: u64,
+        second_proc_id: u32,
         catalogs: &CatalogChunk,
     ) -> nom::IResult<&'a [u8], MessageData> {
         if firehose.firehose_formatters.shared_cache
@@ -243,7 +230,7 @@ mod tests {
         ];
         let test_flags = 556;
         let (_, nonactivity_results) =
-            FirehoseNonActivity::parse_non_activity(&test_data, &test_flags).unwrap();
+            FirehoseNonActivity::parse_non_activity(&test_data, test_flags).unwrap();
         assert_eq!(nonactivity_results.unknown_activity_id, 0);
         assert_eq!(nonactivity_results.unknown_sentinal, 0);
         assert_eq!(nonactivity_results.private_strings_offset, 0);
@@ -291,8 +278,8 @@ mod tests {
                                 &firehose.firehose_non_activity,
                                 &mut provider,
                                 u64::from(firehose.format_string_location),
-                                &preamble.first_number_proc_id,
-                                &preamble.second_number_proc_id,
+                                preamble.first_number_proc_id,
+                                preamble.second_number_proc_id,
                                 &catalog_data.catalog,
                             )
                             .unwrap();

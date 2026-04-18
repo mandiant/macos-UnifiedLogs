@@ -11,11 +11,7 @@ use crate::chunks::firehose::message::MessageData;
 use crate::traits::FileProvider;
 use log::{debug, error};
 use nom::Needed;
-use nom::{
-    bytes::complete::take,
-    number::complete::{le_u32, le_u64},
-};
-use std::mem::size_of;
+use nom::number::complete::{le_u32, le_u64};
 
 #[derive(Debug, Clone, Default)]
 pub struct FirehoseActivity {
@@ -36,20 +32,19 @@ impl FirehoseActivity {
     //  Ex: tp 3536 + 60: activity create (has_current_aid, has_unique_pid, shared_cache, has_other_aid)
     pub fn parse_activity<'a>(
         data: &'a [u8],
-        firehose_flags: &u16,
-        firehose_log_type: &u8,
+        firehose_flags: u16,
+        firehose_log_type: u8,
     ) -> nom::IResult<&'a [u8], FirehoseActivity> {
         let mut activity = FirehoseActivity::default();
         let mut input = data;
 
         // Useraction activity type does not have first Activity ID or sentinel
-        let useraction: u8 = 0x3;
+        let useraction = 0x3;
         // Get first activity_id (if not useraction type)
-        if firehose_log_type != &useraction {
-            let (firehose_input, unknown_activity_id) = take(size_of::<u32>())(data)?;
-            let (firehose_input, unknown_sentinel) = take(size_of::<u32>())(firehose_input)?;
-            let (_, firehose_unknown_activity_id) = le_u32(unknown_activity_id)?;
-            let (_, firehose_unknown_sentinel) = le_u32(unknown_sentinel)?;
+        if firehose_log_type != useraction {
+            let (firehose_input, firehose_unknown_activity_id) = le_u32(data)?;
+            let (firehose_input, firehose_unknown_sentinel) = le_u32(firehose_input)?;
+
             activity.unknown_activity_id = firehose_unknown_activity_id;
             activity.unknown_sentinal = firehose_unknown_sentinel;
             input = firehose_input;
@@ -58,8 +53,7 @@ impl FirehoseActivity {
         let unique_pid: u16 = 0x10; // has_unique_pid flag
         if (firehose_flags & unique_pid) != 0 {
             debug!("[macos-unifiedlogs] Activity Firehose log chunk has unique_pid flag");
-            let (firehose_input, unique_pid) = take(size_of::<u64>())(input)?;
-            let (_, firehose_unique_pid) = le_u64(unique_pid)?;
+            let (firehose_input, firehose_unique_pid) = le_u64(input)?;
             activity.pid = firehose_unique_pid;
             input = firehose_input;
         }
@@ -67,10 +61,9 @@ impl FirehoseActivity {
         let activity_id_current: u16 = 0x1; // has_current_aid flag
         if (firehose_flags & activity_id_current) != 0 {
             debug!("[macos-unifiedlogs] Activity Firehose log chunk has has_current_aid flag");
-            let (firehose_input, unknown_activity_id) = take(size_of::<u32>())(input)?;
-            let (firehose_input, unknown_sentinel) = take(size_of::<u32>())(firehose_input)?;
-            let (_, firehose_unknown_activity_id) = le_u32(unknown_activity_id)?;
-            let (_, firehose_unknown_sentinel) = le_u32(unknown_sentinel)?;
+            let (firehose_input, firehose_unknown_activity_id) = le_u32(input)?;
+            let (firehose_input, firehose_unknown_sentinel) = le_u32(firehose_input)?;
+
             activity.unknown_activity_id_2 = firehose_unknown_activity_id;
             activity.unknown_sentinal_2 = firehose_unknown_sentinel;
             input = firehose_input;
@@ -81,16 +74,14 @@ impl FirehoseActivity {
             debug!(
                 "[macos-unifiedlogs] Activity Firehose log chunk has has_other_current_aid flag"
             );
-            let (firehose_input, unknown_activity_id) = take(size_of::<u32>())(input)?;
-            let (firehose_input, unknown_sentinel) = take(size_of::<u32>())(firehose_input)?;
-            let (_, firehose_unknown_activity_id) = le_u32(unknown_activity_id)?;
-            let (_, firehose_unknown_sentinel) = le_u32(unknown_sentinel)?;
+            let (firehose_input, firehose_unknown_activity_id) = le_u32(input)?;
+            let (firehose_input, firehose_unknown_sentinel) = le_u32(firehose_input)?;
+
             activity.unknown_activity_id_3 = firehose_unknown_activity_id;
             activity.unknown_sentinal_3 = firehose_unknown_sentinel;
             input = firehose_input;
         }
-        let (input, unknown_pc_id) = take(size_of::<u32>())(input)?;
-        let (_, firehose_unknown_pc_id) = le_u32(unknown_pc_id)?;
+        let (input, firehose_unknown_pc_id) = le_u32(input)?;
         activity.unknown_pc_id = firehose_unknown_pc_id; // Unknown (Message string reference)?? PC ID?
 
         // Check for flags related to base string format location (shared string file (dsc) or UUID file)
@@ -105,8 +96,8 @@ impl FirehoseActivity {
         firehose: &FirehoseActivity,
         provider: &'a mut dyn FileProvider,
         string_offset: u64,
-        first_proc_id: &u64,
-        second_proc_id: &u32,
+        first_proc_id: u64,
+        second_proc_id: u32,
         catalogs: &CatalogChunk,
     ) -> nom::IResult<&'a [u8], MessageData> {
         if firehose.firehose_formatters.shared_cache
@@ -233,7 +224,7 @@ mod tests {
         let test_flags = 573;
         let log_type: u8 = 0x1;
         let (_, results) =
-            FirehoseActivity::parse_activity(&test_data, &test_flags, &log_type).unwrap();
+            FirehoseActivity::parse_activity(&test_data, test_flags, log_type).unwrap();
         assert_eq!(results.unknown_activity_id, 64434);
         assert_eq!(results.unknown_sentinal, 2147483648);
         assert_eq!(results.pid, 236);
@@ -274,8 +265,8 @@ mod tests {
                             &firehose.firehose_activity,
                             &mut provider,
                             u64::from(firehose.format_string_location),
-                            &preamble.first_number_proc_id,
-                            &preamble.second_number_proc_id,
+                            preamble.first_number_proc_id,
+                            preamble.second_number_proc_id,
                             &catalog_data.catalog,
                         )
                         .unwrap();

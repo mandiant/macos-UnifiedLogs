@@ -12,7 +12,6 @@ use crate::traits::FileProvider;
 use log::{error, warn};
 use nom::bytes::complete::take;
 use nom::number::complete::{be_u8, be_u16, be_u32, be_u64, le_u8, le_u32};
-use std::mem::size_of;
 
 #[derive(Debug, Clone, Default)]
 pub struct FirehoseTrace {
@@ -26,14 +25,12 @@ impl FirehoseTrace {
     pub fn parse_firehose_trace(data: &[u8]) -> nom::IResult<&[u8], FirehoseTrace> {
         let mut firehose_trace = FirehoseTrace::default();
 
-        let (input, unknown_pc_id) = take(size_of::<u32>())(data)?;
-        let (_, firehose_unknown_pc_id) = le_u32(unknown_pc_id)?;
+        let (input, firehose_unknown_pc_id) = le_u32(data)?;
+        firehose_trace.unknown_pc_id = firehose_unknown_pc_id;
 
         // Trace logs only have message values if more than 4 bytes remaining in log entry
         let minimum_message_size = 4;
         if input.len() < minimum_message_size {
-            let (_, firehose_unknown_pc_id) = le_u32(unknown_pc_id)?;
-            firehose_trace.unknown_pc_id = firehose_unknown_pc_id;
             let (input, _unknown_data) = take(input.len())(input)?;
 
             return Ok((input, firehose_trace));
@@ -46,7 +43,6 @@ impl FirehoseTrace {
         message_data.reverse();
         let message = FirehoseTrace::get_message(&message_data);
         firehose_trace.message_data = message;
-        firehose_trace.unknown_pc_id = firehose_unknown_pc_id;
 
         Ok((&[], firehose_trace))
     }
@@ -77,15 +73,13 @@ impl FirehoseTrace {
             return Ok((data, item_data));
         }
 
-        let (mut remaining_input, entries_data) = take(size_of::<u8>())(data)?;
-        let (_, entries) = le_u8(entries_data)?;
+        let (mut remaining_input, entries) = le_u8(data)?;
 
         let mut count = 0;
         let mut sizes_count = Vec::new();
         // based on number of entries get the size for each entry
         while count < entries {
-            let (input, size_data) = take(size_of::<u8>())(remaining_input)?;
-            let (_, size) = le_u8(size_data)?;
+            let (input, size) = le_u8(remaining_input)?;
             sizes_count.push(size);
             count += 1;
             remaining_input = input;
@@ -137,8 +131,8 @@ impl FirehoseTrace {
     pub fn get_firehose_trace_strings<'a>(
         provider: &'a mut dyn FileProvider,
         string_offset: u64,
-        first_proc_id: &u64,
-        second_proc_id: &u32,
+        first_proc_id: u64,
+        second_proc_id: u32,
         catalogs: &CatalogChunk,
     ) -> nom::IResult<&'a [u8], MessageData> {
         // Only main_exe flag has been seen for format strings
@@ -219,8 +213,8 @@ mod tests {
                         let (_, message_data) = FirehoseTrace::get_firehose_trace_strings(
                             &mut provider,
                             u64::from(firehose.format_string_location),
-                            &preamble.first_number_proc_id,
-                            &preamble.second_number_proc_id,
+                            preamble.first_number_proc_id,
+                            preamble.second_number_proc_id,
                             &catalog_data.catalog,
                         )
                         .unwrap();

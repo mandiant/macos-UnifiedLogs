@@ -5,11 +5,9 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-use crate::util::{clean_uuid, extract_string};
+use crate::util::extract_string;
 use nom::bytes::complete::take;
-use nom::number::complete::{le_u16, le_u32, le_u64};
-use std::mem::size_of;
-
+use nom::number::complete::{be_u128, le_u16, le_u32, le_u64};
 /*
    Introduced in macOS Monterey (12).  Appears to be a "simpler" version of Statedump?
    So far appears to just contain a single string
@@ -50,14 +48,11 @@ impl SimpleDump {
         let (input, simpledump_unknown_offset) = le_u32(input)?;
         let (input, simpledump_unknown_ttl) = le_u16(input)?;
         let (input, simpledump_unknown_type) = le_u16(input)?;
-        let (input, sender_uuid) = take(size_of::<u128>())(input)?;
-        let (input, dsc_uuid) = take(size_of::<u128>())(input)?;
+        let (input, sender_uuid) = be_u128(input)?;
+        let (input, dsc_uuid) = be_u128(input)?;
         let (input, simpledump_unknown_number_message_strings) = le_u32(input)?;
         let (input, simpledump_unknown_size_subsystem_string) = le_u32(input)?;
         let (input, simpledump_unknown_size_message_string) = le_u32(input)?;
-
-        let sender_uuid_string = format!("{sender_uuid:02X?}");
-        let dsc_uuid_string = format!("{dsc_uuid:02X?}");
 
         simpledump_resuls.chunk_tag = simpledump_chunk_tag;
         simpledump_resuls.chunk_subtag = simpledump_chunk_sub_tag;
@@ -70,8 +65,8 @@ impl SimpleDump {
         simpledump_resuls.unknown_ttl = simpledump_unknown_ttl;
         simpledump_resuls.unknown_type = simpledump_unknown_type;
 
-        simpledump_resuls.sender_uuid = clean_uuid(&sender_uuid_string);
-        simpledump_resuls.dsc_uuid = clean_uuid(&dsc_uuid_string);
+        simpledump_resuls.sender_uuid = format!("{sender_uuid:032X}");
+        simpledump_resuls.dsc_uuid = format!("{dsc_uuid:032X}");
         simpledump_resuls.unknown_number_message_strings =
             simpledump_unknown_number_message_strings;
         simpledump_resuls.unknown_size_subsystem_string = simpledump_unknown_size_subsystem_string;
