@@ -5,6 +5,8 @@ permissions: {}
 
 jobs:
   cargo-deny:
+    name: Update transitive crates
+    run: cargo update
     name: Run cargo deny checks
     runs-on: ubuntu-22.04
     permissions: 
