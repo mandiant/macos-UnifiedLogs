@@ -9,7 +9,6 @@ use crate::chunks::firehose::firehose_log::{FirehoseItemData, FirehoseItemInfo, 
 use log::{info, warn};
 use nom::bytes::complete::take;
 use nom::number::complete::{le_u8, le_u16, le_u32, le_u64};
-use std::mem::size_of;
 
 #[derive(Debug, Clone, Default)]
 pub struct Oversize {
@@ -32,31 +31,19 @@ impl Oversize {
     pub fn parse_oversize(data: &[u8]) -> nom::IResult<&[u8], Oversize> {
         let mut oversize_results = Oversize::default();
 
-        let (input, chunk_tag) = take(size_of::<u32>())(data)?;
-        let (input, chunk_sub_tag) = take(size_of::<u32>())(input)?;
-        let (input, chunk_data_size) = take(size_of::<u64>())(input)?;
-        let (input, first_number_proc_id) = take(size_of::<u64>())(input)?;
-        let (input, second_number_proc_id) = take(size_of::<u32>())(input)?;
+        let (input, oversize_chunk_tag) = le_u32(data)?;
+        let (input, oversize_chunk_sub_tag) = le_u32(input)?;
+        let (input, oversize_chunk_data_size) = le_u64(input)?;
+        let (input, oversize_first_proc_id) = le_u64(input)?;
+        let (input, oversize_second_proc_id) = le_u32(input)?;
+        let (input, oversize_ttl) = le_u8(input)?;
 
-        let (input, ttl) = take(size_of::<u8>())(input)?;
         let unknown_reserved_size: u8 = 3;
-        let (input, unknown_reserved) = take(unknown_reserved_size)(input)?;
-        let (input, continuous_time) = take(size_of::<u64>())(input)?;
-        let (input, data_ref_index) = take(size_of::<u32>())(input)?;
-        let (input, public_data_size) = take(size_of::<u16>())(input)?;
-        let (input, private_data_size) = take(size_of::<u16>())(input)?;
-
-        let (_, oversize_chunk_tag) = le_u32(chunk_tag)?;
-        let (_, oversize_chunk_sub_tag) = le_u32(chunk_sub_tag)?;
-        let (_, oversize_chunk_data_size) = le_u64(chunk_data_size)?;
-        let (_, oversize_first_proc_id) = le_u64(first_number_proc_id)?;
-        let (_, oversize_second_proc_id) = le_u32(second_number_proc_id)?;
-
-        let (_, oversize_ttl) = le_u8(ttl)?;
-        let (_, oversize_continous_time) = le_u64(continuous_time)?;
-        let (_, oversize_data_ref_index) = le_u32(data_ref_index)?;
-        let (_, oversize_public_data_size) = le_u16(public_data_size)?;
-        let (_, oversize_private_data_size) = le_u16(private_data_size)?;
+        let (input, reserved) = take(unknown_reserved_size)(input)?;
+        let (input, oversize_continous_time) = le_u64(input)?;
+        let (input, oversize_data_ref_index) = le_u32(input)?;
+        let (input, oversize_public_data_size) = le_u16(input)?;
+        let (input, oversize_private_data_size) = le_u16(input)?;
 
         oversize_results.chunk_tag = oversize_chunk_tag;
         oversize_results.chunk_subtag = oversize_chunk_sub_tag;
@@ -68,7 +55,7 @@ impl Oversize {
         oversize_results.data_ref_index = oversize_data_ref_index;
         oversize_results.public_data_size = oversize_public_data_size;
         oversize_results.private_data_size = oversize_private_data_size;
-        oversize_results.unknown_reserved = unknown_reserved.to_vec();
+        oversize_results.unknown_reserved = reserved.to_vec();
 
         let mut oversize_data_size =
             (oversize_results.public_data_size + oversize_results.private_data_size) as usize;
@@ -82,9 +69,8 @@ impl Oversize {
         }
         let (input, pub_data) = take(oversize_data_size)(input)?;
 
-        let (message_data, _) = take(size_of::<u8>())(pub_data)?;
-        let (message_data, item_count) = take(size_of::<u8>())(message_data)?;
-        let (_, oversize_item_count) = le_u8(item_count)?;
+        let (message_data, _) = le_u8(pub_data)?;
+        let (message_data, oversize_item_count) = le_u8(message_data)?;
 
         let empty_flags = 0;
         // Grab all message items from oversize data

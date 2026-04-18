@@ -40,38 +40,22 @@ impl SimpleDump {
     pub fn parse_simpledump(data: &[u8]) -> nom::IResult<&[u8], SimpleDump> {
         let mut simpledump_resuls = SimpleDump::default();
 
-        let (input, chunk_tag) = take(size_of::<u32>())(data)?;
-        let (input, chunk_sub_tag) = take(size_of::<u32>())(input)?;
-        let (input, chunk_data_size) = take(size_of::<u64>())(input)?;
-        let (input, first_number_proc_id) = take(size_of::<u64>())(input)?;
-        let (input, second_number_proc_id) = take(size_of::<u64>())(input)?;
-
-        let (input, continous_time) = take(size_of::<u64>())(input)?;
-        let (input, thread_id) = take(size_of::<u64>())(input)?;
-        let (input, unknown_offset) = take(size_of::<u32>())(input)?;
-        let (input, unknown_ttl) = take(size_of::<u16>())(input)?;
-        let (input, unknown_type) = take(size_of::<u16>())(input)?;
+        let (input, simpledump_chunk_tag) = le_u32(data)?;
+        let (input, simpledump_chunk_sub_tag) = le_u32(input)?;
+        let (input, simpledump_chunk_data_size) = le_u64(input)?;
+        let (input, simpledump_first_proc_id) = le_u64(input)?;
+        let (input, simpledump_second_proc_id) = le_u64(input)?;
+        let (input, simpledump_continous_time) = le_u64(input)?;
+        let (input, simpledump_thread_id) = le_u64(input)?;
+        let (input, simpledump_unknown_offset) = le_u32(input)?;
+        let (input, simpledump_unknown_ttl) = le_u16(input)?;
+        let (input, simpledump_unknown_type) = le_u16(input)?;
         let (input, sender_uuid) = take(size_of::<u128>())(input)?;
         let (input, dsc_uuid) = take(size_of::<u128>())(input)?;
-        let (input, unknown_number_message_strings) = take(size_of::<u32>())(input)?;
-        let (input, unknown_size_subsystem_string) = take(size_of::<u32>())(input)?;
-        let (input, unknown_size_message_string) = take(size_of::<u32>())(input)?;
+        let (input, simpledump_unknown_number_message_strings) = le_u32(input)?;
+        let (input, simpledump_unknown_size_subsystem_string) = le_u32(input)?;
+        let (input, simpledump_unknown_size_message_string) = le_u32(input)?;
 
-        let (_, simpledump_chunk_tag) = le_u32(chunk_tag)?;
-        let (_, simpledump_chunk_sub_tag) = le_u32(chunk_sub_tag)?;
-        let (_, simpledump_chunk_data_size) = le_u64(chunk_data_size)?;
-        let (_, simpledump_first_proc_id) = le_u64(first_number_proc_id)?;
-        let (_, simpledump_second_proc_id) = le_u64(second_number_proc_id)?;
-
-        let (_, simpledump_continous_time) = le_u64(continous_time)?;
-        let (_, simpledump_thread_id) = le_u64(thread_id)?;
-        let (_, simpledump_unknown_offset) = le_u32(unknown_offset)?;
-        let (_, simpledump_unknown_ttl) = le_u16(unknown_ttl)?;
-        let (_, simpledump_unknown_type) = le_u16(unknown_type)?;
-        let (_, simpledump_unknown_number_message_strings) =
-            le_u32(unknown_number_message_strings)?;
-        let (_, simpledump_unknown_size_subsystem_string) = le_u32(unknown_size_subsystem_string)?;
-        let (_, simpledump_unknown_size_message_string) = le_u32(unknown_size_message_string)?;
         let sender_uuid_string = format!("{sender_uuid:02X?}");
         let dsc_uuid_string = format!("{dsc_uuid:02X?}");
 
