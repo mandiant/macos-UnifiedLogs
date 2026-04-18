@@ -23,6 +23,7 @@ chrono = "0.4.44"
 walkdir = "2.5.0"
 sunlight = "0.1.5"
 
+
 [dev-dependencies]
 chrono = "0.4.44"
 criterion = "0.8.2"

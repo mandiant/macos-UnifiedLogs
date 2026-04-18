@@ -126,7 +126,7 @@ pub(crate) fn check_objects(
     } else if format_string.contains("mdns:acceptable") {
         Ok(dns_acceptable(&message_values[index].message_strings))
     } else if format_string.contains("mdns:gaiopts") {
-        dns_getaddrinfo_opts(&message_values[index].message_strings).map(ToString::to_string)
+        dns_getaddrinfo_opts(&message_values[index].message_strings)
     } else {
         Ok(String::new())
     };
