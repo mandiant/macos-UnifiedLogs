@@ -228,7 +228,7 @@ fn test_parse_all_logs_big_sur() {
             == r##"#32EC4B64 [AssetCacheLocatorService.queue] sending POST [327]{"locator-tag":"#32ec4b64","local-addresses":["192.168.101.144"],"ranked-results":true,"locator-software":[{"build":"20G224","type":"system","name":"macOS","version":"11.6.1"},{"id":"com.apple.AssetCacheLocatorService","executable":"AssetCacheLocatorService","type":"bundle","name":"AssetCacheLocatorService","version":"118"}]} to https://lcdn-locator.apple.com/lcdn/locate"##
         {
             found_precision_string = true;
-        } 
+        }
 
         if logs.event_type == EventType::Statedump {
             statedump_count += 1;
