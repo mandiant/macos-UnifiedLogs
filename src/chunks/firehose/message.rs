@@ -5,11 +5,13 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
+use crate::chunks::firehose::flags::FirehoseFormatters;
 use crate::traits::FileProvider;
 use crate::util::extract_string;
 use crate::uuidtext::UUIDTextEntry;
 use crate::{catalog::CatalogChunk, util::u64_to_usize};
 use log::{debug, error, info, warn};
+use nom::Needed;
 use nom::bytes::complete::take;
 
 #[derive(Debug, Default)]
@@ -21,9 +23,130 @@ pub struct MessageData {
     pub process_uuid: String,
 }
 
+pub(crate) struct MessageParams {
+    pub(crate) pc_id: u32,
+    pub(crate) string_offset: u64,
+    pub(crate) first_proc_id: u64,
+    pub(crate) second_proc_id: u32,
+    pub(crate) supports_large_offset: bool,
+}
+
 // Functions to help extract base format string based on flags associated with log entries
 // Ex: "%s start"
 impl MessageData {
+    pub(crate) fn get_message<'a>(
+        formatters: &FirehoseFormatters,
+        provider: &'a mut dyn FileProvider,
+        params: &MessageParams,
+        catalogs: &CatalogChunk,
+        log_type: &str,
+    ) -> nom::IResult<&'a [u8], MessageData> {
+        let string_offset = params.string_offset;
+        let pc_id = params.pc_id;
+        let shared_cache = formatters.shared_cache
+            || (formatters.large_shared_cache != 0)
+                && (!params.supports_large_offset || formatters.has_large_offset != 0);
+        if shared_cache {
+            if formatters.has_large_offset != 0 {
+                let mut large_offset = formatters.has_large_offset;
+                let extra_offset_value;
+                // large_shared_cache should be double the value of has_large_offset
+                // Ex: has_large_offset = 1, large_shared_cache = 2
+                // If the value do not match then there is an issue with shared string offset
+                // Can recover by using large_shared_cache
+                // Apple/log records this as an error: "error: ~~> <Invalid shared cache code pointer offset>"
+                // But is still able to get string formatter
+                if large_offset != formatters.large_shared_cache / 2 && !formatters.shared_cache {
+                    large_offset = formatters.large_shared_cache / 2;
+                    // Combine large offset value with current string offset to get the true offset
+                    extra_offset_value = format!("{large_offset:X}{string_offset:08X}");
+                } else if formatters.shared_cache {
+                    // Large offset is 8 if shared_cache flag is set
+                    large_offset = 8;
+                    let add_offset = 0x10000000 * u64::from(large_offset);
+                    extra_offset_value = format!("{:X}", add_offset + string_offset);
+                } else {
+                    extra_offset_value = format!("{large_offset:X}{string_offset:08X}");
+                }
+
+                let extra_offset_value_result = u64::from_str_radix(&extra_offset_value, 16);
+
+                match extra_offset_value_result {
+                    Ok(offset) => {
+                        return MessageData::extract_shared_strings(
+                            provider,
+                            offset,
+                            params.first_proc_id,
+                            params.second_proc_id,
+                            catalogs,
+                            string_offset,
+                        );
+                    }
+                    Err(err) => {
+                        // We should not get errors since we are combining two numbers to create the offset
+                        error!(
+                            "[macos-unifiedlogs] Failed to get shared string offset to format string for {log_type} firehose entry: {err:?}"
+                        );
+                        return Err(nom::Err::Incomplete(Needed::Unknown));
+                    }
+                }
+            }
+            return MessageData::extract_shared_strings(
+                provider,
+                string_offset,
+                params.first_proc_id,
+                params.second_proc_id,
+                catalogs,
+                string_offset,
+            );
+        }
+
+        if formatters.absolute {
+            let extra_offset_value = format!("{:X}{:08X}", formatters.main_exe_alt_index, pc_id);
+
+            let offset_result = u64::from_str_radix(&extra_offset_value, 16);
+            match offset_result {
+                Ok(offset) => {
+                    return MessageData::extract_absolute_strings(
+                        provider,
+                        offset,
+                        string_offset,
+                        params.first_proc_id,
+                        params.second_proc_id,
+                        catalogs,
+                        string_offset,
+                    );
+                }
+                Err(err) => {
+                    // We should not get errors since we are combining two numbers to create the offset
+                    error!(
+                        "[macos-unifiedlogs] Failed to get absolute offset to format string for {log_type} firehose entry: {err:?}"
+                    );
+                    return Err(nom::Err::Incomplete(Needed::Unknown));
+                }
+            }
+        }
+        if !formatters.uuid_relative.is_empty() {
+            return MessageData::extract_alt_uuid_strings(
+                provider,
+                string_offset,
+                &formatters.uuid_relative,
+                params.first_proc_id,
+                params.second_proc_id,
+                catalogs,
+                string_offset,
+            );
+        }
+        MessageData::extract_format_strings(
+            provider,
+            string_offset,
+            params.first_proc_id,
+            params.second_proc_id,
+            catalogs,
+            string_offset,
+        )
+    }
+
     /// Extract string from the Shared Strings Cache (dsc data)
     /// Shared strings contain library and message string
     pub fn extract_shared_strings<'a>(
