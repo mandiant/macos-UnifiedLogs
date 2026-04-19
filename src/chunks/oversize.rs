@@ -18,7 +18,7 @@ pub struct Oversize {
     pub first_proc_id: u64,
     pub second_proc_id: u32,
     pub ttl: u8,
-    pub unknown_reserved: Vec<u8>, // 3 bytes
+    pub reserved: Vec<u8>, // 3 bytes
     pub continuous_time: u64,
     pub data_ref_index: u32,
     pub public_data_size: u16,
@@ -38,8 +38,8 @@ impl Oversize {
         let (input, oversize_second_proc_id) = le_u32(input)?;
         let (input, oversize_ttl) = le_u8(input)?;
 
-        let unknown_reserved_size: u8 = 3;
-        let (input, reserved) = take(unknown_reserved_size)(input)?;
+        let reserved_size: u8 = 3;
+        let (input, reserved) = take(reserved_size)(input)?;
         let (input, oversize_continous_time) = le_u64(input)?;
         let (input, oversize_data_ref_index) = le_u32(input)?;
         let (input, oversize_public_data_size) = le_u16(input)?;
@@ -55,7 +55,7 @@ impl Oversize {
         oversize_results.data_ref_index = oversize_data_ref_index;
         oversize_results.public_data_size = oversize_public_data_size;
         oversize_results.private_data_size = oversize_private_data_size;
-        oversize_results.unknown_reserved = reserved.to_vec();
+        oversize_results.reserved = reserved.to_vec();
 
         let mut oversize_data_size =
             (oversize_results.public_data_size + oversize_results.private_data_size) as usize;
@@ -75,7 +75,7 @@ impl Oversize {
         let empty_flags = 0;
         // Grab all message items from oversize data
         let (oversize_private_data, mut firehose_item_data) =
-            FirehosePreamble::collect_items(message_data, &oversize_item_count, &empty_flags)?;
+            FirehosePreamble::collect_items(message_data, oversize_item_count, empty_flags)?;
         let (_, _) =
             FirehosePreamble::parse_private_data(oversize_private_data, &mut firehose_item_data)?;
         oversize_results.message_items = firehose_item_data;
@@ -306,7 +306,7 @@ mod tests {
         assert_eq!(oversize_results.first_proc_id, 192);
         assert_eq!(oversize_results.second_proc_id, 193);
         assert_eq!(oversize_results.ttl, 14);
-        assert_eq!(oversize_results.unknown_reserved, [0, 0, 0]);
+        assert_eq!(oversize_results.reserved, [0, 0, 0]);
         assert_eq!(oversize_results.continuous_time, 12381160463);
         assert_eq!(oversize_results.data_ref_index, 1);
         assert_eq!(oversize_results.public_data_size, 3322);
@@ -330,7 +330,7 @@ mod tests {
         assert_eq!(oversize_results.first_proc_id, 86);
         assert_eq!(oversize_results.second_proc_id, 302);
         assert_eq!(oversize_results.ttl, 0);
-        assert_eq!(oversize_results.unknown_reserved, [0, 0, 0]);
+        assert_eq!(oversize_results.reserved, [0, 0, 0]);
         assert_eq!(oversize_results.continuous_time, 96693842097);
         assert_eq!(oversize_results.data_ref_index, 1);
         assert_eq!(oversize_results.public_data_size, 8);
@@ -350,7 +350,7 @@ mod tests {
             first_proc_id: 96,
             second_proc_id: 245,
             ttl: 0,
-            unknown_reserved: Vec::new(),
+            reserved: Vec::new(),
             continuous_time: 5609252490,
             data_ref_index: 1,
             public_data_size: 1092,

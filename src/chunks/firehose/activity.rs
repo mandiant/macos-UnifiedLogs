@@ -15,15 +15,15 @@ use nom::number::complete::{le_u32, le_u64};
 
 #[derive(Debug, Clone, Default)]
 pub struct FirehoseActivity {
-    pub unknown_activity_id: u32,
-    pub unknown_sentinal: u32,      // always 0x80000000?
-    pub pid: u64,                   // if flag 0x0010
-    pub unknown_activity_id_2: u32, // if flag 0x0001
-    pub unknown_sentinal_2: u32,    // always 0x80000000? only if flag 0x0001
-    pub unknown_activity_id_3: u32, // if flag 0x0200
-    pub unknown_sentinal_3: u32,    // always 0x80000000? only if flag 0x0200
-    pub unknown_message_string_ref: u32,
-    pub unknown_pc_id: u32, // Appears to be used to calculate string offset for firehose events with Absolute flag
+    pub activity_id: u32,
+    pub sentinal: u32,      // always 0x80000000?
+    pub pid: u64,           // if flag 0x0010
+    pub activity_id_2: u32, // if flag 0x0001
+    pub sentinal_2: u32,    // always 0x80000000? only if flag 0x0001
+    pub activity_id_3: u32, // if flag 0x0200
+    pub sentinal_3: u32,    // always 0x80000000? only if flag 0x0200
+    pub message_string_ref: u32,
+    pub pc_id: u32, // Appears to be used to calculate string offset for firehose events with Absolute flag
     pub firehose_formatters: FirehoseFormatters,
 }
 
@@ -42,11 +42,11 @@ impl FirehoseActivity {
         let useraction = 0x3;
         // Get first activity_id (if not useraction type)
         if firehose_log_type != useraction {
-            let (firehose_input, firehose_unknown_activity_id) = le_u32(data)?;
-            let (firehose_input, firehose_unknown_sentinel) = le_u32(firehose_input)?;
+            let (firehose_input, firehose_activity_id) = le_u32(data)?;
+            let (firehose_input, firehose_sentinel) = le_u32(firehose_input)?;
 
-            activity.unknown_activity_id = firehose_unknown_activity_id;
-            activity.unknown_sentinal = firehose_unknown_sentinel;
+            activity.activity_id = firehose_activity_id;
+            activity.sentinal = firehose_sentinel;
             input = firehose_input;
         }
 
@@ -61,11 +61,11 @@ impl FirehoseActivity {
         let activity_id_current: u16 = 0x1; // has_current_aid flag
         if (firehose_flags & activity_id_current) != 0 {
             debug!("[macos-unifiedlogs] Activity Firehose log chunk has has_current_aid flag");
-            let (firehose_input, firehose_unknown_activity_id) = le_u32(input)?;
-            let (firehose_input, firehose_unknown_sentinel) = le_u32(firehose_input)?;
+            let (firehose_input, firehose_activity_id) = le_u32(input)?;
+            let (firehose_input, firehose_sentinel) = le_u32(firehose_input)?;
 
-            activity.unknown_activity_id_2 = firehose_unknown_activity_id;
-            activity.unknown_sentinal_2 = firehose_unknown_sentinel;
+            activity.activity_id_2 = firehose_activity_id;
+            activity.sentinal_2 = firehose_sentinel;
             input = firehose_input;
         }
 
@@ -74,15 +74,15 @@ impl FirehoseActivity {
             debug!(
                 "[macos-unifiedlogs] Activity Firehose log chunk has has_other_current_aid flag"
             );
-            let (firehose_input, firehose_unknown_activity_id) = le_u32(input)?;
-            let (firehose_input, firehose_unknown_sentinel) = le_u32(firehose_input)?;
+            let (firehose_input, firehose_activity_id) = le_u32(input)?;
+            let (firehose_input, firehose_sentinel) = le_u32(firehose_input)?;
 
-            activity.unknown_activity_id_3 = firehose_unknown_activity_id;
-            activity.unknown_sentinal_3 = firehose_unknown_sentinel;
+            activity.activity_id_3 = firehose_activity_id;
+            activity.sentinal_3 = firehose_sentinel;
             input = firehose_input;
         }
-        let (input, firehose_unknown_pc_id) = le_u32(input)?;
-        activity.unknown_pc_id = firehose_unknown_pc_id; // Unknown (Message string reference)?? PC ID?
+        let (input, firehose_pc_id) = le_u32(input)?;
+        activity.pc_id = firehose_pc_id; // Message string reference?
 
         // Check for flags related to base string format location (shared string file (dsc) or UUID file)
         let (input, formatters) =
@@ -161,7 +161,7 @@ impl FirehoseActivity {
             if firehose.firehose_formatters.absolute {
                 let extra_offset_value = format!(
                     "{:X}{:08X}",
-                    firehose.firehose_formatters.main_exe_alt_index, firehose.unknown_pc_id,
+                    firehose.firehose_formatters.main_exe_alt_index, firehose.pc_id,
                 );
                 let offset_result = u64::from_str_radix(&extra_offset_value, 16);
                 match offset_result {
@@ -225,14 +225,14 @@ mod tests {
         let log_type: u8 = 0x1;
         let (_, results) =
             FirehoseActivity::parse_activity(&test_data, test_flags, log_type).unwrap();
-        assert_eq!(results.unknown_activity_id, 64434);
-        assert_eq!(results.unknown_sentinal, 2147483648);
+        assert_eq!(results.activity_id, 64434);
+        assert_eq!(results.sentinal, 2147483648);
         assert_eq!(results.pid, 236);
-        assert_eq!(results.unknown_activity_id_2, 64434);
-        assert_eq!(results.unknown_sentinal_2, 2147483648);
-        assert_eq!(results.unknown_activity_id_3, 64435);
-        assert_eq!(results.unknown_sentinal_3, 2147483648);
-        assert_eq!(results.unknown_message_string_ref, 0);
+        assert_eq!(results.activity_id_2, 64434);
+        assert_eq!(results.sentinal_2, 2147483648);
+        assert_eq!(results.activity_id_3, 64435);
+        assert_eq!(results.sentinal_3, 2147483648);
+        assert_eq!(results.message_string_ref, 0);
         assert!(!results.firehose_formatters.main_exe);
         assert!(!results.firehose_formatters.absolute);
         assert!(!results.firehose_formatters.shared_cache);
@@ -240,7 +240,7 @@ mod tests {
         assert!(!results.firehose_formatters.pc_style);
         assert_eq!(results.firehose_formatters.main_exe_alt_index, 0);
         assert_eq!(results.firehose_formatters.uuid_relative, "");
-        assert_eq!(results.unknown_pc_id, 303578944);
+        assert_eq!(results.pc_id, 303578944);
         assert_eq!(results.firehose_formatters.has_large_offset, 1);
         assert_eq!(results.firehose_formatters.large_shared_cache, 2);
     }
