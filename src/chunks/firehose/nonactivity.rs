@@ -96,7 +96,7 @@ impl FirehoseNonActivity {
     }
 
     /// Get base log message string formatter from shared cache strings (dsc) or UUID text file for firehose non-activity log entries (chunks)
-    pub fn get_firehose_nonactivity_strings<'a>(
+    pub(crate) fn get_firehose_nonactivity_strings<'a>(
         firehose: &FirehoseNonActivity,
         provider: &'a mut dyn FileProvider,
         string_offset: u64,
@@ -112,13 +112,7 @@ impl FirehoseNonActivity {
             supports_large_offset: false,
         };
 
-        MessageData::get_message(
-            &firehose.firehose_formatters,
-            provider,
-            &params,
-            catalogs,
-            "non-activity",
-        )
+        MessageData::get_message(&firehose.firehose_formatters, provider, &params, catalogs)
     }
 }
 

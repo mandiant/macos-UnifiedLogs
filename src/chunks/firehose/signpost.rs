@@ -113,7 +113,7 @@ impl FirehoseSignpost {
     }
 
     /// Get base log message string formatter from shared cache strings (dsc) or UUID text file for firehose signpost log entries (chunks)
-    pub fn get_firehose_signpost<'a>(
+    pub(crate) fn get_firehose_signpost<'a>(
         firehose: &FirehoseSignpost,
         provider: &'a mut dyn FileProvider,
         string_offset: u64,
@@ -129,13 +129,7 @@ impl FirehoseSignpost {
             supports_large_offset: true,
         };
 
-        MessageData::get_message(
-            &firehose.firehose_formatters,
-            provider,
-            &params,
-            catalogs,
-            "signpost",
-        )
+        MessageData::get_message(&firehose.firehose_formatters, provider, &params, catalogs)
     }
 }
 
