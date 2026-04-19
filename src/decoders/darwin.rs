@@ -8,6 +8,9 @@
 use log::warn;
 
 /// Convert Darwin errno codes to message
+/// Two kinds of error objects in logs (from "man `os_log`")
+///   - {darwin.errno} = [2: "No such file or directory"]. Contains both number and error string
+///   - {errno} = "No such file or directory". Contains just the error string
 pub(crate) fn errno_codes(errno: &str) -> String {
     // Found at https://github.com/apple/darwin-xnu/blob/main/bsd/sys/errno.h
     let errno_message = match errno {

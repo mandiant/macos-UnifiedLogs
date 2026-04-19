@@ -8,6 +8,7 @@
 use std::mem::size_of;
 
 use crate::chunks::firehose::firehose_log::FirehoseItemInfo;
+use crate::decoders::darwin::errno_codes;
 use crate::decoders::decoder;
 use log::{error, info, warn};
 use nom::Parser;
@@ -399,8 +400,7 @@ fn parse_formatter<'a>(
     //    "open on /var/folders: No such file or directory"
     // "No such file or directory" is error code 2
     if ERROR_TYPES.contains(&type_data) {
-        message = format!("Error code: {message}");
-        return Ok(("", message));
+        return Ok(("", errno_codes(&message)));
     }
 
     if !width.is_empty() {

@@ -50,9 +50,9 @@ pub struct FirehosePreamble {
 #[derive(Debug, Clone, Default)]
 pub struct Firehose {
     /// 0x2 is Activity, 0x4 is non-activity, 0x6 is signpost, 0x3 trace
-    pub unknown_log_activity_type: u8,
+    pub log_activity_type: u8,
     /// Unkonwn but possibly log type (Info/Activity, Debug, Error, Fault, Signpost, System, Default)
-    pub unknown_log_type: u8,
+    pub log_type: u8,
     pub flags: u16,
     pub format_string_location: u32,
     pub thread_id: u64,
@@ -64,7 +64,7 @@ pub struct Firehose {
     pub firehose_loss: FirehoseLoss,
     pub firehose_signpost: FirehoseSignpost,
     pub firehose_trace: FirehoseTrace,
-    pub unknown_item: u8,
+    pub item: u8,
     pub number_items: u8,
     /// Log values extracted
     pub message: FirehoseItemData,
@@ -153,10 +153,10 @@ impl FirehosePreamble {
             let (firehose_input, firehose_public_data) =
                 FirehosePreamble::parse_firehose(public_data)?;
             public_data = firehose_input;
-            if !Self::LOG_TYPES.contains(&firehose_public_data.unknown_log_activity_type)
+            if !Self::LOG_TYPES.contains(&firehose_public_data.log_activity_type)
                 || public_data.len() < 24
             {
-                if Self::REMNANT_DATA == firehose_public_data.unknown_log_activity_type {
+                if Self::REMNANT_DATA == firehose_public_data.log_activity_type {
                     break;
                 }
                 if private_data_virtual_offset != 0x1000 {
@@ -442,8 +442,8 @@ impl FirehosePreamble {
     fn parse_firehose(data: &[u8]) -> nom::IResult<&[u8], Firehose> {
         let mut firehose_results = Firehose::default();
 
-        let (input, unknown_log_activity_type) = le_u8(data)?;
-        let (input, unknown_log_type) = le_u8(input)?;
+        let (input, log_activity_type) = le_u8(data)?;
+        let (input, log_type) = le_u8(input)?;
         let (input, flags) = le_u16(input)?;
         let (input, format_string_location) = le_u32(input)?;
 
@@ -453,8 +453,8 @@ impl FirehosePreamble {
         let (input, continous_delta_upper) = le_u16(input)?;
         let (input, data_size) = le_u16(input)?;
 
-        firehose_results.unknown_log_activity_type = unknown_log_activity_type;
-        firehose_results.unknown_log_type = unknown_log_type;
+        firehose_results.log_activity_type = log_activity_type;
+        firehose_results.log_type = log_type;
         firehose_results.flags = flags;
         firehose_results.format_string_location = format_string_location;
         firehose_results.thread_id = thread_id;
@@ -464,47 +464,47 @@ impl FirehosePreamble {
 
         let (mut input, mut firehose_input) = take(data_size)(input)?;
 
-        // Log activity type (unknown_log_activity_type)
+        // Log activity type (log_activity_type)
         let activity: u8 = 0x2;
         let signpost: u8 = 0x6;
         let nonactivity: u8 = 0x4;
         let loss: u8 = 0x7;
         let trace: u8 = 0x3;
 
-        // Unknown types
-        let unknown_remnant_data = 0x0; // 0x0 appears to be remnant data or garbage data (log command does not parse it either)
+        // 0x0 appears to be remnant data or garbage data (log command does not parse it either)
+        let remnant_data = 0x0;
 
-        if unknown_log_activity_type == activity {
+        if log_activity_type == activity {
             let (activity_data, activity) =
-                FirehoseActivity::parse_activity(firehose_input, flags, unknown_log_type)?;
+                FirehoseActivity::parse_activity(firehose_input, flags, log_type)?;
             firehose_input = activity_data;
             firehose_results.firehose_activity = activity;
-        } else if unknown_log_activity_type == nonactivity {
+        } else if log_activity_type == nonactivity {
             let (non_activity_data, non_activity) =
                 FirehoseNonActivity::parse_non_activity(firehose_input, flags)?;
             firehose_input = non_activity_data;
             firehose_results.firehose_non_activity = non_activity;
-        } else if unknown_log_activity_type == signpost {
+        } else if log_activity_type == signpost {
             let (process_data, firehose_signpost) =
                 FirehoseSignpost::parse_signpost(firehose_input, flags)?;
             firehose_input = process_data;
             firehose_results.firehose_signpost = firehose_signpost;
-        } else if unknown_log_activity_type == loss {
+        } else if log_activity_type == loss {
             let (loss_data, firehose_loss) = FirehoseLoss::parse_firehose_loss(firehose_input)?;
             firehose_results.firehose_loss = firehose_loss;
             firehose_input = loss_data;
-        } else if unknown_log_activity_type == trace {
+        } else if log_activity_type == trace {
             let (trace_data, firehose_trace) = FirehoseTrace::parse_firehose_trace(firehose_input)?;
             firehose_results.firehose_trace = firehose_trace;
             firehose_input = trace_data;
 
             firehose_results.message = firehose_results.firehose_trace.message_data.clone();
-        } else if unknown_log_activity_type == unknown_remnant_data {
+        } else if log_activity_type == remnant_data {
             return Ok((input, firehose_results));
         } else {
             warn!(
                 "[macos-unifiedlogs] Unknown log activity type: {} -  {} bytes left",
-                unknown_log_activity_type,
+                log_activity_type,
                 input.len()
             );
             debug!("[macos-unifiedlogs] Firehose data: {data:X?}");
@@ -520,10 +520,10 @@ impl FirehosePreamble {
             return Ok((input, firehose_results));
         }
 
-        let (firehose_input, unknown_item) = le_u8(firehose_input)?;
+        let (firehose_input, item) = le_u8(firehose_input)?;
         let (firehose_input, number_items) = le_u8(firehose_input)?;
 
-        firehose_results.unknown_item = unknown_item;
+        firehose_results.item = item;
         firehose_results.number_items = number_items;
 
         let (_, firehose_item_data) =
@@ -2815,19 +2815,19 @@ mod tests {
         ];
 
         let (_, firehose) = FirehosePreamble::parse_firehose(&test_firehose_data).unwrap();
-        assert_eq!(firehose.unknown_log_activity_type, 4);
-        assert_eq!(firehose.unknown_log_type, 0);
+        assert_eq!(firehose.log_activity_type, 4);
+        assert_eq!(firehose.log_type, 0);
         assert_eq!(firehose.flags, 557);
         assert_eq!(firehose.format_string_location, 304082752);
         assert_eq!(firehose.thread_id, 60238);
         assert_eq!(firehose.continous_time_delta, 589618615);
         assert_eq!(firehose.continous_time_delta_upper, 16);
         assert_eq!(firehose.data_size, 99);
-        assert_eq!(firehose.firehose_non_activity.unknown_activity_id, 64444);
-        assert_eq!(firehose.firehose_non_activity.unknown_sentinal, 2147483648);
+        assert_eq!(firehose.firehose_non_activity.activity_id, 64444);
+        assert_eq!(firehose.firehose_non_activity.sentinal, 2147483648);
         assert_eq!(firehose.firehose_non_activity.private_strings_offset, 0);
         assert_eq!(firehose.firehose_non_activity.private_strings_size, 0);
-        assert_eq!(firehose.firehose_non_activity.unknown_message_string_ref, 0);
+        assert_eq!(firehose.firehose_non_activity.message_string_ref, 0);
         assert!(!firehose.firehose_non_activity.firehose_formatters.main_exe);
 
         assert_eq!(firehose.firehose_non_activity.subsystem_value, 14);
@@ -2847,8 +2847,8 @@ mod tests {
                 .has_large_offset,
             1
         );
-        assert_eq!(firehose.firehose_non_activity.unknown_pc_id, 303680198);
-        assert_eq!(firehose.unknown_item, 34);
+        assert_eq!(firehose.firehose_non_activity.pc_id, 303680198);
+        assert_eq!(firehose.item, 34);
         assert_eq!(firehose.number_items, 1);
         assert_eq!(
             firehose.message.item_info[0].message_strings,
@@ -2963,8 +2963,8 @@ mod tests {
         assert_eq!(firehose.base_continous_time, 0);
 
         assert_eq!(firehose.public_data.len(), 1);
-        assert_eq!(firehose.public_data[0].unknown_log_activity_type, 4);
-        assert_eq!(firehose.public_data[0].unknown_log_type, 0);
+        assert_eq!(firehose.public_data[0].log_activity_type, 4);
+        assert_eq!(firehose.public_data[0].log_type, 0);
         assert_eq!(firehose.public_data[0].flags, 258);
         assert_eq!(firehose.public_data[0].format_string_location, 16144);
         assert_eq!(firehose.public_data[0].thread_id, 957);
@@ -2972,18 +2972,8 @@ mod tests {
         assert_eq!(firehose.public_data[0].continous_time_delta, 478486415);
         assert_eq!(firehose.public_data[0].data_size, 16);
 
-        assert_eq!(
-            firehose.public_data[0]
-                .firehose_non_activity
-                .unknown_activity_id,
-            0
-        );
-        assert_eq!(
-            firehose.public_data[0]
-                .firehose_non_activity
-                .unknown_sentinal,
-            0
-        );
+        assert_eq!(firehose.public_data[0].firehose_non_activity.activity_id, 0);
+        assert_eq!(firehose.public_data[0].firehose_non_activity.sentinal, 0);
         assert_eq!(
             firehose.public_data[0]
                 .firehose_non_activity
@@ -2999,7 +2989,7 @@ mod tests {
         assert_eq!(
             firehose.public_data[0]
                 .firehose_non_activity
-                .unknown_message_string_ref,
+                .message_string_ref,
             0
         );
         assert_eq!(
@@ -3013,10 +3003,7 @@ mod tests {
             firehose.public_data[0].firehose_non_activity.data_ref_value,
             0
         );
-        assert_eq!(
-            firehose.public_data[0].firehose_non_activity.unknown_pc_id,
-            14968
-        );
+        assert_eq!(firehose.public_data[0].firehose_non_activity.pc_id, 14968);
 
         assert!(
             firehose.public_data[0]
@@ -3227,7 +3214,7 @@ mod tests {
     }
 
     #[test]
-    fn test_collect_items_unknown_item() {
+    fn test_collect_items_item() {
         let test_data = [
             99, 4, 0, 0, 0, 0, 4, 0, 0, 0, 0, 4, 0, 0, 0, 0, 4, 0, 0, 0, 0, 4, 0, 0, 0, 0,
         ];

@@ -30,11 +30,11 @@ pub struct FirehoseActivity {
 impl FirehoseActivity {
     /// Parse Activity Type Firehose log entry.
     //  Ex: tp 3536 + 60: activity create (has_current_aid, has_unique_pid, shared_cache, has_other_aid)
-    pub fn parse_activity<'a>(
-        data: &'a [u8],
+    pub fn parse_activity(
+        data: &[u8],
         firehose_flags: u16,
         firehose_log_type: u8,
-    ) -> nom::IResult<&'a [u8], FirehoseActivity> {
+    ) -> nom::IResult<&[u8], FirehoseActivity> {
         let mut activity = FirehoseActivity::default();
         let mut input = data;
 
@@ -260,7 +260,7 @@ mod tests {
         for catalog_data in log_data.catalog_data {
             for preamble in catalog_data.firehose {
                 for firehose in preamble.public_data {
-                    if firehose.unknown_log_activity_type == activity_type {
+                    if firehose.log_activity_type == activity_type {
                         let (_, message_data) = FirehoseActivity::get_firehose_activity_strings(
                             &firehose.firehose_activity,
                             &mut provider,

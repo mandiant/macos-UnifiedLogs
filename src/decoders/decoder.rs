@@ -65,7 +65,7 @@ pub(crate) fn check_objects(
         Ok(lowercase_bool(&message_values[index].message_strings))
     } else if format_string.contains("uuid_t") {
         parse_uuid(&message_values[index].message_strings)
-    } else if format_string.contains("darwin.errno") {
+    } else if format_string.contains("darwin.errno") || format_string.contains("errno") {
         Ok(errno_codes(&message_values[index].message_strings))
     } else if format_string.contains("darwin.mode") {
         Ok(permission(&message_values[index].message_strings))

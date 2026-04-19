@@ -15,15 +15,15 @@ use nom::number::complete::{le_u8, le_u16, le_u32};
 
 #[derive(Debug, Clone, Default)]
 pub struct FirehoseNonActivity {
-    pub unknown_activity_id: u32,        // if flag 0x0001
-    pub unknown_sentinal: u32,           // always 0x80000000? if flag 0x0001
-    pub private_strings_offset: u16,     // if flag 0x0100
-    pub private_strings_size: u16,       // if flag 0x0100
-    pub unknown_message_string_ref: u32, // if flag 0x0008
-    pub subsystem_value: u16,            // if flag 0x200, has_subsystem
-    pub ttl_value: u8,                   // if flag 0x0400, has_rules
-    pub data_ref_value: u32,             // if flag 0x0800, has_oversize
-    pub unknown_pc_id: u32, // Appears to be used to calculate string offset for firehose events with Absolute flag
+    pub activity_id: u32,            // if flag 0x0001
+    pub sentinal: u32,               // always 0x80000000? if flag 0x0001
+    pub private_strings_offset: u16, // if flag 0x0100
+    pub private_strings_size: u16,   // if flag 0x0100
+    pub message_string_ref: u32,     // if flag 0x0008
+    pub subsystem_value: u16,        // if flag 0x200, has_subsystem
+    pub ttl_value: u8,               // if flag 0x0400, has_rules
+    pub data_ref_value: u32,         // if flag 0x0800, has_oversize
+    pub pc_id: u32, // Appears to be used to calculate string offset for firehose events with Absolute flag
     pub firehose_formatters: FirehoseFormatters,
 }
 
@@ -41,10 +41,10 @@ impl FirehoseNonActivity {
 
         if (firehose_flags & activity_id_current) != 0 {
             debug!("[macos-unifiedlogs] Non-Activity Firehose log chunk has has_current_aid flag");
-            let (firehose_input, firehose_unknown_activity_id) = le_u32(input)?;
+            let (firehose_input, firehose_activity_id) = le_u32(input)?;
             let (firehose_input, firehose_unknown_sentinel) = le_u32(firehose_input)?;
-            non_activity.unknown_activity_id = firehose_unknown_activity_id;
-            non_activity.unknown_sentinal = firehose_unknown_sentinel;
+            non_activity.activity_id = firehose_activity_id;
+            non_activity.sentinal = firehose_unknown_sentinel;
             input = firehose_input;
         }
 
@@ -61,8 +61,8 @@ impl FirehoseNonActivity {
             input = firehose_input;
         }
 
-        let (input, firehose_unknown_pc_id) = le_u32(input)?;
-        non_activity.unknown_pc_id = firehose_unknown_pc_id;
+        let (input, firehose_pc_id) = le_u32(input)?;
+        non_activity.pc_id = firehose_pc_id;
 
         // Check for flags related to base string format location (shared string file (dsc) or UUID file)
         let (mut input, formatters) =
@@ -166,7 +166,7 @@ impl FirehoseNonActivity {
             if firehose.firehose_formatters.absolute {
                 let extra_offset_value = format!(
                     "{:X}{:08X}",
-                    firehose.firehose_formatters.main_exe_alt_index, firehose.unknown_pc_id
+                    firehose.firehose_formatters.main_exe_alt_index, firehose.pc_id
                 );
 
                 let offset_result = u64::from_str_radix(&extra_offset_value, 16);
@@ -231,11 +231,11 @@ mod tests {
         let test_flags = 556;
         let (_, nonactivity_results) =
             FirehoseNonActivity::parse_non_activity(&test_data, test_flags).unwrap();
-        assert_eq!(nonactivity_results.unknown_activity_id, 0);
-        assert_eq!(nonactivity_results.unknown_sentinal, 0);
+        assert_eq!(nonactivity_results.activity_id, 0);
+        assert_eq!(nonactivity_results.sentinal, 0);
         assert_eq!(nonactivity_results.private_strings_offset, 0);
         assert_eq!(nonactivity_results.private_strings_size, 0);
-        assert_eq!(nonactivity_results.unknown_message_string_ref, 0);
+        assert_eq!(nonactivity_results.message_string_ref, 0);
         assert_eq!(
             nonactivity_results.firehose_formatters.main_exe_alt_index,
             0
@@ -254,7 +254,7 @@ mod tests {
             4
         );
         assert_eq!(nonactivity_results.firehose_formatters.has_large_offset, 2);
-        assert_eq!(nonactivity_results.unknown_pc_id, 218936186);
+        assert_eq!(nonactivity_results.pc_id, 218936186);
     }
 
     #[test]
@@ -272,7 +272,7 @@ mod tests {
         for catalog_data in log_data.catalog_data {
             for preamble in catalog_data.firehose {
                 for firehose in preamble.public_data {
-                    if firehose.unknown_log_activity_type == activity_type {
+                    if firehose.log_activity_type == activity_type {
                         let (_, message_data) =
                             FirehoseNonActivity::get_firehose_nonactivity_strings(
                                 &firehose.firehose_non_activity,

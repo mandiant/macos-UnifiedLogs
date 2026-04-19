@@ -209,7 +209,7 @@ mod tests {
         for catalog_data in log_data.catalog_data {
             for preamble in catalog_data.firehose {
                 for firehose in preamble.public_data {
-                    if firehose.unknown_log_activity_type == activity_type {
+                    if firehose.log_activity_type == activity_type {
                         let (_, message_data) = FirehoseTrace::get_firehose_trace_strings(
                             &mut provider,
                             u64::from(firehose.format_string_location),
