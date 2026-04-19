@@ -38,7 +38,7 @@ impl FirehoseSignpost {
 
         let mut input = data;
 
-        let activity_id_current: u16 = 0x1; // has_current_aid flag
+        let activity_id_current = 0x1; // has_current_aid flag
         if (firehose_flags & activity_id_current) != 0 {
             debug!("[macos-unifiedlogs] Signpost Firehose has has_current_aid flag");
             let (firehose_input, firehose_activity_id) = le_u32(input)?;
@@ -48,7 +48,7 @@ impl FirehoseSignpost {
             input = firehose_input;
         }
 
-        let private_string_range: u16 = 0x100; // has_private_data flag
+        let private_string_range = 0x100; // has_private_data flag
         // Entry has private string data. The private data is found after parsing all the public data first
         if (firehose_flags & private_string_range) != 0 {
             debug!("[macos-unifiedlogs] Signpost Firehose has has_private_data flag");
@@ -101,11 +101,16 @@ impl FirehoseSignpost {
             let (firehose_input, firehose_signpost_name) = le_u32(input)?;
             firehose_signpost.signpost_name = firehose_signpost_name;
             input = firehose_input;
-            // If the signpost log has large_shared_cache flag
-            // Then the signpost name has the same value after as the large_shared_cache
-            if firehose_signpost.firehose_formatters.large_shared_cache != 0 {
+            // If the signpost log has large_shared_cache or shared_cache flag
+            // Then need to add 0x80000000 to signpost name
+            if (firehose_signpost.firehose_formatters.shared_cache
+                && firehose_signpost.firehose_formatters.has_large_offset != 0)
+                || firehose_signpost.firehose_formatters.large_shared_cache != 0
+            {
                 let (firehose_input, _) = le_u16(input)?;
                 input = firehose_input;
+                let cache = 0x80000000;
+                firehose_signpost.signpost_name += cache;
             }
         }
 

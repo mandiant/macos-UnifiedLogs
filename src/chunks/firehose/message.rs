@@ -45,6 +45,7 @@ impl MessageData {
         let shared_cache_string = formatters.shared_cache
             || (formatters.large_shared_cache != 0)
                 && (!params.supports_large_offset || formatters.has_large_offset != 0);
+
         if shared_cache_string {
             if formatters.has_large_offset != 0 {
                 let mut large_offset = formatters.has_large_offset;
