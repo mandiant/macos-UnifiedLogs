@@ -15,9 +15,9 @@ use nom::number::complete::{le_u8, le_u16, le_u32, le_u64};
 
 #[derive(Debug, Clone, Default)]
 pub struct FirehoseSignpost {
-    pub unknown_pc_id: u32, // Appears to be used to calculate string offset for firehose events with Absolute flag
-    pub unknown_activity_id: u32,
-    pub unknown_sentinel: u32,
+    pub pc_id: u32, // Appears to be used to calculate string offset for firehose events with Absolute flag
+    pub activity_id: u32,
+    pub sentinel: u32,
     pub subsystem: u16,
     pub signpost_id: u64,
     pub signpost_name: u32,
@@ -42,10 +42,10 @@ impl FirehoseSignpost {
         let activity_id_current: u16 = 0x1; // has_current_aid flag
         if (firehose_flags & activity_id_current) != 0 {
             debug!("[macos-unifiedlogs] Signpost Firehose has has_current_aid flag");
-            let (firehose_input, firehose_unknown_activity_id) = le_u32(input)?;
-            let (firehose_input, firehose_unknown_sentinel) = le_u32(firehose_input)?;
-            firehose_signpost.unknown_activity_id = firehose_unknown_activity_id;
-            firehose_signpost.unknown_sentinel = firehose_unknown_sentinel;
+            let (firehose_input, firehose_activity_id) = le_u32(input)?;
+            let (firehose_input, firehose_sentinel) = le_u32(firehose_input)?;
+            firehose_signpost.activity_id = firehose_activity_id;
+            firehose_signpost.sentinel = firehose_sentinel;
             input = firehose_input;
         }
 
@@ -62,8 +62,8 @@ impl FirehoseSignpost {
             input = firehose_input;
         }
 
-        let (input, firehose_unknown_pc_id) = le_u32(input)?;
-        firehose_signpost.unknown_pc_id = firehose_unknown_pc_id;
+        let (input, firehose_pc_id) = le_u32(input)?;
+        firehose_signpost.pc_id = firehose_pc_id;
 
         // Check for flags related to base string format location (shared string file (dsc) or UUID file)
         let (mut input, formatters) =
@@ -184,7 +184,7 @@ impl FirehoseSignpost {
             if firehose.firehose_formatters.absolute {
                 let extra_offset_value = format!(
                     "{:X}{:08X}",
-                    firehose.firehose_formatters.main_exe_alt_index, firehose.unknown_pc_id,
+                    firehose.firehose_formatters.main_exe_alt_index, firehose.pc_id,
                 );
 
                 let offset_result = u64::from_str_radix(&extra_offset_value, 16);
@@ -246,9 +246,9 @@ mod tests {
         ];
         let test_flags = 33282;
         let (_, results) = FirehoseSignpost::parse_signpost(&test_data, test_flags).unwrap();
-        assert_eq!(results.unknown_pc_id, 193761);
-        assert_eq!(results.unknown_activity_id, 0);
-        assert_eq!(results.unknown_sentinel, 0);
+        assert_eq!(results.pc_id, 193761);
+        assert_eq!(results.activity_id, 0);
+        assert_eq!(results.sentinel, 0);
         assert_eq!(results.subsystem, 1);
         assert_eq!(results.signpost_id, 17216892719917625070);
         assert_eq!(results.signpost_name, 1785776);

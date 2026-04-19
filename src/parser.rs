@@ -363,8 +363,8 @@ mod tests {
         assert_eq!(strings_results[0].entry_descriptors.len(), 1);
         assert_eq!(strings_results[0].footer_data.len(), 2847);
         assert_eq!(strings_results[0].number_entries, 1);
-        assert_eq!(strings_results[0].unknown_minor_version, 1);
-        assert_eq!(strings_results[0].unknown_major_version, 2);
+        assert_eq!(strings_results[0].minor_version, 1);
+        assert_eq!(strings_results[0].major_version, 2);
 
         assert_eq!(strings_results[1].uuid, "00B3D870FB3AE8BDC1BA3A60D0B9A0");
         assert_eq!(strings_results[1].footer_data.len(), 2164);
