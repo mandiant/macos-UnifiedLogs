@@ -10,7 +10,7 @@ use crate::{
     decoders::{
         DecoderError,
         bool::{lowercase_bool, uppercase_bool},
-        darwin::{errno_codes, permission},
+        darwin::{errno_codes, mach_codes, permission},
         dns::{
             dns_acceptable, dns_addrmv, dns_counts, dns_getaddrinfo_opts, dns_idflags, dns_ip_addr,
             dns_protocol, dns_reason, dns_records, dns_yes_no, get_dns_mac_addr, get_domain_name,
@@ -65,7 +65,11 @@ pub(crate) fn check_objects(
         Ok(lowercase_bool(&message_values[index].message_strings))
     } else if format_string.contains("uuid_t") {
         parse_uuid(&message_values[index].message_strings)
-    } else if format_string.contains("darwin.errno") || format_string.contains("errno") {
+    } else if format_string.contains("darwin.errno") {
+        Ok(errno_codes(&message_values[index].message_strings))
+    } else if format_string.contains("mach.errno") {
+        Ok(mach_codes(&message_values[index].message_strings))
+    } else if format_string.contains("%{errno") {
         Ok(errno_codes(&message_values[index].message_strings))
     } else if format_string.contains("darwin.mode") {
         Ok(permission(&message_values[index].message_strings))
