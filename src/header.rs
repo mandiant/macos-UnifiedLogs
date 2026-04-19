@@ -75,7 +75,7 @@ impl HeaderChunk {
         let (input, hardware_model_string) = take(hardware_model_size)(input)?;
         let (input, header_sub_chunk_tag_3) = le_u32(input)?;
         let (input, header_sub_chunk_tag_data_size_3) = le_u32(input)?;
-        let (input, boot_uuid) = take(size_of::<u128>())(input)?;
+        let (input, boot_uuid_be) = be_u128(input)?;
         let (input, header_logd_pid) = le_u32(input)?;
         let (input, header_logd_exit_status) = le_u32(input)?;
         let (input, header_sub_chunk_tag_4) = le_u32(input)?;
@@ -108,6 +108,7 @@ impl HeaderChunk {
         header_chunk.logd_exit_status = header_logd_exit_status;
         header_chunk.sub_chunk_tag_4 = header_sub_chunk_tag_4;
         header_chunk.sub_chunk_tag_data_size_4 = header_sub_chunk_tag_data_size_4;
+        header_chunk.boot_uuid = format!("{boot_uuid_be:032X}");
 
         let path_data = from_utf8(timezone_path);
         match path_data {
@@ -136,9 +137,6 @@ impl HeaderChunk {
                 warn!("[macos-unifiedlogs] Failed to get hardware info from header: {err:?}")
             }
         }
-
-        let (_, boot_uuid_be) = be_u128(boot_uuid)?;
-        header_chunk.boot_uuid = format!("{boot_uuid_be:X}");
 
         Ok((input, header_chunk))
     }

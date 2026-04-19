@@ -205,6 +205,7 @@ fn test_parse_all_logs_big_sur() {
     let mut sock_count = 0;
     let mut location_harvest_count = 0;
     let mut parent_activity = 0;
+    let mut no_such_file_or_directory = 0;
 
     // Breakdown log entries by smaller types to ensure count is accurate
     for logs in &log_data_vec {
@@ -274,6 +275,10 @@ fn test_parse_all_logs_big_sur() {
         if logs.parent_activity_id == 208 {
             parent_activity += 1;
         }
+
+        if logs.message.contains("No such file or directory") {
+            no_such_file_or_directory += 1;
+        }
     }
 
     assert_eq!(unknown_strings, 0);
@@ -298,6 +303,7 @@ fn test_parse_all_logs_big_sur() {
     assert_eq!(sock_count, 2);
     assert_eq!(location_harvest_count, 11);
     assert_eq!(parent_activity, 5);
+    assert_eq!(no_such_file_or_directory, 1728)
 }
 
 #[test]

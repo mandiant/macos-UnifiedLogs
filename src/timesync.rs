@@ -98,7 +98,7 @@ impl TimesyncBoot {
             signature: timesync_signature,
             header_size: timesync_header_size,
             unknown: timesync_unknown,
-            boot_uuid: format!("{timesync_boot_uuid:X}"),
+            boot_uuid: format!("{timesync_boot_uuid:032X}"),
             timebase_numerator: timesync_timebase_numerator,
             timebase_denominator: timesync_timebase_denominator,
             boot_time: timesync_boot_time,
