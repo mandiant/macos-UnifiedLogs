@@ -61,7 +61,7 @@ impl MessageData {
                     large_offset = formatters.large_shared_cache / 2;
                     // Combine large offset value with current string offset to get the true offset
                     (0x100000000 * u64::from(large_offset)) + string_offset
-                } else if formatters.shared_cache {
+                } else if formatters.shared_cache && formatters.has_large_offset == 1 {
                     // Large offset is 8 if shared_cache flag is set
                     large_offset = 8;
                     let add_offset = 0x10000000 * u64::from(large_offset);
