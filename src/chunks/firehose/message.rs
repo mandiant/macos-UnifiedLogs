@@ -61,10 +61,13 @@ impl MessageData {
                     large_offset = formatters.large_shared_cache / 2;
                     // Combine large offset value with current string offset to get the true offset
                     (0x100000000 * u64::from(large_offset)) + string_offset
-                } else if formatters.shared_cache && formatters.has_large_offset == 1 {
-                    // Large offset is 8 if shared_cache flag is set
-                    large_offset = 8;
-                    let add_offset = 0x10000000 * u64::from(large_offset);
+                } else if formatters.shared_cache
+                    && (formatters.has_large_offset == 1 || formatters.has_large_offset == 2)
+                {
+                    // Large offset will either be 1 or 2
+                    // Multiple 0x80000000 by large_offset and add our original target offset
+                    // Final value will be real offset to the string
+                    let add_offset = 0x80000000 * u64::from(large_offset);
                     add_offset + string_offset
                 } else {
                     (0x100000000 * u64::from(large_offset)) + string_offset
