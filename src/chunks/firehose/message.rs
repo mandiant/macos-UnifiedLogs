@@ -5,6 +5,7 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
+use crate::chunks::firehose::flags::FirehoseFormatters;
 use crate::traits::FileProvider;
 use crate::util::extract_string;
 use crate::uuidtext::UUIDTextEntry;
@@ -13,20 +14,118 @@ use log::{debug, error, info, warn};
 use nom::bytes::complete::take;
 
 #[derive(Debug, Default)]
-pub struct MessageData {
-    pub library: String,
-    pub format_string: String,
-    pub process: String,
-    pub library_uuid: String,
-    pub process_uuid: String,
+pub(crate) struct MessageData {
+    pub(crate) library: String,
+    pub(crate) format_string: String,
+    pub(crate) process: String,
+    pub(crate) library_uuid: String,
+    pub(crate) process_uuid: String,
+}
+
+pub(crate) struct MessageParams {
+    pub(crate) pc_id: u32,
+    pub(crate) string_offset: u64,
+    pub(crate) first_proc_id: u64,
+    pub(crate) second_proc_id: u32,
+    pub(crate) supports_large_offset: bool,
 }
 
 // Functions to help extract base format string based on flags associated with log entries
 // Ex: "%s start"
 impl MessageData {
+    /// Get the base message for the log
+    pub(crate) fn get_message<'a>(
+        formatters: &FirehoseFormatters,
+        provider: &'a mut dyn FileProvider,
+        params: &MessageParams,
+        catalogs: &CatalogChunk,
+    ) -> nom::IResult<&'a [u8], MessageData> {
+        let string_offset = params.string_offset;
+        let pc_id = params.pc_id;
+        let shared_cache_string = formatters.shared_cache
+            || (formatters.large_shared_cache != 0)
+                && (!params.supports_large_offset || formatters.has_large_offset != 0);
+
+        if shared_cache_string {
+            if formatters.has_large_offset != 0 {
+                let mut large_offset = formatters.has_large_offset;
+                // large_shared_cache should be double the value of has_large_offset
+                // Ex: has_large_offset = 1, large_shared_cache = 2
+                // If the value do not match then there is an issue with shared string offset
+                // Can recover by using large_shared_cache
+                // Apple/log records this as an error: "error: ~~> <Invalid shared cache code pointer offset>"
+                // But is still able to get string formatter
+                let true_offset = if large_offset != formatters.large_shared_cache / 2
+                    && !formatters.shared_cache
+                {
+                    large_offset = formatters.large_shared_cache / 2;
+                    // Combine large offset value with current string offset to get the true offset
+                    (0x100000000 * u64::from(large_offset)) + string_offset
+                } else if formatters.shared_cache && formatters.has_large_offset == 1 {
+                    // Large offset is 8 if shared_cache flag is set
+                    large_offset = 8;
+                    let add_offset = 0x10000000 * u64::from(large_offset);
+                    add_offset + string_offset
+                } else {
+                    (0x100000000 * u64::from(large_offset)) + string_offset
+                };
+                return MessageData::extract_shared_strings(
+                    provider,
+                    true_offset,
+                    params.first_proc_id,
+                    params.second_proc_id,
+                    catalogs,
+                    string_offset,
+                );
+            }
+            return MessageData::extract_shared_strings(
+                provider,
+                string_offset,
+                params.first_proc_id,
+                params.second_proc_id,
+                catalogs,
+                string_offset,
+            );
+        }
+
+        if formatters.absolute {
+            let offset =
+                (0x100000000 * u64::from(formatters.main_exe_alt_index)) + u64::from(pc_id);
+
+            return MessageData::extract_absolute_strings(
+                provider,
+                offset,
+                string_offset,
+                params.first_proc_id,
+                params.second_proc_id,
+                catalogs,
+                string_offset,
+            );
+        }
+        if !formatters.uuid_relative.is_empty() {
+            return MessageData::extract_alt_uuid_strings(
+                provider,
+                string_offset,
+                &formatters.uuid_relative,
+                params.first_proc_id,
+                params.second_proc_id,
+                catalogs,
+                string_offset,
+            );
+        }
+        MessageData::extract_format_strings(
+            provider,
+            string_offset,
+            params.first_proc_id,
+            params.second_proc_id,
+            catalogs,
+            string_offset,
+        )
+    }
+
     /// Extract string from the Shared Strings Cache (dsc data)
     /// Shared strings contain library and message string
-    pub fn extract_shared_strings<'a>(
+    fn extract_shared_strings<'a>(
         provider: &'a mut dyn FileProvider,
         string_offset: u64,
         first_proc_id: u64,
@@ -196,7 +295,7 @@ impl MessageData {
 
     /// Extract strings from the `UUIDText` file associated with log entry
     /// `UUIDText` file contains process and message string
-    pub fn extract_format_strings<'a>(
+    pub(crate) fn extract_format_strings<'a>(
         provider: &'a mut dyn FileProvider,
         string_offset: u64,
         first_proc_id: u64,
@@ -310,7 +409,7 @@ impl MessageData {
 
     /// Extract strings from the `UUIDText` file associated with log entry that have `absolute` flag set
     /// `UUIDText` file contains process and message string
-    pub fn extract_absolute_strings<'a>(
+    fn extract_absolute_strings<'a>(
         provider: &'a mut dyn FileProvider,
         absolute_offset: u64,
         string_offset: u64,
@@ -487,7 +586,7 @@ impl MessageData {
 
     /// Extract strings from an alt `UUIDText` file specified within the log entry that have `uuid_relative` flag set
     /// `UUIDText` files contains library and process and message string
-    pub fn extract_alt_uuid_strings<'a>(
+    fn extract_alt_uuid_strings<'a>(
         provider: &'a mut dyn FileProvider,
         string_offset: u64,
         uuid: &str,

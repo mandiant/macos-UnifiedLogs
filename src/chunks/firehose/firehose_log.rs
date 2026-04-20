@@ -251,7 +251,7 @@ impl FirehosePreamble {
         let mut firehose_item_data = FirehoseItemData::default();
 
         // Firehose number item values
-        let number_item_type: Vec<u8> = vec![0x0, 0x2];
+        let number_item_type = [0x0, 0x2];
         // Dynamic precision item types?
         let precision_items = [0x10, 0x12];
         //  Likely realted to private string. Seen only "<private>" values
@@ -465,11 +465,11 @@ impl FirehosePreamble {
         let (mut input, mut firehose_input) = take(data_size)(input)?;
 
         // Log activity type (log_activity_type)
-        let activity: u8 = 0x2;
-        let signpost: u8 = 0x6;
-        let nonactivity: u8 = 0x4;
-        let loss: u8 = 0x7;
-        let trace: u8 = 0x3;
+        let activity = 0x2;
+        let signpost = 0x6;
+        let nonactivity = 0x4;
+        let loss = 0x7;
+        let trace = 0x3;
 
         // 0x0 appears to be remnant data or garbage data (log command does not parse it either)
         let remnant_data = 0x0;
