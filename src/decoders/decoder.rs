@@ -6,7 +6,7 @@
 // See the License for the specific language governing permissions and limitations under the License.
 
 use crate::{
-    chunks::firehose::firehose_log::FirehoseItemInfo,
+    chunks::firehose::firehose_log::FirehoseItemType,
     decoders::{
         DecoderError,
         bool::{lowercase_bool, uppercase_bool},
@@ -31,7 +31,7 @@ use crate::{
 /// Check if we support one of Apple's custom logging objects
 pub(crate) fn check_objects(
     format_string: &str,
-    message_values: &[FirehoseItemInfo],
+    message_values: &[FirehoseItemType],
     item_type: u8,
     item_index: usize,
 ) -> String {
@@ -147,15 +147,16 @@ pub(crate) fn check_objects(
 #[cfg(test)]
 mod tests {
     use super::check_objects;
-    use crate::chunks::firehose::firehose_log::FirehoseItemInfo;
+    use crate::chunks::firehose::firehose_log::FirehoseItemType;
 
     #[test]
     fn test_check_objects_lowercase_bool() {
         let test_format = "%{bool}d";
-        let test_item_info = FirehoseItemInfo {
+        let test_item_info = FirehoseItemType {
             message_strings: String::from("1"),
             item_type: 0,
             item_size: 4,
+            ..Default::default()
         };
         let test_type = 0;
         let test_index = 0;
@@ -167,10 +168,11 @@ mod tests {
     #[test]
     fn test_check_objects_uppercase_bool() {
         let test_format = "%{BOOL}d";
-        let test_item_info = FirehoseItemInfo {
+        let test_item_info = FirehoseItemType {
             message_strings: String::from("1"),
             item_type: 0,
             item_size: 4,
+            ..Default::default()
         };
         let test_type = 0;
         let test_index = 0;
@@ -182,10 +184,11 @@ mod tests {
     #[test]
     fn test_odtypes() {
         let test_format = "%{odtypes:mbr_details}d";
-        let test_item_info = FirehoseItemInfo {
+        let test_item_info = FirehoseItemType {
             message_strings: String::from("I/7///8vTG9jYWwvRGVmYXVsdAA="),
             item_type: 50,
             item_size: 0,
+            ..Default::default()
         };
         let test_type = 50; // 0x32
         let test_index = 0;
@@ -197,10 +200,11 @@ mod tests {
     #[test]
     fn test_check_objects_uuid() {
         let test_format = "%{public,uuid_t}.16P";
-        let test_item_info = FirehoseItemInfo {
+        let test_item_info = FirehoseItemType {
             message_strings: String::from("hZV+HTbETtKGqAZXvN3ikw=="),
             item_type: 50,
             item_size: 16,
+            ..Default::default()
         };
         let test_type = 50; // 0x32
         let test_index = 0;
@@ -212,10 +216,11 @@ mod tests {
     #[test]
     fn test_private() {
         let test_format = "%{public,uuid_t}.16P";
-        let test_item_info = FirehoseItemInfo {
+        let test_item_info = FirehoseItemType {
             message_strings: String::from("<private>"),
             item_type: 50,
             item_size: 16,
+            ..Default::default()
         };
         let test_type = 50; // 0x32
         let test_index = 0;
@@ -227,10 +232,11 @@ mod tests {
     #[test]
     fn test_hash() {
         let test_format = "%{public,mask.hash}.16P";
-        let test_item_info = FirehoseItemInfo {
+        let test_item_info = FirehoseItemType {
             message_strings: String::from("hash"),
             item_type: 242,
             item_size: 16,
+            ..Default::default()
         };
         let test_type = 242; // 0x32
         let test_index = 0;
