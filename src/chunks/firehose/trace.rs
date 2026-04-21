@@ -6,7 +6,7 @@
 // See the License for the specific language governing permissions and limitations under the License.
 
 use crate::catalog::CatalogChunk;
-use crate::chunks::firehose::firehose_log::{FirehoseItemData, FirehoseItemInfo};
+use crate::chunks::firehose::firehose_log::{FirehoseItemData, FirehoseItemType};
 use crate::chunks::firehose::message::MessageData;
 use crate::traits::FileProvider;
 use log::{error, warn};
@@ -86,11 +86,7 @@ impl FirehoseTrace {
         }
 
         for entry_size in sizes_count {
-            let mut item_info = FirehoseItemInfo {
-                message_strings: String::new(),
-                item_type: 0,
-                item_size: 0,
-            };
+            let mut item_info = FirehoseItemType::default();
             // So far all entries appears to be numbers. Using Big Endian because we reversed the data above
             let (input, message_data) = take(entry_size as usize)(remaining_input)?;
             match entry_size {

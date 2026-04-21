@@ -7,7 +7,7 @@
 
 use std::mem::size_of;
 
-use crate::chunks::firehose::firehose_log::FirehoseItemInfo;
+use crate::chunks::firehose::firehose_log::FirehoseItemType;
 use crate::decoders::darwin::errno_codes;
 use crate::decoders::decoder;
 use log::{error, info, warn};
@@ -32,7 +32,7 @@ const STRING_TYPES: [&str; 6] = ["c", "s", "@", "S", "C", "P"];
 /// Format the Unified Log message entry based on the parsed log items. Formatting follows the C lang prinf formatting process
 pub fn format_firehose_log_message(
     format_string: String,
-    item_message: &Vec<FirehoseItemInfo>,
+    item_message: &Vec<FirehoseItemType>,
     message_re: &Regex,
 ) -> String {
     let mut log_message = format_string;
@@ -264,7 +264,7 @@ pub fn format_firehose_log_message(
 // Format strings are based on C printf formats. Parse format specification
 fn parse_formatter<'a>(
     formatter: &'a str,
-    message_value: &'a [FirehoseItemInfo],
+    message_value: &'a [FirehoseItemType],
     item_type: u8,
     item_index: usize,
 ) -> nom::IResult<&'a str, String> {
@@ -465,7 +465,7 @@ fn parse_formatter<'a>(
 // Function to parse formatters containing types. Ex: %{errno}d, %{public}s, %{private}s, %{sensitive}
 fn parse_type_formatter<'a>(
     formatter: &'a str,
-    message_value: &'a [FirehoseItemInfo],
+    message_value: &'a [FirehoseItemType],
     item_type: u8,
     item_index: usize,
 ) -> nom::IResult<&'a str, String> {
@@ -993,7 +993,7 @@ fn parse_int(message: String) -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use crate::chunks::firehose::firehose_log::FirehoseItemInfo;
+    use crate::chunks::firehose::firehose_log::FirehoseItemType;
     use crate::message::{
         format_alignment_left, format_alignment_left_space, format_alignment_right,
         format_alignment_right_space, format_firehose_log_message, format_left, format_right,
@@ -1004,10 +1004,11 @@ mod tests {
     #[test]
     fn test_format_firehose_log_message() {
         let test_data = String::from("opendirectoryd (build %{public}s) launched...");
-        let item_message = vec![FirehoseItemInfo {
+        let item_message = vec![FirehoseItemType {
             message_strings: String::from("796.100"),
             item_type: 34,
             item_size: 0,
+            ..Default::default()
         }];
         let message_re = Regex::new(r"(%(?:(?:\{[^}]+}?)(?:[-+0#]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*))?(?:h|hh|l|ll|w|I|z|t|q|I32|I64)?[cmCdiouxXeEfgGaAnpsSZP@%}]|(?:[-+0 #]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*))?(?:h|hh|l||q|t|ll|w|I|z|I32|I64)?[cmCdiouxXeEfgGaAnpsSZP@%]))").unwrap();
 
@@ -1023,40 +1024,47 @@ mod tests {
         );
 
         let items = vec![
-            FirehoseItemInfo {
+            FirehoseItemType {
                 message_strings: String::from("406"),
                 item_type: 0,
                 item_size: 0,
+                ..Default::default()
             },
-            FirehoseItemInfo {
+            FirehoseItemType {
                 message_strings: String::from("258"),
                 item_type: 0,
                 item_size: 0,
+                ..Default::default()
             },
-            FirehoseItemInfo {
+            FirehoseItemType {
                 message_strings: String::from("DCPAVSimpleVideoInterface"),
                 item_type: 32,
                 item_size: 25,
+                ..Default::default()
             },
-            FirehoseItemInfo {
+            FirehoseItemType {
                 message_strings: String::from("setColorElement"),
                 item_type: 32,
                 item_size: 15,
+                ..Default::default()
             },
-            FirehoseItemInfo {
+            FirehoseItemType {
                 message_strings: String::from("3"),
                 item_type: 0,
                 item_size: 0,
+                ..Default::default()
             },
-            FirehoseItemInfo {
+            FirehoseItemType {
                 message_strings: String::from("All"),
                 item_type: 32,
                 item_size: 3,
+                ..Default::default()
             },
-            FirehoseItemInfo {
+            FirehoseItemType {
                 message_strings: String::from("89"),
                 item_type: 0,
                 item_size: 0,
+                ..Default::default()
             },
         ];
 
@@ -1074,10 +1082,11 @@ mod tests {
         let test_format = "%+04d";
         let mut test_message = Vec::new();
 
-        let test_data = FirehoseItemInfo {
+        let test_data = FirehoseItemType {
             message_strings: String::from("2"),
             item_type: 2,
             item_size: 2,
+            ..Default::default()
         };
         test_message.push(test_data);
 
@@ -1243,10 +1252,11 @@ mod tests {
         let test_string = "%*s";
         test_message[0].item_size = 10;
         test_message[0].item_type = 0x12;
-        let test_data2 = FirehoseItemInfo {
+        let test_data2 = FirehoseItemType {
             message_strings: String::from("hi"),
             item_type: 2,
             item_size: 2,
+            ..Default::default()
         };
         test_message.push(test_data2);
         let (_, formatted_results) = parse_formatter(
@@ -1264,10 +1274,11 @@ mod tests {
         let mut test_format = "%{public}s";
         let mut test_message = Vec::new();
 
-        let mut test_data = FirehoseItemInfo {
+        let mut test_data = FirehoseItemType {
             message_strings: String::from("test"),
             item_type: 2,
             item_size: 4,
+            ..Default::default()
         };
         test_message.push(test_data);
 
@@ -1284,10 +1295,11 @@ mod tests {
         test_format = "%{public, signpost.description:begin_time}llu";
         let mut test_message = Vec::new();
 
-        test_data = FirehoseItemInfo {
+        test_data = FirehoseItemType {
             message_strings: String::from("1"),
             item_type: 2,
             item_size: 4,
+            ..Default::default()
         };
         test_message.push(test_data);
 

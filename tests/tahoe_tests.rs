@@ -141,12 +141,35 @@ fn test_build_log_tahoe() {
     assert_eq!(results[45].timestamp, "2026-04-20T00:42:31.171707648Z");
 
     let mut midnight = 0;
+
+    let mut string_count = 0;
+    let mut precision_count = 0;
+    let mut number_count = 0;
+    let mut private_number_count = 0;
     for entry in results {
         assert!(entry.timestamp.contains("2026-04-20T"));
         if entry.timestamp.contains("2026-04-20T00:42") {
             midnight += 1;
         }
+
+        for value in entry.message_entries {
+            assert_ne!(format!("{:?}", value.item), "Unknown");
+
+            if format!("{:?}", value.item) == "String" {
+                string_count += 1;
+            } else if format!("{:?}", value.item) == "Number" {
+                number_count += 1;
+            } else if format!("{:?}", value.item) == "Precision" {
+                precision_count += 1;
+            } else if format!("{:?}", value.item) == "PrivateNumber" {
+                private_number_count += 1;
+            }
+        }
     }
+    assert_eq!(string_count, 369927);
+    assert_eq!(number_count, 382427);
+    assert_eq!(precision_count, 13077);
+    assert_eq!(private_number_count, 711);
 
     assert_eq!(midnight, 209452);
 }

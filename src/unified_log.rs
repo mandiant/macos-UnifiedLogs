@@ -13,7 +13,7 @@ use std::collections::HashMap;
 
 use crate::catalog::CatalogChunk;
 use crate::chunks::firehose::activity::FirehoseActivity;
-use crate::chunks::firehose::firehose_log::{Firehose, FirehoseItemInfo, FirehosePreamble};
+use crate::chunks::firehose::firehose_log::{Firehose, FirehoseItemType, FirehosePreamble};
 use crate::chunks::firehose::nonactivity::FirehoseNonActivity;
 use crate::chunks::firehose::signpost::FirehoseSignpost;
 use crate::chunks::firehose::trace::FirehoseTrace;
@@ -674,7 +674,7 @@ pub struct LogData {
     pub raw_message: String,
     pub boot_uuid: String,
     pub timezone_name: String,
-    pub message_entries: Vec<FirehoseItemInfo>,
+    pub message_entries: Vec<FirehoseItemType>,
     pub timestamp: String,
     pub evidence: String,
 }

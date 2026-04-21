@@ -48,33 +48,28 @@ impl MessageData {
 
         if shared_cache_string {
             if formatters.has_large_offset != 0 {
-                let mut large_offset = formatters.has_large_offset;
-                // large_shared_cache should be double the value of has_large_offset
-                // Ex: has_large_offset = 1, large_shared_cache = 2
-                // If the value do not match then there is an issue with shared string offset
-                // Can recover by using large_shared_cache
-                // Apple/log records this as an error: "error: ~~> <Invalid shared cache code pointer offset>"
-                // But is still able to get string formatter
-                let true_offset = if large_offset != formatters.large_shared_cache / 2
-                    && !formatters.shared_cache
+                let valid_large_offsets = [1, 2];
+                let large_offset = if valid_large_offsets.contains(&formatters.has_large_offset)
+                    && formatters.has_large_offset > formatters.large_shared_cache
                 {
-                    large_offset = formatters.large_shared_cache / 2;
-                    // Combine large offset value with current string offset to get the true offset
-                    (0x100000000 * u64::from(large_offset)) + string_offset
-                } else if formatters.shared_cache
-                    && (formatters.has_large_offset == 1 || formatters.has_large_offset == 2)
-                {
-                    // Large offset will either be 1 or 2
-                    // Multiple 0x80000000 by large_offset and add our original target offset
-                    // Final value will be real offset to the string
-                    let add_offset = 0x80000000 * u64::from(large_offset);
-                    add_offset + string_offset
+                    // Large offsets start at 0x80000000
+                    0x80000000 * u64::from(formatters.has_large_offset)
+                } else if formatters.large_shared_cache != 0 {
+                    // Large cache seems to always start at 0x100000000
+                    // But if large_shared_cache is 1 then the original `params.string_offset` is sufficient
+                    0x100000000 * u64::from(formatters.large_shared_cache / 2)
                 } else {
-                    (0x100000000 * u64::from(large_offset)) + string_offset
+                    // If large offset is not 1 or 2 then it could be invalid
+                    // However, not always guarantee
+                    // if has_large_offset is 0xfffe or 0xffff it may be invalid offset
+                    // Regardless, the starting offset always seems to be 0x100000000
+                    0x100000000 * u64::from(formatters.has_large_offset)
                 };
+                let real_offset = large_offset + string_offset;
+
                 return MessageData::extract_shared_strings(
                     provider,
-                    true_offset,
+                    real_offset,
                     params.first_proc_id,
                     params.second_proc_id,
                     catalogs,
