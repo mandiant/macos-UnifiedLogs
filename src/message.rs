@@ -489,7 +489,7 @@ fn parse_signpost_format(signpost_format: &str) -> nom::IResult<&str, String> {
 struct MessageFormatters {
     /// If Some then message item is a string
     item_string: Option<String>,
-    /// If Soem then message item is a integer
+    /// If Some then message item is an integer
     item_number: Option<i64>,
     /// If Some then message item is float
     item_float: Option<f64>,
@@ -498,12 +498,12 @@ struct MessageFormatters {
     item_format: String,
     plus_minus: bool,
     hashtag: bool,
-    /// Determinse direction `padding` will be applied to
+    /// Determines direction `padding` will be applied to
     alignment: Alignment,
     message: String,
     /// Determines `item_number` format (Decimal, Octal, or Hex)
     number_format: NumberFormat,
-    /// If width value is not 0. Then padding of Spaces or Zeros will be added
+    /// If width value is not 0. Then padding of Spaces or Zeros will be added (if required)
     padding: Padding,
 }
 
@@ -638,7 +638,7 @@ fn format_message(message: &mut MessageFormatters) {
     }
 }
 
-/// Format the event message using zeros or spaces as padding. All messages have alignment to left or right with 0 padding
+/// Format the event message using zeros or spaces as padding. All messages have alignment to left or right with padding if needed
 /// Message values can also have width and precision requirements
 fn format_message_padding(message: &mut MessageFormatters) {
     let mut precision_value = 0;
