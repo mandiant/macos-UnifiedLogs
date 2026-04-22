@@ -6,6 +6,7 @@
 // See the License for the specific language governing permissions and limitations under the License.
 
 use crate::catalog::CatalogChunk;
+use crate::chunks::firehose::firehose_log::MessageFlags;
 use crate::chunks::firehose::flags::FirehoseFormatters;
 use crate::chunks::firehose::message::{MessageData, MessageParams};
 use crate::traits::FileProvider;
@@ -25,6 +26,7 @@ pub struct FirehoseSignpost {
     pub ttl_value: u8,
     pub data_ref_value: u32, // if flag 0x0800, has_oversize
     pub firehose_formatters: FirehoseFormatters,
+    pub flags: Vec<MessageFlags>,
 }
 
 impl FirehoseSignpost {
@@ -46,6 +48,7 @@ impl FirehoseSignpost {
             firehose_signpost.activity_id = firehose_activity_id;
             firehose_signpost.sentinel = firehose_sentinel;
             input = firehose_input;
+            firehose_signpost.flags.push(MessageFlags::HasCurrentAid);
         }
 
         let private_string_range = 0x100; // has_private_data flag
@@ -59,14 +62,18 @@ impl FirehoseSignpost {
             firehose_signpost.private_strings_offset = firehose_private_strings_offset;
             firehose_signpost.private_strings_size = firehose_private_strings_size;
             input = firehose_input;
+            firehose_signpost.flags.push(MessageFlags::HasPrivateData);
         }
 
         let (input, firehose_pc_id) = le_u32(input)?;
         firehose_signpost.pc_id = firehose_pc_id;
 
         // Check for flags related to base string format location (shared string file (dsc) or UUID file)
-        let (mut input, formatters) =
-            FirehoseFormatters::firehose_formatter_flags(input, firehose_flags)?;
+        let (mut input, formatters) = FirehoseFormatters::firehose_formatter_flags(
+            input,
+            firehose_flags,
+            &mut firehose_signpost.flags,
+        )?;
         firehose_signpost.firehose_formatters = formatters;
 
         let subsystem = 0x200; // has_subsystem flag. In Signpost log entries this is the subsystem flag
@@ -75,6 +82,7 @@ impl FirehoseSignpost {
             let (firehose_input, firehose_subsystem) = le_u16(input)?;
             firehose_signpost.subsystem = firehose_subsystem;
             input = firehose_input;
+            firehose_signpost.flags.push(MessageFlags::HasSubsystem);
         }
         let (mut input, firehose_signpost_id) = le_u64(input)?;
         firehose_signpost.signpost_id = firehose_signpost_id;
@@ -85,6 +93,7 @@ impl FirehoseSignpost {
             let (firehose_input, firehose_ttl) = le_u8(input)?;
             firehose_signpost.ttl_value = firehose_ttl;
             input = firehose_input;
+            firehose_signpost.flags.push(MessageFlags::HasRules);
         }
 
         let data_ref = 0x800; // has_oversize flag
@@ -93,6 +102,7 @@ impl FirehoseSignpost {
             let (firehose_input, firehose_data_ref) = le_u32(input)?;
             firehose_signpost.data_ref_value = firehose_data_ref;
             input = firehose_input;
+            firehose_signpost.flags.push(MessageFlags::HasOversize);
         }
 
         let has_name = 0x8000;

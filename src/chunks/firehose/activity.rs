@@ -6,6 +6,7 @@
 // See the License for the specific language governing permissions and limitations under the License.
 
 use crate::catalog::CatalogChunk;
+use crate::chunks::firehose::firehose_log::MessageFlags;
 use crate::chunks::firehose::flags::FirehoseFormatters;
 use crate::chunks::firehose::message::{MessageData, MessageParams};
 use crate::traits::FileProvider;
@@ -24,6 +25,7 @@ pub struct FirehoseActivity {
     pub message_string_ref: u32,
     pub pc_id: u32, // Appears to be used to calculate string offset for firehose events with Absolute flag
     pub firehose_formatters: FirehoseFormatters,
+    pub flags: Vec<MessageFlags>,
 }
 
 impl FirehoseActivity {
@@ -54,6 +56,7 @@ impl FirehoseActivity {
             debug!("[macos-unifiedlogs] Activity Firehose log chunk has unique_pid flag");
             let (firehose_input, firehose_unique_pid) = le_u64(input)?;
             activity.pid = firehose_unique_pid;
+            activity.flags.push(MessageFlags::HasUniquePid);
             input = firehose_input;
         }
 
@@ -65,6 +68,8 @@ impl FirehoseActivity {
 
             activity.activity_id_2 = firehose_activity_id;
             activity.sentinal_2 = firehose_sentinel;
+            activity.flags.push(MessageFlags::HasCurrentAid);
+
             input = firehose_input;
         }
 
@@ -78,14 +83,19 @@ impl FirehoseActivity {
 
             activity.activity_id_3 = firehose_activity_id;
             activity.sentinal_3 = firehose_sentinel;
+            activity.flags.push(MessageFlags::HasOtherAid);
+
             input = firehose_input;
         }
         let (input, firehose_pc_id) = le_u32(input)?;
         activity.pc_id = firehose_pc_id; // Message string reference?
 
         // Check for flags related to base string format location (shared string file (dsc) or UUID file)
-        let (input, formatters) =
-            FirehoseFormatters::firehose_formatter_flags(input, firehose_flags)?;
+        let (input, formatters) = FirehoseFormatters::firehose_formatter_flags(
+            input,
+            firehose_flags,
+            &mut activity.flags,
+        )?;
         activity.firehose_formatters = formatters;
         Ok((input, activity))
     }
