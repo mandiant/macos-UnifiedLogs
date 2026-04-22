@@ -6,14 +6,12 @@
 // See the License for the specific language governing permissions and limitations under the License.
 
 use chrono::{SecondsFormat, TimeZone, Utc};
-use log::{debug, error, info, warn, LevelFilter};
 use macos_unifiedlogs::filesystem::{LiveSystemProvider, LogarchiveProvider};
 use macos_unifiedlogs::iterator::UnifiedLogIterator;
 use macos_unifiedlogs::parser::{build_log, collect_timesync, parse_log};
 use macos_unifiedlogs::timesync::TimesyncBoot;
 use macos_unifiedlogs::traits::FileProvider;
 use macos_unifiedlogs::unified_log::{LogData, UnifiedLogData};
-use simplelog::{ColorChoice, Config, TermLogger, TerminalMode};
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::Display;
@@ -22,8 +20,9 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use tracing::{debug, error, info, warn};
 
-use clap::{builder, Parser, ValueEnum};
+use clap::{Parser, ValueEnum, builder};
 use csv::Writer;
 
 /// Global atomic flag to track SIGINT signal
@@ -35,8 +34,10 @@ extern "C" fn handle_sigint(_sig: libc::c_int) {
 }
 
 use crate::bookmark::Bookmark;
+use crate::logger::{VerbosityLevel, init_logging};
 
 mod bookmark;
+mod logger;
 
 struct IterationContext {
     missing_data: Vec<UnifiedLogData>,
@@ -89,7 +90,9 @@ fn filter_and_update_bookmark(
         .collect();
 
     // Update bookmark with max timestamp seen (not just filtered) to avoid re-scanning
-    if let Some(max_time) = max_seen_timestamp && let Ok(mut book) = bookmark.lock() {
+    if let Some(max_time) = max_seen_timestamp
+        && let Ok(mut book) = bookmark.lock()
+    {
         book.update_timestamp(max_time);
     }
 
@@ -152,6 +155,14 @@ struct Args {
     #[clap(short, long, default_value = "false")]
     append: bool,
 
+    /// Log verbosity level (off, error, warn, info, debug, trace)
+    #[clap(short, long, default_value_t = VerbosityLevel::Warn)]
+    verbosity_level: VerbosityLevel,
+
+    /// Path to JSONL file to write internal logs to
+    #[clap(long = "log-file", value_name = "FILE")]
+    log_file_path: Option<PathBuf>,
+
     /// Resume from last position using bookmark
     #[clap(long, default_value = "false")]
     resume: bool,
@@ -193,16 +204,17 @@ impl From<Format> for &str {
 }
 
 fn main() {
-    TermLogger::init(
-        LevelFilter::Warn,
-        Config::default(),
-        TerminalMode::Stderr,
-        ColorChoice::Auto,
-    )
-    .expect("Failed to initialize simple logger");
+    let args = Args::parse();
+
+    let log_file_opt = args.log_file_path.as_deref();
+
+    let _log_guard = init_logging(log_file_opt, args.verbosity_level).unwrap_or_else(|e| {
+        eprintln!("Failed to initialize logger: {e}");
+        std::process::exit(1);
+    });
+
     info!("Starting Unified Log parser...");
 
-    let args = Args::parse();
     let output_format = args.format;
 
     // Determine source ID for bookmark
@@ -296,7 +308,9 @@ fn main() {
                 }
             }
             Err(_) => {
-                eprintln!("Warning: Could not acquire bookmark lock (mutex poisoned). Bookmark not saved.");
+                eprintln!(
+                    "Warning: Could not acquire bookmark lock (mutex poisoned). Bookmark not saved."
+                );
             }
         }
         std::process::exit(0);
@@ -336,9 +350,11 @@ fn parse_single_file(
             message: e.to_string(),
         })
         .and_then(|mut reader| {
-            parse_log(&mut reader, path.to_str().unwrap_or_default()).map_err(|err| RuntimeError::FileParse {
-                path: path.to_string_lossy().to_string(),
-                message: format!("{err}"),
+            parse_log(&mut reader, path.to_str().unwrap_or_default()).map_err(|err| {
+                RuntimeError::FileParse {
+                    path: path.to_string_lossy().to_string(),
+                    message: format!("{err}"),
+                }
             })
         })
         .map(|ref log| {
@@ -379,7 +395,9 @@ fn parse_single_file(
         }
 
         // Update bookmark with max timestamp seen (not just written) to avoid re-scanning
-        if max_seen_timestamp > 0.0 && let Ok(mut bookmark) = bookmark.lock() {
+        if max_seen_timestamp > 0.0
+            && let Ok(mut bookmark) = bookmark.lock()
+        {
             bookmark.update_timestamp(max_seen_timestamp);
         }
     } else {
@@ -466,10 +484,7 @@ fn parse_trace_file(
         },
     };
     let resume_timestamp = if resume {
-        bookmark
-            .lock()
-            .map(|b| b.last_timestamp)
-            .unwrap_or(0.0)
+        bookmark.lock().map(|b| b.last_timestamp).unwrap_or(0.0)
     } else {
         0.0
     };
