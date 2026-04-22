@@ -308,12 +308,10 @@ fn parse_formatter<'a>(
     }
 
     let mut left_justify = false;
-    //let mut space_value = false;
     let mut hashtag = false;
     let mut pad_zero = false;
     let mut plus_minus = false;
     let mut width_index = 1;
-    //let mut has_apostrophe = false;
     for (index, format_values) in formatter.chars().enumerate() {
         if index == 0 {
             continue;
@@ -322,10 +320,8 @@ fn parse_formatter<'a>(
         match format_values {
             '-' => left_justify = true,
             '+' => plus_minus = true,
-            //' ' => space_value = true,
             '#' => hashtag = true,
             '0' => pad_zero = true,
-            // '\'' => has_apostrophe = true,
             _ => {
                 width_index = index;
                 break;
