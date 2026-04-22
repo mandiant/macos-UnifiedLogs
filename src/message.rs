@@ -10,7 +10,7 @@ use std::mem::size_of;
 use crate::chunks::firehose::firehose_log::FirehoseItemType;
 use crate::decoders::darwin::errno_codes;
 use crate::decoders::decoder;
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use nom::Parser;
 use nom::branch::alt;
 use nom::bytes::complete::{is_a, is_not, take, take_until};
@@ -487,17 +487,23 @@ fn parse_signpost_format(signpost_format: &str) -> nom::IResult<&str, String> {
 
 #[derive(Debug)]
 struct MessageFormatters {
+    /// If Some then message item is a string
     item_string: Option<String>,
+    /// If Soem then message item is a integer
     item_number: Option<i64>,
+    /// If Some then message item is float
     item_float: Option<f64>,
     precision: Option<usize>,
     width: usize,
     item_format: String,
     plus_minus: bool,
     hashtag: bool,
+    /// Determinse direction `padding` will be applied to
     alignment: Alignment,
     message: String,
+    /// Determines `item_number` format (Decimal, Octal, or Hex)
     number_format: NumberFormat,
+    /// If width value is not 0. Then padding of Spaces or Zeros will be added
     padding: Padding,
 }
 
@@ -632,7 +638,8 @@ fn format_message(message: &mut MessageFormatters) {
     }
 }
 
-/// Format the event message using zeros as padding. All messages have alignment to left or right with 0 padding
+/// Format the event message using zeros or spaces as padding. All messages have alignment to left or right with 0 padding
+/// Message values can also have width and precision requirements
 fn format_message_padding(message: &mut MessageFormatters) {
     let mut precision_value = 0;
     let mut plus_option = String::new();
@@ -646,6 +653,10 @@ fn format_message_padding(message: &mut MessageFormatters) {
         adjust_width = 1;
     }
 
+    // Handle different types of message values
+    // 3 types: floats, integer, strings.
+    // Integers can be decimal, octal, or hex format
+    // All types can have precision requirements
     if let Some(item) = message.item_float {
         if precision_value == 0 {
             let message_float = item.to_string();
@@ -976,7 +987,7 @@ fn parse_int(message: String) -> i64 {
     let int_results = message.parse::<i64>();
     match int_results {
         Ok(message) => return message,
-        Err(err) => warn!(
+        Err(err) => debug!(
             "[macos-unifiedlogs] Failed to parse int log message value: {message}, err: {err:?}. Log message possibly incorrectly formatted ex: printf(%u, \"message\") instead of printf(%u, 10). Apple may record message as '<decode: mismatch for [%u] got [STRING sz:10]>'",
         ),
     }
