@@ -13,7 +13,9 @@ use std::collections::HashMap;
 
 use crate::catalog::CatalogChunk;
 use crate::chunks::firehose::activity::FirehoseActivity;
-use crate::chunks::firehose::firehose_log::{Firehose, FirehoseItemType, FirehosePreamble};
+use crate::chunks::firehose::firehose_log::{
+    Firehose, FirehoseItemType, FirehosePreamble, MessageFlags,
+};
 use crate::chunks::firehose::nonactivity::FirehoseNonActivity;
 use crate::chunks::firehose::signpost::FirehoseSignpost;
 use crate::chunks::firehose::trace::FirehoseTrace;
@@ -216,6 +218,7 @@ impl Iterator for LogIterator<'_> {
                     process_uuid: String::new(),
                     raw_message: String::new(),
                     message_entries: firehose.message.item_info.to_owned(),
+                    message_flags: Vec::new(),
                     evidence: self.unified_log_data.evidence.clone(),
                 };
 
@@ -236,6 +239,7 @@ impl Iterator for LogIterator<'_> {
                             preamble.second_number_proc_id,
                             &catalog_data.catalog,
                         );
+                        log_data.message_flags = firehose.firehose_non_activity.flags.clone();
 
                         match message_data {
                             Ok((_, results)) => {
@@ -334,6 +338,7 @@ impl Iterator for LogIterator<'_> {
                             log_data.activity_id =
                                 u64::from(firehose.firehose_activity.activity_id);
                         }
+                        log_data.message_flags = firehose.firehose_activity.flags.clone();
                         let message_data = FirehoseActivity::get_firehose_activity_strings(
                             &firehose.firehose_activity,
                             self.provider,
@@ -388,6 +393,7 @@ impl Iterator for LogIterator<'_> {
                     }
                     0x6 => {
                         log_data.activity_id = u64::from(firehose.firehose_signpost.activity_id);
+                        log_data.message_flags = firehose.firehose_signpost.flags.clone();
                         let message_data = FirehoseSignpost::get_firehose_signpost(
                             &firehose.firehose_signpost,
                             self.provider,
@@ -570,6 +576,7 @@ impl Iterator for LogIterator<'_> {
                 process_uuid: simpledump.dsc_uuid.to_owned(),
                 raw_message: String::new(),
                 message_entries: Vec::new(),
+                message_flags: Vec::new(),
                 evidence: self.unified_log_data.evidence.clone(),
             };
             log_data_vec.push(log_data);
@@ -644,6 +651,7 @@ impl Iterator for LogIterator<'_> {
                 process_uuid: String::new(),
                 raw_message: String::new(),
                 message_entries: Vec::new(),
+                message_flags: Vec::new(),
                 evidence: self.unified_log_data.evidence.clone(),
             };
             log_data_vec.push(log_data);
@@ -676,6 +684,7 @@ pub struct LogData {
     pub timezone_name: String,
     pub message_entries: Vec<FirehoseItemType>,
     pub timestamp: String,
+    pub message_flags: Vec<MessageFlags>,
     pub evidence: String,
 }
 

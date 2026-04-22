@@ -6,6 +6,7 @@
 // See the License for the specific language governing permissions and limitations under the License.
 
 use crate::catalog::CatalogChunk;
+use crate::chunks::firehose::firehose_log::MessageFlags;
 use crate::chunks::firehose::flags::FirehoseFormatters;
 use crate::chunks::firehose::message::{MessageData, MessageParams};
 use crate::traits::FileProvider;
@@ -24,6 +25,7 @@ pub struct FirehoseNonActivity {
     pub data_ref_value: u32,         // if flag 0x0800, has_oversize
     pub pc_id: u32, // Appears to be used to calculate string offset for firehose events with Absolute flag
     pub firehose_formatters: FirehoseFormatters,
+    pub flags: Vec<MessageFlags>,
 }
 
 impl FirehoseNonActivity {
@@ -44,6 +46,7 @@ impl FirehoseNonActivity {
             let (firehose_input, firehose_unknown_sentinel) = le_u32(firehose_input)?;
             non_activity.activity_id = firehose_activity_id;
             non_activity.sentinal = firehose_unknown_sentinel;
+            non_activity.flags.push(MessageFlags::HasCurrentAid);
             input = firehose_input;
         }
 
@@ -53,6 +56,7 @@ impl FirehoseNonActivity {
             debug!("[macos-unifiedlogs] Non-Activity Firehose log chunk has has_private_data flag");
             let (firehose_input, firehose_private_strings_offset) = le_u16(input)?;
             let (firehose_input, firehose_private_strings_size) = le_u16(firehose_input)?;
+            non_activity.flags.push(MessageFlags::HasPrivateData);
 
             // Offset points to private string values found after parsing the public data. Size is the data size
             non_activity.private_strings_offset = firehose_private_strings_offset;
@@ -64,8 +68,11 @@ impl FirehoseNonActivity {
         non_activity.pc_id = firehose_pc_id;
 
         // Check for flags related to base string format location (shared string file (dsc) or UUID file)
-        let (mut input, formatters) =
-            FirehoseFormatters::firehose_formatter_flags(input, firehose_flags)?;
+        let (mut input, formatters) = FirehoseFormatters::firehose_formatter_flags(
+            input,
+            firehose_flags,
+            &mut non_activity.flags,
+        )?;
         non_activity.firehose_formatters = formatters;
 
         let subsystem = 0x200; // has_subsystem flag. In Non-Activity log entries this is the subsystem flag
@@ -74,6 +81,7 @@ impl FirehoseNonActivity {
             let (firehose_input, firehose_subsystem) = le_u16(input)?;
             non_activity.subsystem_value = firehose_subsystem;
             input = firehose_input;
+            non_activity.flags.push(MessageFlags::HasSubsystem);
         }
 
         let ttl = 0x400; // has_rules flag
@@ -81,6 +89,8 @@ impl FirehoseNonActivity {
             debug!("[macos-unifiedlogs] Non-Activity Firehose log chunk has has_rules flag");
             let (firehose_input, firehose_ttl) = le_u8(input)?;
             non_activity.ttl_value = firehose_ttl;
+            non_activity.flags.push(MessageFlags::HasRules);
+
             input = firehose_input;
         }
 
@@ -89,6 +99,8 @@ impl FirehoseNonActivity {
             debug!("[macos-unifiedlogs] Non-Activity Firehose log chunk has has_oversize flag");
             let (firehose_input, firehose_data_ref) = le_u32(input)?;
             non_activity.data_ref_value = firehose_data_ref;
+            non_activity.flags.push(MessageFlags::HasOversize);
+
             input = firehose_input;
         }
 
