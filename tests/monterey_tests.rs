@@ -8,6 +8,7 @@
 use std::{fs::File, path::PathBuf};
 
 use macos_unifiedlogs::{
+    cache::StringCache,
     filesystem::LogarchiveProvider,
     parser::{build_log, collect_timesync, parse_log},
     traits::FileProvider,
@@ -53,7 +54,8 @@ fn test_build_log_monterey() {
     let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_path.push("tests/test_data/system_logs_monterey.logarchive");
 
-    let mut provider = LogarchiveProvider::new(test_path.as_path());
+    let provider = LogarchiveProvider::new(test_path.as_path());
+    let cache = StringCache::default();
     let timesync_data = collect_timesync(&provider).unwrap();
 
     test_path.push("Persist/000000000000000a.tracev3");
@@ -62,7 +64,7 @@ fn test_build_log_monterey() {
     let log_data = parse_log(handle, test_path.to_str().unwrap()).unwrap();
 
     let exclude_missing = false;
-    let (results, _) = build_log(&log_data, &mut provider, &timesync_data, exclude_missing);
+    let (results, _) = build_log(&log_data, &provider, &cache, &timesync_data, exclude_missing);
     assert_eq!(results.len(), 322859);
     assert_eq!(results[0].process, "/kernel");
     assert_eq!(results[0].subsystem, "");
@@ -94,7 +96,8 @@ fn test_parse_all_logs_monterey() {
     let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_path.push("tests/test_data/system_logs_monterey.logarchive");
 
-    let mut provider = LogarchiveProvider::new(test_path.as_path());
+    let provider = LogarchiveProvider::new(test_path.as_path());
+    let cache = StringCache::default();
 
     let timesync_data = collect_timesync(&provider).unwrap();
     let log_data = collect_logs(&provider);
@@ -104,7 +107,7 @@ fn test_parse_all_logs_monterey() {
     let message_re = Regex::new(r"^[\s]*%s\s*$").unwrap();
 
     for logs in &log_data {
-        let (mut data, _) = build_log(logs, &mut provider, &timesync_data, exclude_missing);
+        let (mut data, _) = build_log(logs, &provider, &cache, &timesync_data, exclude_missing);
         log_data_vec.append(&mut data);
     }
     assert_eq!(log_data_vec.len(), 2397109);

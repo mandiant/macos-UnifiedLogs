@@ -38,13 +38,15 @@
 //! ```rust
 //!    use macos_unifiedlogs::filesystem::LiveSystemProvider;
 //!    use macos_unifiedlogs::traits::FileProvider;
+//!    use macos_unifiedlogs::cache::StringCache;
 //!    use macos_unifiedlogs::parser::collect_timesync;
 //!    use macos_unifiedlogs::iterator::UnifiedLogIterator;
 //!    use macos_unifiedlogs::unified_log::UnifiedLogData;
 //!    use macos_unifiedlogs::parser::build_log;
 //!
 //!    // Run on live macOS system
-//!     let mut provider = LiveSystemProvider::default();
+//!     let provider = LiveSystemProvider::default();
+//!     let cache = StringCache::new();
 //!     let timesync_data = collect_timesync(&provider).unwrap();
 //!
 //!     // We need to persist the Oversize log entries (they contain large strings that don't fit in normal log entries)
@@ -69,7 +71,8 @@
 //!             chunk.oversize.append(&mut oversize_strings.oversize);
 //!             let (results, _missing_logs) = build_log(
 //!                 &chunk,
-//!                 &mut provider,
+//!                 &provider,
+//!                 &cache,
 //!                 &timesync_data,
 //!                 exclude,
 //!             );
@@ -88,6 +91,8 @@ mod chunks;
 mod chunkset;
 /// Parsers to extract specific log objects
 mod decoders;
+/// Thread-safe cache for UUIDText and SharedCacheStrings used during log parsing
+pub mod cache;
 /// Functions to parse the shared string cache
 pub mod dsc;
 mod error;

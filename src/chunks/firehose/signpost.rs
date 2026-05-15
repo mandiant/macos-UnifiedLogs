@@ -9,6 +9,7 @@ use crate::catalog::CatalogChunk;
 use crate::chunks::firehose::firehose_log::MessageFlags;
 use crate::chunks::firehose::flags::FirehoseFormatters;
 use crate::chunks::firehose::message::{MessageData, MessageParams};
+use crate::cache::StringCache;
 use crate::traits::FileProvider;
 use log::debug;
 use nom::number::complete::{le_u8, le_u16, le_u32, le_u64};
@@ -128,14 +129,15 @@ impl FirehoseSignpost {
     }
 
     /// Get base log message string formatter from shared cache strings (dsc) or UUID text file for firehose signpost log entries (chunks)
-    pub(crate) fn get_firehose_signpost<'a>(
+    pub(crate) fn get_firehose_signpost(
         firehose: &FirehoseSignpost,
-        provider: &'a mut dyn FileProvider,
+        provider: &dyn FileProvider,
+        cache: &StringCache,
         string_offset: u64,
         first_proc_id: u64,
         second_proc_id: u32,
         catalogs: &CatalogChunk,
-    ) -> nom::IResult<&'a [u8], MessageData> {
+    ) -> nom::IResult<&'static [u8], MessageData> {
         let params = MessageParams {
             pc_id: firehose.pc_id,
             string_offset,
@@ -144,7 +146,7 @@ impl FirehoseSignpost {
             supports_large_offset: true,
         };
 
-        MessageData::get_message(&firehose.firehose_formatters, provider, &params, catalogs)
+        MessageData::get_message(&firehose.firehose_formatters, provider, cache, &params, catalogs)
     }
 }
 
@@ -186,7 +188,8 @@ mod tests {
     fn test_get_firehose_signpost_big_sur() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         test_path.push("tests/test_data/system_logs_big_sur.logarchive");
-        let mut provider = LogarchiveProvider::new(test_path.as_path());
+        let provider = LogarchiveProvider::new(test_path.as_path());
+        let cache = crate::cache::StringCache::default();
 
         test_path.push("Signpost/0000000000000001.tracev3");
 
@@ -201,7 +204,8 @@ mod tests {
                     if firehose.log_activity_type == activity_type {
                         let (_, message_data) = FirehoseSignpost::get_firehose_signpost(
                             &firehose.firehose_signpost,
-                            &mut provider,
+                            &provider,
+                            &cache,
                             u64::from(firehose.format_string_location),
                             preamble.first_number_proc_id,
                             preamble.second_number_proc_id,

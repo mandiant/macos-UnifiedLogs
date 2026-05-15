@@ -8,6 +8,7 @@
 use crate::catalog::CatalogChunk;
 use crate::chunks::firehose::firehose_log::{FirehoseItemData, FirehoseItemType};
 use crate::chunks::firehose::message::MessageData;
+use crate::cache::StringCache;
 use crate::traits::FileProvider;
 use log::{error, warn};
 use nom::bytes::complete::take;
@@ -124,16 +125,18 @@ impl FirehoseTrace {
     }
 
     /// Get base log message string formatter from shared cache strings (dsc) or UUID text file for firehose trace log entries (chunks)
-    pub(crate) fn get_firehose_trace_strings<'a>(
-        provider: &'a mut dyn FileProvider,
+    pub(crate) fn get_firehose_trace_strings(
+        provider: &dyn FileProvider,
+        cache: &StringCache,
         string_offset: u64,
         first_proc_id: u64,
         second_proc_id: u32,
         catalogs: &CatalogChunk,
-    ) -> nom::IResult<&'a [u8], MessageData> {
+    ) -> nom::IResult<&'static [u8], MessageData> {
         // Only main_exe flag has been seen for format strings
         MessageData::extract_format_strings(
             provider,
+            cache,
             string_offset,
             first_proc_id,
             second_proc_id,
@@ -193,7 +196,8 @@ mod tests {
     fn test_get_firehose_trace_strings() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         test_path.push("tests/test_data/system_logs_high_sierra.logarchive");
-        let mut provider = LogarchiveProvider::new(test_path.as_path());
+        let provider = LogarchiveProvider::new(test_path.as_path());
+        let cache = crate::cache::StringCache::default();
 
         test_path.push("logdata.LiveData.tracev3");
         let handle = std::fs::File::open(&test_path).unwrap();
@@ -207,7 +211,8 @@ mod tests {
                 for firehose in preamble.public_data {
                     if firehose.log_activity_type == activity_type {
                         let (_, message_data) = FirehoseTrace::get_firehose_trace_strings(
-                            &mut provider,
+                            &provider,
+                            &cache,
                             u64::from(firehose.format_string_location),
                             preamble.first_number_proc_id,
                             preamble.second_number_proc_id,

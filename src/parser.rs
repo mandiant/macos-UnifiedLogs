@@ -7,6 +7,7 @@
 
 use log::{error, info};
 
+use crate::cache::StringCache;
 use crate::dsc::SharedCacheStrings;
 use crate::error::ParserError;
 use crate::timesync::TimesyncBoot;
@@ -46,6 +47,7 @@ pub fn parse_log(mut reader: impl Read, evidence: &str) -> Result<UnifiedLogData
 ///    use macos_unifiedlogs::iterator::UnifiedLogIterator;
 ///    use macos_unifiedlogs::unified_log::UnifiedLogData;
 ///    use macos_unifiedlogs::parser::build_log;
+///    use macos_unifiedlogs::cache::StringCache;
 ///    use std::path::PathBuf;
 ///
 ///    let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -60,6 +62,8 @@ pub fn parse_log(mut reader: impl Read, evidence: &str) -> Result<UnifiedLogData
 ///        oversize: Vec::new(),
 ///        evidence: String::new(),
 ///    };
+///
+///    let cache = StringCache::new();
 ///    for mut entry in provider.tracev3_files() {
 ///      println!("TraceV3 file: {}", entry.source_path());
 ///      let mut buf = Vec::new();
@@ -75,7 +79,8 @@ pub fn parse_log(mut reader: impl Read, evidence: &str) -> Result<UnifiedLogData
 ///        chunk.oversize.append(&mut oversize_strings.oversize);
 ///        let (results, _missing_logs) = build_log(
 ///            &chunk,
-///            &mut provider,
+///            &provider,
+///            &cache,
 ///            &timesync_data,
 ///            exclude,
 ///        );
@@ -88,11 +93,12 @@ pub fn parse_log(mut reader: impl Read, evidence: &str) -> Result<UnifiedLogData
 /// ```
 pub fn build_log(
     unified_data: &UnifiedLogData,
-    provider: &mut dyn FileProvider,
+    provider: &dyn FileProvider,
+    cache: &StringCache,
     timesync_data: &HashMap<String, TimesyncBoot>,
     exclude_missing: bool,
 ) -> (Vec<LogData>, UnifiedLogData) {
-    LogData::build_log(unified_data, provider, timesync_data, exclude_missing)
+    LogData::build_log(unified_data, provider, cache, timesync_data, exclude_missing)
 }
 
 /// Parse all UUID files in provided directory. The directory should follow the same layout as the live system (ex: path/to/files/\<two character UUID\>/\<remaining UUID name\>)
@@ -411,7 +417,8 @@ mod tests {
     fn test_build_log() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         test_path.push("tests/test_data/system_logs_big_sur.logarchive");
-        let mut provider = LogarchiveProvider::new(test_path.as_path());
+        let provider = LogarchiveProvider::new(test_path.as_path());
+        let cache = crate::cache::StringCache::default();
 
         test_path.push("Persist/0000000000000002.tracev3");
         let handle = std::fs::File::open(&test_path).unwrap();
@@ -420,7 +427,7 @@ mod tests {
         let timesync_data = collect_timesync(&provider).unwrap();
 
         let exclude_missing = false;
-        let (results, _) = build_log(&log_data, &mut provider, &timesync_data, exclude_missing);
+        let (results, _) = build_log(&log_data, &provider, &cache, &timesync_data, exclude_missing);
         assert_eq!(results.len(), 207366);
         assert_eq!(results[10].process, "/usr/libexec/lightsoutmanagementd");
         assert_eq!(results[10].subsystem, "com.apple.lom");
