@@ -8,7 +8,7 @@
 use std::{fs::File, path::PathBuf};
 
 use macos_unifiedlogs::{
-    cache::StringCache,
+    cache::MemoryStringCache,
     filesystem::LogarchiveProvider,
     parser::{build_log, collect_timesync, parse_log},
     traits::FileProvider,
@@ -55,7 +55,7 @@ fn test_build_log_tahoe() {
     test_path.push("tests/test_data/system_logs_tahoe.logarchive");
 
     let provider = LogarchiveProvider::new(test_path.as_path());
-    let cache = StringCache::default();
+    let cache = MemoryStringCache::default();
     let timesync_data = collect_timesync(&provider).unwrap();
 
     test_path.push("Persist/000000000000000a.tracev3");
@@ -182,7 +182,7 @@ fn test_check_log_tahoe() {
     test_path.push("tests/test_data/system_logs_tahoe.logarchive");
 
     let provider = LogarchiveProvider::new(test_path.as_path());
-    let cache = StringCache::default();
+    let cache = MemoryStringCache::default();
     let timesync_data = collect_timesync(&provider).unwrap();
 
     test_path.push("Persist/0000000000000002.tracev3");
@@ -209,7 +209,7 @@ fn test_parse_all_logs_tahoe() {
     test_path.push("tests/test_data/system_logs_tahoe.logarchive");
 
     let provider = LogarchiveProvider::new(test_path.as_path());
-    let cache = StringCache::default();
+    let cache = MemoryStringCache::default();
 
     let timesync_data = collect_timesync(&provider).unwrap();
     let log_data = collect_logs(&provider);

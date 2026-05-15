@@ -26,9 +26,8 @@ use crate::chunkset::ChunksetChunk;
 use crate::header::HeaderChunk;
 use crate::message::format_firehose_log_message;
 use crate::preamble::LogPreamble;
-use crate::cache::StringCache;
 use crate::timesync::TimesyncBoot;
-use crate::traits::FileProvider;
+use crate::traits::{FileProvider, StringCache};
 use crate::util::{
     encode_standard, extract_string, padding_size_8, u64_to_usize, unixepoch_to_iso,
 };
@@ -94,7 +93,7 @@ pub struct UnifiedLogCatalogData {
 struct LogIterator<'a> {
     unified_log_data: &'a UnifiedLogData,
     provider: &'a dyn FileProvider,
-    cache: &'a StringCache,
+    cache: &'a dyn StringCache,
     timesync_data: &'a HashMap<String, TimesyncBoot>,
     exclude_missing: bool,
     message_re: Regex,
@@ -104,7 +103,7 @@ impl<'a> LogIterator<'a> {
     fn new(
         unified_log_data: &'a UnifiedLogData,
         provider: &'a dyn FileProvider,
-        cache: &'a StringCache,
+        cache: &'a dyn StringCache,
         timesync_data: &'a HashMap<String, TimesyncBoot>,
         exclude_missing: bool,
     ) -> Result<Self, regex::Error> {
@@ -797,7 +796,7 @@ impl LogData {
     pub fn build_log(
         unified_log_data: &UnifiedLogData,
         provider: &dyn FileProvider,
-        cache: &StringCache,
+        cache: & dyn StringCache,
         timesync_data: &HashMap<String, TimesyncBoot>,
         exclude_missing: bool,
     ) -> (Vec<LogData>, UnifiedLogData) {
@@ -970,7 +969,7 @@ impl LogData {
 #[cfg(test)]
 mod tests {
     use super::{LogData, UnifiedLogData};
-    use crate::cache::StringCache;
+    use crate::cache::MemoryStringCache;
     use crate::{
         chunks::firehose::firehose_log::Firehose,
         filesystem::LogarchiveProvider,
@@ -1058,7 +1057,7 @@ mod tests {
         test_path.push("tests/test_data/system_logs_big_sur.logarchive");
 
         let provider = LogarchiveProvider::new(test_path.as_path());
-        let cache = StringCache::default();
+        let cache = MemoryStringCache::default();
         let timesync_data = collect_timesync(&provider).unwrap();
 
         test_path.push("Persist/0000000000000002.tracev3");

@@ -9,8 +9,7 @@ use crate::catalog::CatalogChunk;
 use crate::chunks::firehose::firehose_log::MessageFlags;
 use crate::chunks::firehose::flags::FirehoseFormatters;
 use crate::chunks::firehose::message::{MessageData, MessageParams};
-use crate::cache::StringCache;
-use crate::traits::FileProvider;
+use crate::traits::{FileProvider, StringCache};
 use log::debug;
 use nom::number::complete::{le_u8, le_u16, le_u32, le_u64};
 
@@ -132,7 +131,7 @@ impl FirehoseSignpost {
     pub(crate) fn get_firehose_signpost(
         firehose: &FirehoseSignpost,
         provider: &dyn FileProvider,
-        cache: &StringCache,
+        cache: &dyn StringCache,
         string_offset: u64,
         first_proc_id: u64,
         second_proc_id: u32,
@@ -189,7 +188,7 @@ mod tests {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         test_path.push("tests/test_data/system_logs_big_sur.logarchive");
         let provider = LogarchiveProvider::new(test_path.as_path());
-        let cache = crate::cache::StringCache::default();
+        let cache = crate::cache::MemoryStringCache::default();
 
         test_path.push("Signpost/0000000000000001.tracev3");
 

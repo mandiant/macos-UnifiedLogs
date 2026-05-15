@@ -6,7 +6,7 @@
 // See the License for the specific language governing permissions and limitations under the License.
 
 use macos_unifiedlogs::{
-    cache::StringCache,
+    cache::MemoryStringCache,
     filesystem::LogarchiveProvider,
     parser::{build_log, collect_timesync, parse_log},
     traits::FileProvider,
@@ -77,7 +77,7 @@ fn test_big_sur_livedata() {
     test_path.push("tests/test_data/system_logs_big_sur.logarchive");
 
     let provider = LogarchiveProvider::new(test_path.as_path());
-    let cache = StringCache::default();
+    let cache = MemoryStringCache::default();
 
     let timesync_data = collect_timesync(&provider).unwrap();
 
@@ -123,7 +123,7 @@ fn test_build_log_big_sur() {
     test_path.push("tests/test_data/system_logs_big_sur.logarchive");
 
     let provider = LogarchiveProvider::new(test_path.as_path());
-    let cache = StringCache::default();
+    let cache = MemoryStringCache::default();
 
     let timesync_data = collect_timesync(&provider).unwrap();
 
@@ -167,7 +167,7 @@ fn test_parse_all_logs_big_sur() {
     test_path.push("tests/test_data/system_logs_big_sur.logarchive");
 
     let provider = LogarchiveProvider::new(test_path.as_path());
-    let cache = StringCache::default();
+    let cache = MemoryStringCache::default();
 
     let timesync_data = collect_timesync(&provider).unwrap();
     let log_data = collect_logs(&provider);
@@ -316,7 +316,7 @@ fn test_parse_all_persist_logs_with_network_big_sur() {
     test_path.push("tests/test_data/system_logs_big_sur.logarchive");
 
     let provider = LogarchiveProvider::new(test_path.as_path());
-    let cache = StringCache::default();
+    let cache = MemoryStringCache::default();
 
     let timesync_data = collect_timesync(&provider).unwrap();
     let log_data = collect_logs(&provider);
@@ -409,7 +409,7 @@ fn test_parse_all_logs_private_big_sur() {
     test_path.push("tests/test_data/system_logs_big_sur_private_enabled.logarchive");
 
     let provider = LogarchiveProvider::new(test_path.as_path());
-    let cache = StringCache::default();
+    let cache = MemoryStringCache::default();
 
     let timesync_data = collect_timesync(&provider).unwrap();
     let log_data = collect_logs(&provider);
@@ -448,7 +448,7 @@ fn test_parse_all_logs_private_with_public_mix_big_sur() {
     test_path.push("tests/test_data/system_logs_big_sur_public_private_data_mix.logarchive");
 
     let provider = LogarchiveProvider::new(test_path.as_path());
-    let cache = StringCache::default();
+    let cache = MemoryStringCache::default();
 
     let timesync_data = collect_timesync(&provider).unwrap();
     let log_data = collect_logs(&provider);
@@ -510,7 +510,7 @@ fn test_parse_all_logs_private_with_public_mix_big_sur_single_file() {
     test_path.push("tests/test_data/system_logs_big_sur_public_private_data_mix.logarchive");
 
     let provider = LogarchiveProvider::new(test_path.as_path());
-    let cache = StringCache::default();
+    let cache = MemoryStringCache::default();
 
     let timesync_data = collect_timesync(&provider).unwrap();
 
@@ -556,7 +556,7 @@ fn test_parse_all_logs_private_with_public_mix_big_sur_special_file() {
     test_path.push("tests/test_data/system_logs_big_sur_public_private_data_mix.logarchive");
 
     let provider = LogarchiveProvider::new(test_path.as_path());
-    let cache = StringCache::default();
+    let cache = MemoryStringCache::default();
 
     let timesync_data = collect_timesync(&provider).unwrap();
 
@@ -603,7 +603,7 @@ fn test_big_sur_missing_oversize_strings() {
     test_path.push("tests/test_data/system_logs_big_sur.logarchive");
 
     let provider = LogarchiveProvider::new(test_path.as_path());
-    let cache = StringCache::default();
+    let cache = MemoryStringCache::default();
 
     let timesync_data = collect_timesync(&provider).unwrap();
 
@@ -635,7 +635,7 @@ fn test_big_sur_oversize_strings_in_another_file() {
     test_path.push("tests/test_data/system_logs_big_sur.logarchive");
 
     let provider = LogarchiveProvider::new(test_path.as_path());
-    let cache = StringCache::default();
+    let cache = MemoryStringCache::default();
 
     let timesync_data = collect_timesync(&provider).unwrap();
 

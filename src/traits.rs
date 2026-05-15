@@ -1,4 +1,5 @@
 use std::io::Error;
+use std::sync::Arc;
 
 use crate::{dsc::SharedCacheStrings, uuidtext::UUIDText};
 
@@ -49,4 +50,19 @@ pub trait SourceFile {
     /// The source path of the file on the machine from which it was collected, distinct from any
     /// secondary storage location where, for instance, a file backing the `reader` might exist.
     fn source_path(&self) -> &str;
+}
+
+/// Defines a trait for caching string values parsed from the `dsc` or `uuidtext` directories.
+pub trait StringCache: Sync {
+    fn get_or_load_uuidtext(
+        &self,
+        uuid: &str,
+        provider: &dyn FileProvider,
+    ) -> Option<Arc<UUIDText>>;
+
+    fn get_or_load_dsc(
+        &self,
+        uuid: &str,
+        provider: &dyn FileProvider,
+    ) -> Option<Arc<SharedCacheStrings>>;
 }

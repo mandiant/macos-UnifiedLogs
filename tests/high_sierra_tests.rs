@@ -7,7 +7,7 @@
 use std::{fs::File, path::PathBuf};
 
 use macos_unifiedlogs::{
-    cache::StringCache,
+    cache::MemoryStringCache,
     filesystem::LogarchiveProvider,
     parser::{build_log, collect_timesync, parse_log},
     traits::FileProvider,
@@ -54,7 +54,7 @@ fn test_build_log_high_sierra() {
     test_path.push("tests/test_data/system_logs_high_sierra.logarchive");
 
     let provider = LogarchiveProvider::new(test_path.as_path());
-    let cache = StringCache::default();
+    let cache = MemoryStringCache::default();
     let timesync_data = collect_timesync(&provider).unwrap();
 
     test_path.push("Persist/0000000000000001.tracev3");
@@ -96,7 +96,7 @@ fn test_build_log_complex_format_high_sierra() {
     test_path.push("tests/test_data/system_logs_high_sierra.logarchive");
 
     let provider = LogarchiveProvider::new(test_path.as_path());
-    let cache = StringCache::default();
+    let cache = MemoryStringCache::default();
     let timesync_data = collect_timesync(&provider).unwrap();
 
     test_path.push("Persist/0000000000000001.tracev3");
@@ -156,7 +156,7 @@ fn test_build_log_negative_number_high_sierra() {
     test_path.push("tests/test_data/system_logs_high_sierra.logarchive");
 
     let provider = LogarchiveProvider::new(test_path.as_path());
-    let cache = StringCache::default();
+    let cache = MemoryStringCache::default();
     let timesync_data = collect_timesync(&provider).unwrap();
 
     test_path.push("Special/0000000000000003.tracev3");
@@ -187,7 +187,7 @@ fn test_parse_all_logs_high_sierra() {
     let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_path.push("tests/test_data/system_logs_high_sierra.logarchive");
     let provider = LogarchiveProvider::new(test_path.as_path());
-    let cache = StringCache::default();
+    let cache = MemoryStringCache::default();
     let timesync_data = collect_timesync(&provider).unwrap();
     let log_data = collect_logs(&provider);
     let mut log_data_vec = Vec::new();

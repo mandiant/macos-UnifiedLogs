@@ -7,11 +7,10 @@
 
 use log::{error, info};
 
-use crate::cache::StringCache;
 use crate::dsc::SharedCacheStrings;
 use crate::error::ParserError;
 use crate::timesync::TimesyncBoot;
-use crate::traits::FileProvider;
+use crate::traits::{FileProvider, StringCache};
 use crate::unified_log::{LogData, UnifiedLogData};
 use crate::uuidtext::UUIDText;
 use std::collections::HashMap;
@@ -93,8 +92,8 @@ pub fn parse_log(mut reader: impl Read, evidence: &str) -> Result<UnifiedLogData
 /// ```
 pub fn build_log(
     unified_data: &UnifiedLogData,
-    provider: &dyn FileProvider,
-    cache: &StringCache,
+    provider: &impl FileProvider,
+    cache: &impl StringCache,
     timesync_data: &HashMap<String, TimesyncBoot>,
     exclude_missing: bool,
 ) -> (Vec<LogData>, UnifiedLogData) {
@@ -102,7 +101,7 @@ pub fn build_log(
 }
 
 /// Parse all UUID files in provided directory. The directory should follow the same layout as the live system (ex: path/to/files/\<two character UUID\>/\<remaining UUID name\>)
-pub fn collect_strings(provider: &dyn FileProvider) -> Result<Vec<UUIDText>, ParserError> {
+pub fn collect_strings(provider: &impl FileProvider) -> Result<Vec<UUIDText>, ParserError> {
     let mut uuidtext_vec: Vec<UUIDText> = Vec::new();
     // Start process to read a directory containing subdirectories that contain the uuidtext files
     for mut source in provider.uuidtext_files() {
@@ -136,7 +135,7 @@ pub fn collect_strings(provider: &dyn FileProvider) -> Result<Vec<UUIDText>, Par
 
 /// Parse all dsc uuid files in provided directory
 pub fn collect_shared_strings(
-    provider: &dyn FileProvider,
+    provider: &impl FileProvider,
 ) -> Result<Vec<SharedCacheStrings>, ParserError> {
     let mut shared_strings_vec: Vec<SharedCacheStrings> = Vec::new();
     // Start process to read and parse uuid files related to dsc
@@ -177,7 +176,7 @@ pub fn collect_shared_strings(
 ///    let timesync_data = collect_timesync(&provider).unwrap();
 /// ```
 pub fn collect_timesync(
-    provider: &dyn FileProvider,
+    provider: &impl FileProvider,
 ) -> Result<HashMap<String, TimesyncBoot>, ParserError> {
     let mut timesync_data: HashMap<String, TimesyncBoot> = HashMap::new();
     // Start process to read and parse all timesync files
@@ -418,7 +417,7 @@ mod tests {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         test_path.push("tests/test_data/system_logs_big_sur.logarchive");
         let provider = LogarchiveProvider::new(test_path.as_path());
-        let cache = crate::cache::StringCache::default();
+        let cache = crate::cache::MemoryStringCache::default();
 
         test_path.push("Persist/0000000000000002.tracev3");
         let handle = std::fs::File::open(&test_path).unwrap();

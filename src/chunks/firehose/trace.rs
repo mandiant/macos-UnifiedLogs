@@ -8,8 +8,7 @@
 use crate::catalog::CatalogChunk;
 use crate::chunks::firehose::firehose_log::{FirehoseItemData, FirehoseItemType};
 use crate::chunks::firehose::message::MessageData;
-use crate::cache::StringCache;
-use crate::traits::FileProvider;
+use crate::traits::{FileProvider, StringCache};
 use log::{error, warn};
 use nom::bytes::complete::take;
 use nom::number::complete::{be_u8, be_u16, be_u32, be_u64, le_u8, le_u32};
@@ -127,7 +126,7 @@ impl FirehoseTrace {
     /// Get base log message string formatter from shared cache strings (dsc) or UUID text file for firehose trace log entries (chunks)
     pub(crate) fn get_firehose_trace_strings(
         provider: &dyn FileProvider,
-        cache: &StringCache,
+        cache: &dyn StringCache,
         string_offset: u64,
         first_proc_id: u64,
         second_proc_id: u32,
@@ -197,7 +196,7 @@ mod tests {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         test_path.push("tests/test_data/system_logs_high_sierra.logarchive");
         let provider = LogarchiveProvider::new(test_path.as_path());
-        let cache = crate::cache::StringCache::default();
+        let cache = crate::cache::MemoryStringCache::default();
 
         test_path.push("logdata.LiveData.tracev3");
         let handle = std::fs::File::open(&test_path).unwrap();
