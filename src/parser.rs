@@ -10,7 +10,7 @@ use log::{error, info};
 use crate::dsc::SharedCacheStrings;
 use crate::error::ParserError;
 use crate::timesync::TimesyncBoot;
-use crate::traits::{FileProvider, StringCache};
+use crate::traits::{FileProvider, StringCache, SourceFile};
 use crate::unified_log::{LogData, UnifiedLogData};
 use crate::uuidtext::UUIDText;
 use std::collections::HashMap;
@@ -41,13 +41,14 @@ pub fn parse_log(mut reader: impl Read, evidence: &str) -> Result<UnifiedLogData
 /// # Example
 /// ```rust
 ///    use macos_unifiedlogs::filesystem::LogarchiveProvider;
-///    use macos_unifiedlogs::traits::FileProvider;
+///    use macos_unifiedlogs::traits::{FileProvider, SourceFile};
 ///    use macos_unifiedlogs::parser::collect_timesync;
 ///    use macos_unifiedlogs::iterator::UnifiedLogIterator;
 ///    use macos_unifiedlogs::unified_log::UnifiedLogData;
 ///    use macos_unifiedlogs::parser::build_log;
-///    use macos_unifiedlogs::cache::StringCache;
+///    use macos_unifiedlogs::cache::MemoryStringCache;
 ///    use std::path::PathBuf;
+///    use std::io::Read;
 ///
 ///    let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 ///    test_path.push("tests/test_data/system_logs_big_sur.logarchive");
@@ -62,7 +63,7 @@ pub fn parse_log(mut reader: impl Read, evidence: &str) -> Result<UnifiedLogData
 ///        evidence: String::new(),
 ///    };
 ///
-///    let cache = StringCache::new();
+///    let cache = MemoryStringCache::default();
 ///    for mut entry in provider.tracev3_files() {
 ///      println!("TraceV3 file: {}", entry.source_path());
 ///      let mut buf = Vec::new();

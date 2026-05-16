@@ -7,7 +7,12 @@
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use macos_unifiedlogs::{
-    cache::MemoryStringCache, filesystem::LogarchiveProvider, parser::{build_log, collect_timesync, parse_log}, timesync::TimesyncBoot, traits::{FileProvider, StringCache}, unified_log::UnifiedLogData
+    cache::MemoryStringCache,
+    filesystem::LogarchiveProvider,
+    parser::{build_log, collect_timesync, parse_log},
+    timesync::TimesyncBoot,
+    traits::{FileProvider, StringCache},
+    unified_log::UnifiedLogData,
 };
 use std::{collections::HashMap, fs::File, path::PathBuf};
 
@@ -51,7 +56,15 @@ fn high_sierra_build_log_benchbress(c: &mut Criterion) {
     let log_data = parse_log(handle, test_path.to_str().unwrap()).unwrap();
 
     c.bench_function("Benching Building One High Sierra Log", |b| {
-        b.iter(|| bench_build_log(&log_data, &provider, &cache, &timesync_data, exclude_missing));
+        b.iter(|| {
+            bench_build_log(
+                &log_data,
+                &provider,
+                &cache,
+                &timesync_data,
+                exclude_missing,
+            );
+        });
     });
 }
 

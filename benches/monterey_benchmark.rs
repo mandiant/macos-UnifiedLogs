@@ -45,8 +45,8 @@ fn monterey_build_log_benchbress(c: &mut Criterion) {
     test_path.push("tests/test_data/system_logs_monterey.logarchive");
 
     let provider = LogarchiveProvider::new(test_path.as_path());
-    let cache = MemoryStringCache::default();
     let timesync_data = collect_timesync(&provider).unwrap();
+    let cache = MemoryStringCache::default();
 
     test_path.push("Persist/0000000000000004.tracev3");
     let exclude_missing = false;

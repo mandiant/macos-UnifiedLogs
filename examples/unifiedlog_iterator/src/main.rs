@@ -7,11 +7,12 @@
 
 use chrono::{SecondsFormat, TimeZone, Utc};
 use log::{debug, error, info, warn, LevelFilter};
+use macos_unifiedlogs::cache::MemoryStringCache;
 use macos_unifiedlogs::filesystem::{LiveSystemProvider, LogarchiveProvider};
 use macos_unifiedlogs::iterator::UnifiedLogIterator;
 use macos_unifiedlogs::parser::{build_log, collect_timesync, parse_log};
 use macos_unifiedlogs::timesync::TimesyncBoot;
-use macos_unifiedlogs::traits::FileProvider;
+use macos_unifiedlogs::traits::{FileProvider, StringCache};
 use macos_unifiedlogs::unified_log::{LogData, UnifiedLogData};
 use simplelog::{ColorChoice, Config, TermLogger, TerminalMode};
 use std::collections::HashMap;
@@ -434,9 +435,10 @@ fn parse_live_system(
     resume: bool,
 ) -> Result<(), Box<dyn Error>> {
     let mut provider = LiveSystemProvider::default();
+    let cache = MemoryStringCache::default();
     let timesync_data = collect_timesync(&provider).unwrap();
 
-    match parse_trace_file(&timesync_data, &mut provider, writer, bookmark, resume) {
+    match parse_trace_file(&timesync_data, &provider, &cache, writer, bookmark, resume) {
         Ok(()) => {
             info!("Finished parsing Unified Log data.");
             Ok(())
@@ -451,7 +453,8 @@ fn parse_live_system(
 // Use the provided strings, shared strings, timesync data to parse the Unified Log data at provided path.
 fn parse_trace_file(
     timesync_data: &HashMap<String, TimesyncBoot>,
-    provider: &mut dyn FileProvider,
+    provider: &impl FileProvider,
+    cache: &impl StringCache,
     writer: &mut OutputWriter,
     bookmark: Arc<Mutex<Bookmark>>,
     resume: bool,
@@ -503,6 +506,7 @@ fn parse_trace_file(
         match iterate_chunks(
             source.reader(),
             provider,
+            cache,
             timesync_data,
             writer,
             &mut parse_context,
@@ -543,7 +547,7 @@ fn parse_trace_file(
         // Exclude_missing = false
         // If we fail to find any missing data its probably due to the logs rolling
         // Ex: tracev3A rolls, tracev3B references Oversize entry in tracev3A will trigger missing data since tracev3A is gone
-        let (results, _) = build_log(&leftover_data, provider, timesync_data, include_missing);
+        let (results, _) = build_log(&leftover_data, provider, cache, timesync_data, include_missing);
 
         // Filter by bookmark and update bookmark with max timestamp seen
         let (filtered_results, new_skipped) = filter_and_update_bookmark(
@@ -575,7 +579,8 @@ fn parse_trace_file(
 
 fn iterate_chunks(
     mut reader: impl Read,
-    provider: &mut dyn FileProvider,
+    provider: &impl FileProvider,
+    cache: &impl StringCache,
     timesync_data: &HashMap<String, TimesyncBoot>,
     writer: &mut OutputWriter,
     parse_context: &mut ParseContext,
@@ -610,7 +615,7 @@ fn iterate_chunks(
         chunk
             .oversize
             .append(&mut parse_context.context.oversize_strings.oversize);
-        let (results, missing_logs) = build_log(&chunk, provider, timesync_data, exclude_missing);
+        let (results, missing_logs) = build_log(&chunk, provider, cache, timesync_data, exclude_missing);
 
         // Filter by bookmark and update bookmark with max timestamp seen
         let (filtered_results, new_skipped) = filter_and_update_bookmark(

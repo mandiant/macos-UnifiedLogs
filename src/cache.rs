@@ -14,13 +14,13 @@ use crate::uuidtext::UUIDText;
 ///
 /// # Multithreaded tracev3 processing
 /// ```rust,ignore
-/// use macos_unifiedlogs::cache::StringCache;
+/// use macos_unifiedlogs::cache::MemoryStringCache;
 /// use macos_unifiedlogs::filesystem::LogarchiveProvider;
 /// use macos_unifiedlogs::parser::{build_log, collect_timesync};
 /// use std::{path::PathBuf, sync::Arc};
 ///
 /// let provider = Arc::new(LogarchiveProvider::new(&path));
-/// let cache    = StringCache::default();
+/// let cache    = MemoryStringCache::default();
 /// let timesync = collect_timesync(provider.as_ref()).unwrap();
 ///
 /// std::thread::scope(|s| {
@@ -77,7 +77,7 @@ where
     fn get_or_load_uuidtext(
         &self,
         uuid: &str,
-        provider: &dyn FileProvider,
+        provider: &impl FileProvider,
     ) -> Option<Arc<UUIDText>> {
         {
             let mut map = self.uuidtext.write().unwrap();
@@ -100,7 +100,7 @@ where
     fn get_or_load_dsc(
         &self,
         uuid: &str,
-        provider: &dyn FileProvider,
+        provider: &impl FileProvider,
     ) -> Option<Arc<SharedCacheStrings>> {
         {
             let mut map = self.dsc.write().unwrap();

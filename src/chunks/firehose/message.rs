@@ -52,8 +52,8 @@ impl MessageData {
     /// Get the base message for the log
     pub(crate) fn get_message(
         formatters: &FirehoseFormatters,
-        provider: &dyn FileProvider,
-        cache: &dyn StringCache,
+        provider: &impl FileProvider,
+        cache: &impl StringCache,
         params: &MessageParams,
         catalogs: &CatalogChunk,
     ) -> nom::IResult<&'static [u8], MessageData> {
@@ -146,8 +146,8 @@ impl MessageData {
     /// Extract string from the Shared Strings Cache (dsc data)
     /// Shared strings contain library and message string
     fn extract_shared_strings(
-        provider: &dyn FileProvider,
-        cache: &dyn StringCache,
+        provider: &impl FileProvider,
+        cache: &impl StringCache,
         string_offset: u64,
         first_proc_id: u64,
         second_proc_id: u32,
@@ -311,8 +311,8 @@ impl MessageData {
     /// Extract strings from the `UUIDText` file associated with log entry
     /// `UUIDText` file contains process and message string
     pub(crate) fn extract_format_strings(
-        provider: &dyn FileProvider,
-        cache: &dyn StringCache,
+        provider: &impl FileProvider,
+        cache: &impl StringCache,
         string_offset: u64,
         first_proc_id: u64,
         second_proc_id: u32,
@@ -428,8 +428,8 @@ impl MessageData {
     /// Extract strings from the `UUIDText` file associated with log entry that have `absolute` flag set
     /// `UUIDText` file contains process and message string
     fn extract_absolute_strings(
-        provider: &dyn FileProvider,
-        cache: &dyn StringCache,
+        provider: &impl FileProvider,
+        cache: &impl StringCache,
         absolute_offset: u64,
         string_offset: u64,
         first_proc_id: u64,
@@ -599,8 +599,8 @@ impl MessageData {
     /// Extract strings from an alt `UUIDText` file specified within the log entry that have `uuid_relative` flag set
     /// `UUIDText` files contains library and process and message string
     fn extract_alt_uuid_strings(
-        provider: &dyn FileProvider,
-        cache: &dyn StringCache,
+        provider: &impl FileProvider,
+        cache: &impl StringCache,
         string_offset: u64,
         uuid: &str,
         first_proc_id: u64,
@@ -730,8 +730,8 @@ impl MessageData {
     /// Get the image path from provided `main_uuid` entry
     fn get_uuid_image_path(
         main_uuid: &str,
-        provider: &dyn FileProvider,
-        cache: &dyn StringCache,
+        provider: &impl FileProvider,
+        cache: &impl StringCache,
     ) -> nom::IResult<&'static [u8], String> {
         // An UUID of all zeros is possilbe in the Catalog, if this happens there is no process path
         if main_uuid == "00000000000000000000000000000000" {

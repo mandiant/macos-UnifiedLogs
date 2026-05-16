@@ -37,16 +37,17 @@
 //! ## Example
 //! ```rust
 //!    use macos_unifiedlogs::filesystem::LiveSystemProvider;
-//!    use macos_unifiedlogs::traits::FileProvider;
-//!    use macos_unifiedlogs::cache::StringCache;
+//!    use macos_unifiedlogs::traits::{FileProvider, SourceFile};
+//!    use macos_unifiedlogs::cache::MemoryStringCache;
 //!    use macos_unifiedlogs::parser::collect_timesync;
 //!    use macos_unifiedlogs::iterator::UnifiedLogIterator;
 //!    use macos_unifiedlogs::unified_log::UnifiedLogData;
 //!    use macos_unifiedlogs::parser::build_log;
+//!    use std::io::Read;
 //!
 //!    // Run on live macOS system
 //!     let provider = LiveSystemProvider::default();
-//!     let cache = StringCache::new();
+//!     let cache = MemoryStringCache::default();
 //!     let timesync_data = collect_timesync(&provider).unwrap();
 //!
 //!     // We need to persist the Oversize log entries (they contain large strings that don't fit in normal log entries)

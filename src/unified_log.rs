@@ -90,20 +90,20 @@ pub struct UnifiedLogCatalogData {
     pub oversize: Vec<Oversize>,
 }
 
-struct LogIterator<'a> {
+struct LogIterator<'a, P, C> where P: FileProvider, C: StringCache {
     unified_log_data: &'a UnifiedLogData,
-    provider: &'a dyn FileProvider,
-    cache: &'a dyn StringCache,
+    provider: &'a P,
+    cache: &'a C,
     timesync_data: &'a HashMap<String, TimesyncBoot>,
     exclude_missing: bool,
     message_re: Regex,
     catalog_data_iterator_index: usize,
 }
-impl<'a> LogIterator<'a> {
+impl<'a, P, C> LogIterator<'a, P, C> where P: FileProvider, C: StringCache {
     fn new(
         unified_log_data: &'a UnifiedLogData,
-        provider: &'a dyn FileProvider,
-        cache: &'a dyn StringCache,
+        provider: &'a P,
+        cache: &'a C,
         timesync_data: &'a HashMap<String, TimesyncBoot>,
         exclude_missing: bool,
     ) -> Result<Self, regex::Error> {
@@ -153,7 +153,7 @@ impl<'a> LogIterator<'a> {
     }
 }
 
-impl Iterator for LogIterator<'_> {
+impl <P, C>Iterator for LogIterator<'_, P, C> where P: FileProvider, C: StringCache {
     type Item = (Vec<LogData>, UnifiedLogData);
 
     /// `catalog_data_index` == 0
@@ -795,8 +795,8 @@ impl LogData {
     /// Return a reconstructed log entries and any leftover Unified Log entries that could not be reconstructed (data may be stored in other tracev3 files)
     pub fn build_log(
         unified_log_data: &UnifiedLogData,
-        provider: &dyn FileProvider,
-        cache: & dyn StringCache,
+        provider: &impl FileProvider,
+        cache: &impl StringCache,
         timesync_data: &HashMap<String, TimesyncBoot>,
         exclude_missing: bool,
     ) -> (Vec<LogData>, UnifiedLogData) {

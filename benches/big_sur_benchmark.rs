@@ -46,8 +46,9 @@ fn big_sur_build_log_benchbress(c: &mut Criterion) {
     test_path.push("tests/test_data/system_logs_big_sur.logarchive");
 
     let provider = LogarchiveProvider::new(test_path.as_path());
-    let cache = MemoryStringCache::default();
     let timesync_data = collect_timesync(&provider).unwrap();
+
+    let cache = MemoryStringCache::default();
 
     test_path.push("Persist/0000000000000004.tracev3");
     let exclude_missing = false;
@@ -56,15 +57,7 @@ fn big_sur_build_log_benchbress(c: &mut Criterion) {
     let log_data = parse_log(handle, test_path.to_str().unwrap()).unwrap();
 
     c.bench_function("Benching Building One Big Sur Log", |b| {
-        b.iter(|| {
-            bench_build_log(
-                &log_data,
-                &provider,
-                &cache,
-                &timesync_data,
-                exclude_missing,
-            )
-        });
+        b.iter(|| bench_build_log(&log_data, &provider, &cache, &timesync_data, exclude_missing));
     });
 }
 
