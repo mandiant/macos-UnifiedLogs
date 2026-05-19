@@ -13,7 +13,9 @@ use std::collections::HashMap;
 
 use crate::catalog::CatalogChunk;
 use crate::chunks::firehose::activity::FirehoseActivity;
-use crate::chunks::firehose::firehose_log::{Firehose, FirehoseItemInfo, FirehosePreamble};
+use crate::chunks::firehose::firehose_log::{
+    Firehose, FirehoseItemType, FirehosePreamble, MessageFlags,
+};
 use crate::chunks::firehose::nonactivity::FirehoseNonActivity;
 use crate::chunks::firehose::signpost::FirehoseSignpost;
 use crate::chunks::firehose::trace::FirehoseTrace;
@@ -193,16 +195,14 @@ impl Iterator for LogIterator<'_> {
                     ),
                     library: String::new(),
                     activity_id: 0,
+                    parent_activity_id: 0,
                     time: timestamp,
                     timestamp: unixepoch_to_iso(&(timestamp as i64)),
                     category: String::new(),
-                    log_type: LogData::get_log_type(
-                        firehose.unknown_log_type,
-                        firehose.unknown_log_activity_type,
-                    ),
+                    log_type: LogData::get_log_type(firehose.log_type, firehose.log_activity_type),
                     process: String::new(),
                     message: String::new(),
-                    event_type: LogData::get_event_type(firehose.unknown_log_activity_type),
+                    event_type: LogData::get_event_type(firehose.log_activity_type),
                     euid: catalog_data.catalog.get_euid(
                         preamble.first_number_proc_id,
                         preamble.second_number_proc_id,
@@ -218,6 +218,7 @@ impl Iterator for LogIterator<'_> {
                     process_uuid: String::new(),
                     raw_message: String::new(),
                     message_entries: firehose.message.item_info.to_owned(),
+                    message_flags: Vec::new(),
                     evidence: self.unified_log_data.evidence.clone(),
                 };
 
@@ -226,18 +227,19 @@ impl Iterator for LogIterator<'_> {
                 // 0x7 - Loss log entry. Ex: loss
                 // 0x6 - Signpost entry. Ex: process signpost, thread signpost, system signpost
                 // 0x3 - Trace log entry. Ex: trace default
-                match firehose.unknown_log_activity_type {
+                match firehose.log_activity_type {
                     0x4 => {
                         log_data.activity_id =
-                            u64::from(firehose.firehose_non_activity.unknown_activity_id);
+                            u64::from(firehose.firehose_non_activity.activity_id);
                         let message_data = FirehoseNonActivity::get_firehose_nonactivity_strings(
                             &firehose.firehose_non_activity,
                             self.provider,
                             u64::from(firehose.format_string_location),
-                            &preamble.first_number_proc_id,
-                            &preamble.second_number_proc_id,
+                            preamble.first_number_proc_id,
+                            preamble.second_number_proc_id,
                             &catalog_data.catalog,
                         );
+                        log_data.message_flags = firehose.firehose_non_activity.flags.clone();
 
                         match message_data {
                             Ok((_, results)) => {
@@ -325,14 +327,24 @@ impl Iterator for LogIterator<'_> {
                         log_data.log_type = LogType::Loss;
                     }
                     0x2 => {
-                        log_data.activity_id =
-                            u64::from(firehose.firehose_activity.unknown_activity_id);
+                        // When has_other_current_aid (0x200) is set, id3 is the new activity
+                        // and id1 is the parent. Otherwise id1 is the new activity with no parent.
+                        if firehose.firehose_activity.activity_id_3 != 0 {
+                            log_data.activity_id =
+                                u64::from(firehose.firehose_activity.activity_id_3);
+                            log_data.parent_activity_id =
+                                u64::from(firehose.firehose_activity.activity_id);
+                        } else {
+                            log_data.activity_id =
+                                u64::from(firehose.firehose_activity.activity_id);
+                        }
+                        log_data.message_flags = firehose.firehose_activity.flags.clone();
                         let message_data = FirehoseActivity::get_firehose_activity_strings(
                             &firehose.firehose_activity,
                             self.provider,
                             u64::from(firehose.format_string_location),
-                            &preamble.first_number_proc_id,
-                            &preamble.second_number_proc_id,
+                            preamble.first_number_proc_id,
+                            preamble.second_number_proc_id,
                             &catalog_data.catalog,
                         );
                         match message_data {
@@ -380,14 +392,14 @@ impl Iterator for LogIterator<'_> {
                         }
                     }
                     0x6 => {
-                        log_data.activity_id =
-                            u64::from(firehose.firehose_signpost.unknown_activity_id);
+                        log_data.activity_id = u64::from(firehose.firehose_signpost.activity_id);
+                        log_data.message_flags = firehose.firehose_signpost.flags.clone();
                         let message_data = FirehoseSignpost::get_firehose_signpost(
                             &firehose.firehose_signpost,
                             self.provider,
                             u64::from(firehose.format_string_location),
-                            &preamble.first_number_proc_id,
-                            &preamble.second_number_proc_id,
+                            preamble.first_number_proc_id,
+                            preamble.second_number_proc_id,
                             &catalog_data.catalog,
                         );
                         match message_data {
@@ -476,8 +488,8 @@ impl Iterator for LogIterator<'_> {
                         let message_data = FirehoseTrace::get_firehose_trace_strings(
                             self.provider,
                             u64::from(firehose.format_string_location),
-                            &preamble.first_number_proc_id,
-                            &preamble.second_number_proc_id,
+                            preamble.first_number_proc_id,
+                            preamble.second_number_proc_id,
                             &catalog_data.catalog,
                         );
                         match message_data {
@@ -544,6 +556,7 @@ impl Iterator for LogIterator<'_> {
                 pid: simpledump.first_proc_id,
                 library: String::new(),
                 activity_id: 0,
+                parent_activity_id: 0,
                 time: timestamp,
                 timestamp: unixepoch_to_iso(&(timestamp as i64)),
                 category: String::new(),
@@ -563,6 +576,7 @@ impl Iterator for LogIterator<'_> {
                 process_uuid: simpledump.dsc_uuid.to_owned(),
                 raw_message: String::new(),
                 message_entries: Vec::new(),
+                message_flags: Vec::new(),
                 evidence: self.unified_log_data.evidence.clone(),
             };
             log_data_vec.push(log_data);
@@ -614,6 +628,7 @@ impl Iterator for LogIterator<'_> {
                 pid: statedump.first_proc_id,
                 library: String::new(),
                 activity_id: statedump.activity_id,
+                parent_activity_id: 0,
                 time: timestamp,
                 timestamp: unixepoch_to_iso(&(timestamp as i64)),
                 category: String::new(),
@@ -636,6 +651,7 @@ impl Iterator for LogIterator<'_> {
                 process_uuid: String::new(),
                 raw_message: String::new(),
                 message_entries: Vec::new(),
+                message_flags: Vec::new(),
                 evidence: self.unified_log_data.evidence.clone(),
             };
             log_data_vec.push(log_data);
@@ -655,6 +671,7 @@ pub struct LogData {
     pub library: String,
     pub library_uuid: String,
     pub activity_id: u64,
+    pub parent_activity_id: u64,
     pub time: f64,
     pub category: String,
     pub event_type: EventType,
@@ -665,8 +682,9 @@ pub struct LogData {
     pub raw_message: String,
     pub boot_uuid: String,
     pub timezone_name: String,
-    pub message_entries: Vec<FirehoseItemInfo>,
+    pub message_entries: Vec<FirehoseItemType>,
     pub timestamp: String,
+    pub message_flags: Vec<MessageFlags>,
     pub evidence: String,
 }
 

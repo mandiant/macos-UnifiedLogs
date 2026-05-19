@@ -11,6 +11,7 @@ Data that is currently extracted includes:
 - Process ID
 - Thread ID
 - Activity ID
+- Parent Activity ID
 - Log Message
 - Timestamp (Intel and ARM supported)
 - Effective User ID (EUID)

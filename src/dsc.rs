@@ -11,12 +11,12 @@ use nom::Needed;
 use nom::bytes::complete::take;
 use nom::number::complete::{be_u128, le_u16, le_u32, le_u64};
 use serde::{Deserialize, Serialize};
-use std::mem::size_of;
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct SharedCacheStrings {
     pub signature: u32,
-    pub major_version: u16, // Version 1 up to Big Sur. Monterey has Version 2!
+    // Version 1 up to Big Sur. Monterey and later has Version 2!
+    pub major_version: u16,
     pub minor_version: u16,
     pub number_ranges: u32,
     pub number_uuids: u32,
@@ -27,10 +27,12 @@ pub struct SharedCacheStrings {
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct RangeDescriptor {
-    pub range_offset: u64, // In Major version 2 this is 8 bytes, in version 1 its 4 bytes
+    // In version 2 this is 8 bytes, in version 1 its 4 bytes
+    pub range_offset: u64,
     pub data_offset: u32,
     pub range_size: u32,
-    pub unknown_uuid_index: u64, // Unknown value, added in Major version: 2. Appears to be UUID index. In version 1 the index is 4 bytes and is at the start of the range descriptor
+    // Added in version: 2. In version 1 the index is 4 bytes and is at the start of the range descriptor
+    pub uuid_index: u64,
     pub strings: Vec<u8>,
 }
 
@@ -46,8 +48,7 @@ pub struct UUIDDescriptor {
 impl SharedCacheStrings {
     /// Parse shared strings data (the file(s) in /private/var/db/uuidtext/dsc)
     pub fn parse_dsc(data: &[u8]) -> nom::IResult<&[u8], SharedCacheStrings> {
-        let (input, sig) = take(size_of::<u32>())(data)?;
-        let (_, signature) = le_u32(sig)?;
+        let (input, signature) = le_u32(data)?;
 
         let expected_dsc_signature = 0x64736368;
         if expected_dsc_signature != signature {
@@ -62,15 +63,10 @@ impl SharedCacheStrings {
             ..Default::default()
         };
 
-        let (input, major) = take(size_of::<u16>())(input)?;
-        let (input, minor) = take(size_of::<u16>())(input)?;
-        let (input, number_ranges) = take(size_of::<u32>())(input)?;
-        let (mut input, number_uuids) = take(size_of::<u32>())(input)?;
-
-        let (_, dsc_major) = le_u16(major)?;
-        let (_, dsc_minor) = le_u16(minor)?;
-        let (_, dsc_number_ranges) = le_u32(number_ranges)?;
-        let (_, dsc_number_uuids) = le_u32(number_uuids)?;
+        let (input, dsc_major) = le_u16(input)?;
+        let (input, dsc_minor) = le_u16(input)?;
+        let (input, dsc_number_ranges) = le_u32(input)?;
+        let (mut input, dsc_number_uuids) = le_u32(input)?;
 
         shared_cache_strings.minor_version = dsc_minor;
         shared_cache_strings.major_version = dsc_major;
@@ -79,7 +75,7 @@ impl SharedCacheStrings {
 
         let mut range_count = 0;
         while range_count < shared_cache_strings.number_ranges {
-            let (range_input, range_data) = SharedCacheStrings::get_ranges(input, &dsc_major)?;
+            let (range_input, range_data) = SharedCacheStrings::get_ranges(input, dsc_major)?;
             input = range_input;
             shared_cache_strings.ranges.push(range_data);
             range_count += 1;
@@ -87,7 +83,7 @@ impl SharedCacheStrings {
 
         let mut uuid_count = 0;
         while uuid_count < shared_cache_strings.number_uuids {
-            let (uuid_input, uuid_data) = SharedCacheStrings::get_uuids(input, &dsc_major)?;
+            let (uuid_input, uuid_data) = SharedCacheStrings::get_uuids(input, dsc_major)?;
             input = uuid_input;
             shared_cache_strings.uuids.push(uuid_data);
             uuid_count += 1;
@@ -108,7 +104,7 @@ impl SharedCacheStrings {
     }
 
     // Get range data, used by log entries to determine where the base string entry is located.
-    fn get_ranges<'a>(data: &'a [u8], version: &u16) -> nom::IResult<&'a [u8], RangeDescriptor> {
+    fn get_ranges(data: &[u8], version: u16) -> nom::IResult<&[u8], RangeDescriptor> {
         let version_number: u16 = 2;
         let mut input = data;
         let mut range_data = RangeDescriptor::default();
@@ -116,70 +112,57 @@ impl SharedCacheStrings {
         // Version 2 (Monterey and higher) changed the Range format a bit
         // range offset is now 8 bytes (vs 4 bytes) and starts at beginning
         // The uuid index was moved to end
-        range_data.range_offset = if version == &version_number {
-            let (data_input, value_range_offset) = take(size_of::<u64>())(input)?;
+        range_data.range_offset = if version == version_number {
+            let (data_input, dsc_range_offset) = le_u64(input)?;
             input = data_input;
-            let (_, dsc_range_offset) = le_u64(value_range_offset)?;
+
             dsc_range_offset
         } else {
             // Get data based on version 1
-            let (data_input, uuid_descriptor_index) = take(size_of::<u32>())(input)?;
-            let (_, dsc_uuid_descriptor_index) = le_u32(uuid_descriptor_index)?;
-            range_data.unknown_uuid_index = u64::from(dsc_uuid_descriptor_index);
+            let (data_input, dsc_uuid_descriptor_index) = le_u32(input)?;
+            range_data.uuid_index = u64::from(dsc_uuid_descriptor_index);
 
-            let (data_input, value_range_offset) = take(size_of::<u32>())(data_input)?;
+            let (data_input, dsc_range_offset) = le_u32(data_input)?;
             input = data_input;
-            let (_, dsc_range_offset) = le_u32(value_range_offset)?;
             u64::from(dsc_range_offset)
         };
-
-        let (input, data_offset) = take(size_of::<u32>())(input)?;
-        let (mut input, range_size) = take(size_of::<u32>())(input)?;
-
-        let (_, dsc_data_offset) = le_u32(data_offset)?;
-        let (_, dsc_range_size) = le_u32(range_size)?;
+        let (input, dsc_data_offset) = le_u32(input)?;
+        let (mut input, dsc_range_size) = le_u32(input)?;
 
         range_data.data_offset = dsc_data_offset;
         range_data.range_size = dsc_range_size;
 
         // UUID index is now located at the end of the format (instead of beginning)
-        if version == &version_number {
-            let (version_two_input, unknown) = take(size_of::<u64>())(input)?;
-            let (_, dsc_unknown) = le_u64(unknown)?;
-            range_data.unknown_uuid_index = dsc_unknown;
+        if version == version_number {
+            let (version_two_input, dsc_unknown) = le_u64(input)?;
+            range_data.uuid_index = dsc_unknown;
             input = version_two_input;
         }
         Ok((input, range_data))
     }
 
     // Get UUID entries related to ranges
-    fn get_uuids<'a>(data: &'a [u8], version: &u16) -> nom::IResult<&'a [u8], UUIDDescriptor> {
+    fn get_uuids(data: &[u8], version: u16) -> nom::IResult<&[u8], UUIDDescriptor> {
         let mut uuid_data = UUIDDescriptor::default();
 
-        let version_number: u16 = 2;
+        let version_number = 2;
         let mut input = data;
-        if version == &version_number {
-            let (version_two_input, text_offset) = take(size_of::<u64>())(input)?;
-            let (_, dsc_text_offset) = le_u64(text_offset)?;
+        if version == version_number {
+            let (version_two_input, dsc_text_offset) = le_u64(input)?;
             uuid_data.text_offset = dsc_text_offset;
             input = version_two_input;
         } else {
-            let (version_one_input, text_offset) = take(size_of::<u32>())(input)?;
-            let (_, dsc_text_offset) = le_u32(text_offset)?;
+            let (version_one_input, dsc_text_offset) = le_u32(input)?;
             uuid_data.text_offset = u64::from(dsc_text_offset);
             input = version_one_input;
         }
 
-        let (input, text_size) = take(size_of::<u32>())(input)?;
-        let (input, uuid) = take(size_of::<u128>())(input)?;
-        let (input, path_offset) = take(size_of::<u32>())(input)?;
-
-        let (_, dsc_text_size) = le_u32(text_size)?;
-        let (_, dsc_uuid) = be_u128(uuid)?;
-        let (_, dsc_path_offset) = le_u32(path_offset)?;
+        let (input, dsc_text_size) = le_u32(input)?;
+        let (input, dsc_uuid) = be_u128(input)?;
+        let (input, dsc_path_offset) = le_u32(input)?;
 
         uuid_data.text_size = dsc_text_size;
-        uuid_data.uuid = format!("{dsc_uuid:X}");
+        uuid_data.uuid = format!("{dsc_uuid:032X}");
         uuid_data.path_offset = dsc_path_offset;
 
         Ok((input, uuid_data))
@@ -230,7 +213,7 @@ mod tests {
 
         assert_eq!(results.ranges.len(), 788);
         assert_eq!(results.ranges[0].strings, [0]);
-        assert_eq!(results.ranges[0].unknown_uuid_index, 0);
+        assert_eq!(results.ranges[0].uuid_index, 0);
         assert_eq!(results.ranges[0].range_offset, 80296);
         assert_eq!(results.ranges[0].range_size, 1);
 
@@ -263,7 +246,7 @@ mod tests {
 
         assert_eq!(results.ranges.len(), 3432);
         assert_eq!(results.ranges[0].strings, [0]);
-        assert_eq!(results.ranges[0].unknown_uuid_index, 0);
+        assert_eq!(results.ranges[0].uuid_index, 0);
         assert_eq!(results.ranges[0].range_offset, 334248);
         assert_eq!(results.ranges[0].range_size, 1);
 

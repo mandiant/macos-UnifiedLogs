@@ -7,7 +7,7 @@
 
 mod bool;
 pub(crate) mod config;
-mod darwin;
+pub(crate) mod darwin;
 pub(crate) mod decoder;
 mod dns;
 pub(crate) mod location;

@@ -7,17 +7,15 @@
 
 use log::error;
 use nom::Needed;
-use nom::bytes::complete::take;
 use nom::number::complete::le_u32;
 use serde::{Deserialize, Serialize};
-use std::mem::size_of;
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct UUIDText {
     pub uuid: String,
     pub signature: u32,
-    pub unknown_major_version: u32,
-    pub unknown_minor_version: u32,
+    pub major_version: u32,
+    pub minor_version: u32,
     pub number_entries: u32,
     pub entry_descriptors: Vec<UUIDTextEntry>,
     pub footer_data: Vec<u8>, // Collection of strings containing sender process/library with end of string characters
@@ -33,8 +31,7 @@ impl UUIDText {
         let mut uuidtext_data = UUIDText::default();
 
         let expected_uuidtext_signature = 0x66778899;
-        let (input, signature) = take(size_of::<u32>())(data)?;
-        let (_, uuidtext_signature) = le_u32(signature)?;
+        let (input, uuidtext_signature) = le_u32(data)?;
 
         if expected_uuidtext_signature != uuidtext_signature {
             error!(
@@ -43,26 +40,19 @@ impl UUIDText {
             return Err(nom::Err::Incomplete(Needed::Unknown));
         }
 
-        let (input, unknown_major_version) = take(size_of::<u32>())(input)?;
-        let (input, unknown_minor_version) = take(size_of::<u32>())(input)?;
-        let (mut input, number_entries) = take(size_of::<u32>())(input)?;
-
-        let (_, uuidtext_unknown_major_version) = le_u32(unknown_major_version)?;
-        let (_, uuidtext_unknown_minor_version) = le_u32(unknown_minor_version)?;
-        let (_, uuidtext_number_entries) = le_u32(number_entries)?;
+        let (input, uuidtext_major_version) = le_u32(input)?;
+        let (input, uuidtext_minor_version) = le_u32(input)?;
+        let (mut input, uuidtext_number_entries) = le_u32(input)?;
 
         uuidtext_data.signature = uuidtext_signature;
-        uuidtext_data.unknown_major_version = uuidtext_unknown_major_version;
-        uuidtext_data.unknown_minor_version = uuidtext_unknown_minor_version;
+        uuidtext_data.major_version = uuidtext_major_version;
+        uuidtext_data.minor_version = uuidtext_minor_version;
         uuidtext_data.number_entries = uuidtext_number_entries;
 
         let mut count = 0;
         while count < uuidtext_number_entries {
-            let (entry_input, range_start_offset) = take(size_of::<u32>())(input)?;
-            let (entry_input, entry_size) = take(size_of::<u32>())(entry_input)?;
-
-            let (_, uuidtext_range_start_offset) = le_u32(range_start_offset)?;
-            let (_, uuidtext_entry_size) = le_u32(entry_size)?;
+            let (entry_input, uuidtext_range_start_offset) = le_u32(input)?;
+            let (entry_input, uuidtext_entry_size) = le_u32(entry_input)?;
 
             let entry_data = UUIDTextEntry {
                 range_start_offset: uuidtext_range_start_offset,
@@ -93,8 +83,8 @@ mod tests {
 
         let (_, uuidtext_data) = UUIDText::parse_uuidtext(&buffer).unwrap();
         assert_eq!(uuidtext_data.signature, 0x66778899);
-        assert_eq!(uuidtext_data.unknown_major_version, 2);
-        assert_eq!(uuidtext_data.unknown_minor_version, 1);
+        assert_eq!(uuidtext_data.major_version, 2);
+        assert_eq!(uuidtext_data.minor_version, 1);
         assert_eq!(uuidtext_data.number_entries, 2);
         assert_eq!(uuidtext_data.entry_descriptors[0].entry_size, 617);
         assert_eq!(uuidtext_data.entry_descriptors[1].entry_size, 2301);
@@ -113,8 +103,8 @@ mod tests {
 
         let (_, uuidtext_data) = UUIDText::parse_uuidtext(&buffer).unwrap();
         assert_eq!(uuidtext_data.signature, 0x66778899);
-        assert_eq!(uuidtext_data.unknown_major_version, 2);
-        assert_eq!(uuidtext_data.unknown_minor_version, 1);
+        assert_eq!(uuidtext_data.major_version, 2);
+        assert_eq!(uuidtext_data.minor_version, 1);
         assert_eq!(uuidtext_data.number_entries, 1);
         assert_eq!(uuidtext_data.entry_descriptors[0].entry_size, 2740);
         assert_eq!(uuidtext_data.entry_descriptors[0].range_start_offset, 21132);

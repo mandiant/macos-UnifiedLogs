@@ -580,8 +580,8 @@ mod tests {
         assert_eq!(uuid.uuid, "");
         assert_eq!(uuid.footer_data.len(), 76544);
         assert_eq!(uuid.signature, 1719109785);
-        assert_eq!(uuid.unknown_major_version, 2);
-        assert_eq!(uuid.unknown_minor_version, 1);
+        assert_eq!(uuid.major_version, 2);
+        assert_eq!(uuid.minor_version, 1);
         assert_eq!(uuid.number_entries, 2);
     }
 

@@ -6,7 +6,7 @@
 // See the License for the specific language governing permissions and limitations under the License.
 
 use super::DecoderError;
-use crate::util::{clean_uuid, decode_standard};
+use crate::util::decode_standard;
 
 /// Get UUID string from log object
 pub(crate) fn parse_uuid(input: &str) -> Result<String, DecoderError<'_>> {
@@ -16,8 +16,8 @@ pub(crate) fn parse_uuid(input: &str) -> Result<String, DecoderError<'_>> {
         message: "Failed to base64 decode uuid data",
     })?;
 
-    let mut uuid_string = format!("{decoded_data:02X?}");
-    uuid_string = clean_uuid(&uuid_string);
+    // Quick way to convert to UUID
+    let uuid_string = format!("{decoded_data:02X?}").replace([',', '[', ']', ' '], "");
     Ok(uuid_string)
 }
 

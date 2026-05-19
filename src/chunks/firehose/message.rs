@@ -5,6 +5,7 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
+use crate::chunks::firehose::flags::FirehoseFormatters;
 use crate::traits::FileProvider;
 use crate::util::extract_string;
 use crate::uuidtext::UUIDTextEntry;
@@ -13,24 +14,120 @@ use log::{debug, error, info, warn};
 use nom::bytes::complete::take;
 
 #[derive(Debug, Default)]
-pub struct MessageData {
-    pub library: String,
-    pub format_string: String,
-    pub process: String,
-    pub library_uuid: String,
-    pub process_uuid: String,
+pub(crate) struct MessageData {
+    pub(crate) library: String,
+    pub(crate) format_string: String,
+    pub(crate) process: String,
+    pub(crate) library_uuid: String,
+    pub(crate) process_uuid: String,
+}
+
+pub(crate) struct MessageParams {
+    pub(crate) pc_id: u32,
+    pub(crate) string_offset: u64,
+    pub(crate) first_proc_id: u64,
+    pub(crate) second_proc_id: u32,
+    pub(crate) supports_large_offset: bool,
 }
 
 // Functions to help extract base format string based on flags associated with log entries
 // Ex: "%s start"
 impl MessageData {
+    /// Get the base message for the log
+    pub(crate) fn get_message<'a>(
+        formatters: &FirehoseFormatters,
+        provider: &'a mut dyn FileProvider,
+        params: &MessageParams,
+        catalogs: &CatalogChunk,
+    ) -> nom::IResult<&'a [u8], MessageData> {
+        let string_offset = params.string_offset;
+        let pc_id = params.pc_id;
+        let shared_cache_string = formatters.shared_cache
+            || (formatters.large_shared_cache != 0)
+                && (!params.supports_large_offset || formatters.has_large_offset != 0);
+
+        if shared_cache_string {
+            if formatters.has_large_offset != 0 {
+                let valid_large_offsets = [1, 2];
+                let large_offset = if valid_large_offsets.contains(&formatters.has_large_offset)
+                    && formatters.has_large_offset > formatters.large_shared_cache
+                {
+                    // Large offsets start at 0x80000000
+                    0x80000000 * u64::from(formatters.has_large_offset)
+                } else if formatters.large_shared_cache != 0 {
+                    // Large cache seems to always start at 0x100000000
+                    // But if large_shared_cache is 1 then the original `params.string_offset` is sufficient
+                    0x100000000 * u64::from(formatters.large_shared_cache / 2)
+                } else {
+                    // If large offset is not 1 or 2 then it could be invalid
+                    // However, not always guarantee
+                    // if has_large_offset is 0xfffe or 0xffff it may be invalid offset
+                    // Regardless, the starting offset always seems to be 0x100000000
+                    0x100000000 * u64::from(formatters.has_large_offset)
+                };
+                let real_offset = large_offset + string_offset;
+
+                return MessageData::extract_shared_strings(
+                    provider,
+                    real_offset,
+                    params.first_proc_id,
+                    params.second_proc_id,
+                    catalogs,
+                    string_offset,
+                );
+            }
+            return MessageData::extract_shared_strings(
+                provider,
+                string_offset,
+                params.first_proc_id,
+                params.second_proc_id,
+                catalogs,
+                string_offset,
+            );
+        }
+
+        if formatters.absolute {
+            let offset =
+                (0x100000000 * u64::from(formatters.main_exe_alt_index)) + u64::from(pc_id);
+
+            return MessageData::extract_absolute_strings(
+                provider,
+                offset,
+                string_offset,
+                params.first_proc_id,
+                params.second_proc_id,
+                catalogs,
+                string_offset,
+            );
+        }
+        if !formatters.uuid_relative.is_empty() {
+            return MessageData::extract_alt_uuid_strings(
+                provider,
+                string_offset,
+                &formatters.uuid_relative,
+                params.first_proc_id,
+                params.second_proc_id,
+                catalogs,
+                string_offset,
+            );
+        }
+        MessageData::extract_format_strings(
+            provider,
+            string_offset,
+            params.first_proc_id,
+            params.second_proc_id,
+            catalogs,
+            string_offset,
+        )
+    }
+
     /// Extract string from the Shared Strings Cache (dsc data)
     /// Shared strings contain library and message string
-    pub fn extract_shared_strings<'a>(
+    fn extract_shared_strings<'a>(
         provider: &'a mut dyn FileProvider,
         string_offset: u64,
-        first_proc_id: &u64,
-        second_proc_id: &u32,
+        first_proc_id: u64,
+        second_proc_id: u32,
         catalogs: &CatalogChunk,
         original_offset: u64,
     ) -> nom::IResult<&'a [u8], MessageData> {
@@ -56,7 +153,7 @@ impl MessageData {
             && let Some(shared_string) = provider.cached_dsc(&dsc_uuid)
             && let Some(ranges) = shared_string.ranges.first()
         {
-            let uuid_index = ranges.unknown_uuid_index as usize;
+            let uuid_index = ranges.uuid_index as usize;
             let uuid_len = shared_string.uuids.len();
             if uuid_index >= uuid_len {
                 warn!(
@@ -126,7 +223,7 @@ impl MessageData {
                     let (_, message_string) = extract_string(message_start)?;
                     message_data.format_string = message_string;
 
-                    let uuid_index = ranges.unknown_uuid_index as usize;
+                    let uuid_index = ranges.uuid_index as usize;
                     let uuid_len = shared_string.uuids.len();
                     if uuid_index >= uuid_len {
                         warn!(
@@ -159,7 +256,7 @@ impl MessageData {
         if let Some(shared_string) = provider.cached_dsc(&dsc_uuid) {
             // Still get the image path/library for the log entry
             if let Some(ranges) = shared_string.ranges.first() {
-                let uuid_index = ranges.unknown_uuid_index as usize;
+                let uuid_index = ranges.uuid_index as usize;
                 let uuid_len = shared_string.uuids.len();
                 if uuid_index >= uuid_len {
                     warn!(
@@ -196,11 +293,11 @@ impl MessageData {
 
     /// Extract strings from the `UUIDText` file associated with log entry
     /// `UUIDText` file contains process and message string
-    pub fn extract_format_strings<'a>(
+    pub(crate) fn extract_format_strings<'a>(
         provider: &'a mut dyn FileProvider,
         string_offset: u64,
-        first_proc_id: &u64,
-        second_proc_id: &u32,
+        first_proc_id: u64,
+        second_proc_id: u32,
         catalogs: &CatalogChunk,
         original_offset: u64,
     ) -> nom::IResult<&'a [u8], MessageData> {
@@ -310,12 +407,12 @@ impl MessageData {
 
     /// Extract strings from the `UUIDText` file associated with log entry that have `absolute` flag set
     /// `UUIDText` file contains process and message string
-    pub fn extract_absolute_strings<'a>(
+    fn extract_absolute_strings<'a>(
         provider: &'a mut dyn FileProvider,
         absolute_offset: u64,
         string_offset: u64,
-        first_proc_id: &u64,
-        second_proc_id: &u32,
+        first_proc_id: u64,
+        second_proc_id: u32,
         catalogs: &CatalogChunk,
         original_offset: u64,
     ) -> nom::IResult<&'a [u8], MessageData> {
@@ -487,12 +584,12 @@ impl MessageData {
 
     /// Extract strings from an alt `UUIDText` file specified within the log entry that have `uuid_relative` flag set
     /// `UUIDText` files contains library and process and message string
-    pub fn extract_alt_uuid_strings<'a>(
+    fn extract_alt_uuid_strings<'a>(
         provider: &'a mut dyn FileProvider,
         string_offset: u64,
         uuid: &str,
-        first_proc_id: &u64,
-        second_proc_id: &u32,
+        first_proc_id: u64,
+        second_proc_id: u32,
         catalogs: &CatalogChunk,
         original_offset: u64,
     ) -> nom::IResult<&'a [u8], MessageData> {
@@ -654,8 +751,8 @@ impl MessageData {
     // Grab dsc file name from the Catalog data based on first and second proc ids from the Firehose log
     fn get_catalog_dsc(
         catalogs: &CatalogChunk,
-        first_proc_id: &u64,
-        second_proc_id: &u32,
+        first_proc_id: u64,
+        second_proc_id: u32,
     ) -> (String, String) {
         let mut dsc_uuid = String::new();
         let mut main_uuid = String::new();
@@ -696,8 +793,8 @@ mod tests {
         let (_, results) = MessageData::extract_shared_strings(
             &mut provider,
             test_offset,
-            &test_first_proc_id,
-            &test_second_proc_id,
+            test_first_proc_id,
+            test_second_proc_id,
             &log_data.catalog_data[0].catalog,
             0,
         )
@@ -731,8 +828,8 @@ mod tests {
         let (_, results) = MessageData::extract_shared_strings(
             &mut provider,
             bad_offset,
-            &test_first_proc_id,
-            &test_second_proc_id,
+            test_first_proc_id,
+            test_second_proc_id,
             &log_data.catalog_data[0].catalog,
             0,
         )
@@ -762,8 +859,8 @@ mod tests {
         let (_, results) = MessageData::extract_shared_strings(
             &mut provider,
             test_offset,
-            &test_first_proc_id,
-            &test_second_proc_id,
+            test_first_proc_id,
+            test_second_proc_id,
             &log_data.catalog_data[2].catalog,
             test_offset,
         )
@@ -797,8 +894,8 @@ mod tests {
         let (_, results) = MessageData::extract_format_strings(
             &mut provider,
             test_offset,
-            &test_first_proc_id,
-            &test_second_proc_id,
+            test_first_proc_id,
+            test_second_proc_id,
             &log_data.catalog_data[0].catalog,
             test_offset,
         )
@@ -829,8 +926,8 @@ mod tests {
         let (_, results) = MessageData::extract_format_strings(
             &mut provider,
             bad_offset,
-            &test_first_proc_id,
-            &test_second_proc_id,
+            test_first_proc_id,
+            test_second_proc_id,
             &log_data.catalog_data[0].catalog,
             0,
         )
@@ -860,8 +957,8 @@ mod tests {
         let (_, results) = MessageData::extract_format_strings(
             &mut provider,
             test_offset,
-            &test_first_proc_id,
-            &test_second_proc_id,
+            test_first_proc_id,
+            test_second_proc_id,
             &log_data.catalog_data[4].catalog,
             test_offset,
         )
@@ -899,8 +996,8 @@ mod tests {
         let (_, results) = MessageData::extract_format_strings(
             &mut provider,
             bad_offset,
-            &test_first_proc_id,
-            &test_second_proc_id,
+            test_first_proc_id,
+            test_second_proc_id,
             &log_data.catalog_data[4].catalog,
             bad_offset,
         )
@@ -936,8 +1033,8 @@ mod tests {
             &mut provider,
             test_absolute_offset,
             test_offset,
-            &test_first_proc_id,
-            &test_second_proc_id,
+            test_first_proc_id,
+            test_second_proc_id,
             &log_data.catalog_data[0].catalog,
             0,
         )
@@ -968,8 +1065,8 @@ mod tests {
             &mut provider,
             bad_offset,
             test_offset,
-            &test_first_proc_id,
-            &test_second_proc_id,
+            test_first_proc_id,
+            test_second_proc_id,
             &log_data.catalog_data[0].catalog,
             0,
         )
@@ -1002,8 +1099,8 @@ mod tests {
             &mut provider,
             test_absolute_offset,
             test_offset,
-            &test_first_proc_id,
-            &test_second_proc_id,
+            test_first_proc_id,
+            test_second_proc_id,
             &log_data.catalog_data[1].catalog,
             test_offset,
         )
@@ -1037,8 +1134,8 @@ mod tests {
             &mut provider,
             test_absolute_offset,
             bad_offset,
-            &test_first_proc_id,
-            &test_second_proc_id,
+            test_first_proc_id,
+            test_second_proc_id,
             &log_data.catalog_data[1].catalog,
             bad_offset,
         )
@@ -1074,8 +1171,8 @@ mod tests {
             &mut provider,
             test_offset,
             test_uuid,
-            &first_proc_id,
-            &second_proc_id,
+            first_proc_id,
+            second_proc_id,
             &log_data.catalog_data[0].catalog,
             0,
         )
@@ -1103,8 +1200,8 @@ mod tests {
         let test_second_proc_id = 342;
         let (dsc_uuid, main_uuid) = MessageData::get_catalog_dsc(
             &log_data.catalog_data[0].catalog,
-            &test_first_proc_id,
-            &test_second_proc_id,
+            test_first_proc_id,
+            test_second_proc_id,
         );
 
         assert_eq!(dsc_uuid, "80896B329EB13A10A7C5449B15305DE2");
