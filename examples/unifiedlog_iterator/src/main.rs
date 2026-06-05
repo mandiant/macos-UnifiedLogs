@@ -18,6 +18,7 @@ use std::fmt::Display;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tracing::{debug, error, info, warn};
@@ -203,15 +204,21 @@ impl From<Format> for &str {
     }
 }
 
-fn main() {
+// We return ExitCode instead of calling std::process::exit() so that all
+// destructors run on scope exit. This guarantees the tracing WorkerGuard
+// flushes any buffered log events before the process terminates (SIGINT path).
+fn main() -> ExitCode {
     let args = Args::parse();
 
     let log_file_opt = args.log_file_path.as_deref();
 
-    let _log_guard = init_logging(log_file_opt, args.verbosity_level).unwrap_or_else(|e| {
-        eprintln!("Failed to initialize logger: {e}");
-        std::process::exit(1);
-    });
+    let _log_guard = match init_logging(log_file_opt, args.verbosity_level) {
+        Ok(guard) => guard,
+        Err(e) => {
+            eprintln!("Failed to initialize logger: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
 
     info!("Starting Unified Log parser...");
 
@@ -313,7 +320,7 @@ fn main() {
                 );
             }
         }
-        std::process::exit(0);
+        return ExitCode::SUCCESS;
     }
 
     // Save bookmark on normal exit
@@ -335,6 +342,8 @@ fn main() {
     if let Err(e) = result {
         error!("Error during parsing: {error}", error = e);
     }
+
+    ExitCode::SUCCESS
 }
 
 fn parse_single_file(
