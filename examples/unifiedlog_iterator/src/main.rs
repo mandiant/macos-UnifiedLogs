@@ -577,7 +577,7 @@ fn parse_trace_file(
             {
                 return Err(BrokenPipeError);
             }
-            log::error!("Failed to output remaining log data: {err:?}");
+            error!("Failed to output remaining log data: {error}", error = err);
         }
     }
     info!(
@@ -599,7 +599,7 @@ fn iterate_chunks(
     let mut buf = Vec::new();
 
     if let Err(err) = reader.read_to_end(&mut buf) {
-        log::error!("Failed to read tracev3 file: {err:?}");
+        error!("Failed to read tracev3 file: {error}", error = err);
         return Ok((0, 0));
     }
 
@@ -646,7 +646,7 @@ fn iterate_chunks(
                 debug!("Broken pipe detected, saving bookmark before exit...");
                 return Err(BrokenPipeError);
             }
-            log::error!("Failed to output log data: {err:?}");
+            error!("Failed to output log data: {error}", error = err);
         }
 
         if missing_logs.catalog_data.is_empty()

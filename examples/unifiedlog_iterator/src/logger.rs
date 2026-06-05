@@ -12,7 +12,6 @@ use std::fs::OpenOptions;
 use std::path::Path;
 use tracing::field::{Field, Visit};
 use tracing::{Event, Subscriber};
-use tracing_log::LogTracer;
 use tracing_subscriber::fmt as tracing_fmt;
 use tracing_subscriber::registry::LookupSpan;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -124,7 +123,7 @@ where
 
 /// Log level configuration for CLI.
 ///
-/// This is separate from `log::LevelFilter` to get nice clap `ValueEnum` support.
+/// This is separate from `tracing_subscriber::filter::LevelFilter` to get nice clap `ValueEnum` support.
 #[derive(ValueEnum, Clone, Debug)]
 pub enum VerbosityLevel {
     Off,
@@ -169,9 +168,6 @@ pub fn init_logging(
     log_file: Option<&Path>,
     level: VerbosityLevel,
 ) -> Result<Option<tracing_appender::non_blocking::WorkerGuard>, Box<dyn std::error::Error>> {
-    // Forward `log` records (log crate macros) into tracing
-    let _ = LogTracer::init();
-
     let level_filter: tracing_subscriber::filter::LevelFilter = level.into();
 
     let stdout_layer = tracing_fmt::layer().with_writer(std::io::stderr);
@@ -193,10 +189,12 @@ pub fn init_logging(
         (None, None)
     };
 
-    let _ = tracing_subscriber::registry()
+    tracing_subscriber::registry()
         .with(level_filter)
         .with(stdout_layer)
         .with(json_layer)
-        .try_init();
+        .try_init()
+        .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+
     Ok(guard)
 }
