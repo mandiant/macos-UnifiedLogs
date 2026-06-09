@@ -533,9 +533,9 @@ impl FileProvider for LogarchiveProvider {
     }
 }
 
-/// Sort files by their source path, 
+/// Sort files by their source path,
 /// in order to have deterministic output of the parser.
-/// Not having it would cause parsing differences across systems 
+/// Not having it would cause parsing differences across systems
 /// (macOS does not guarantee order of files returned by the filesystem).
 fn sort_files(
     files: impl Iterator<Item = Box<dyn SourceFile>>,

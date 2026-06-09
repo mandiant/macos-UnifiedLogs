@@ -345,7 +345,7 @@ mod tests {
         assert_eq!(shared_strings_results[0].major_version, 1);
         assert_eq!(shared_strings_results[0].ranges.len(), 788);
         assert_eq!(shared_strings_results[0].uuids.len(), 532);
-        
+
         assert_eq!(shared_strings_results.len(), 2);
         assert_eq!(shared_strings_results[1].number_uuids, 1976);
         assert_eq!(shared_strings_results[1].number_ranges, 2993);
