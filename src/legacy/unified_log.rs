@@ -325,14 +325,14 @@ impl Iterator for LogIterator<'_> {
                     0x2 => {
                         // When has_other_current_aid (0x200) is set, id3 is the new activity
                         // and id1 is the parent. Otherwise id1 is the new activity with no parent.
-                        if firehose.firehose_activity.unknown_activity_id_3 != 0 {
+                        if firehose.firehose_activity.activity_id_3 != 0 {
                             log_data.activity_id =
-                                u64::from(firehose.firehose_activity.unknown_activity_id_3);
+                                u64::from(firehose.firehose_activity.activity_id_3);
                             log_data.parent_activity_id =
-                                u64::from(firehose.firehose_activity.unknown_activity_id);
+                                u64::from(firehose.firehose_activity.activity_id);
                         } else {
                             log_data.activity_id =
-                                u64::from(firehose.firehose_activity.unknown_activity_id);
+                                u64::from(firehose.firehose_activity.activity_id);
                         }
                         let message_data = FirehoseActivity::get_firehose_activity_strings(
                             &firehose.firehose_activity,
@@ -387,8 +387,7 @@ impl Iterator for LogIterator<'_> {
                         }
                     }
                     0x6 => {
-                        log_data.activity_id =
-                            u64::from(firehose.firehose_signpost.unknown_activity_id);
+                        log_data.activity_id = u64::from(firehose.firehose_signpost.activity_id);
                         let message_data = FirehoseSignpost::get_firehose_signpost(
                             &firehose.firehose_signpost,
                             self.provider,

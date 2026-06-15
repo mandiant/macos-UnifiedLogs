@@ -29,7 +29,7 @@ pub struct TimesyncBoot {
 pub struct Timesync {
     // Timestamps are in UTC
     pub signature: u32,
-    pub unknown_flags: u32,
+    pub flags: u32,
     pub kernel_time: u64, // Mach continuous timestamp
     pub walltime: i64,    // Number of nanoseconds since UNIXEPOCH
     pub timezone: u32,
@@ -112,7 +112,7 @@ impl TimesyncBoot {
     fn parse_timesync(data: &[u8]) -> nom::IResult<&[u8], Timesync> {
         let mut timesync = Timesync {
             signature: 0,
-            unknown_flags: 0,
+            flags: 0,
             kernel_time: 0,
             walltime: 0,
             timezone: 0,
@@ -128,14 +128,14 @@ impl TimesyncBoot {
             return Err(nom::Err::Incomplete(Needed::Unknown));
         }
 
-        let (input, timesync_unknown_flags) = le_u32(input)?;
+        let (input, timesync_flags) = le_u32(input)?;
         let (input, timesync_kernel_time) = le_u64(input)?;
         let (input, timesync_walltime) = le_i64(input)?;
         let (input, timesync_timezone) = le_u32(input)?;
         let (input, timesync_daylight_savings) = le_u32(input)?;
 
         timesync.signature = timesync_signature;
-        timesync.unknown_flags = timesync_unknown_flags;
+        timesync.flags = timesync_flags;
         timesync.kernel_time = timesync_kernel_time;
         timesync.walltime = timesync_walltime;
         timesync.timezone = timesync_timezone;
@@ -294,7 +294,7 @@ mod tests {
         ];
         let (_, timesync) = TimesyncBoot::parse_timesync(&test_data).unwrap();
         assert_eq!(timesync.signature, 0x207354);
-        assert_eq!(timesync.unknown_flags, 0);
+        assert_eq!(timesync.flags, 0);
         assert_eq!(timesync.kernel_time, 8529691813);
         assert_eq!(timesync.walltime, 1622314513655447000);
         assert_eq!(timesync.timezone, 0);

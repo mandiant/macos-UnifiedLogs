@@ -56,7 +56,7 @@ impl MessageData {
             && let Some(shared_string) = provider.cached_dsc(&dsc_uuid)
             && let Some(ranges) = shared_string.ranges.first()
         {
-            let uuid_index = ranges.unknown_uuid_index as usize;
+            let uuid_index = ranges.uuid_index as usize;
             let uuid_len = shared_string.uuids.len();
             if uuid_index >= uuid_len {
                 warn!(
@@ -126,7 +126,7 @@ impl MessageData {
                     let (_, message_string) = extract_string(message_start)?;
                     message_data.format_string = message_string;
 
-                    let uuid_index = ranges.unknown_uuid_index as usize;
+                    let uuid_index = ranges.uuid_index as usize;
                     let uuid_len = shared_string.uuids.len();
                     if uuid_index >= uuid_len {
                         warn!(
@@ -159,7 +159,7 @@ impl MessageData {
         if let Some(shared_string) = provider.cached_dsc(&dsc_uuid) {
             // Still get the image path/library for the log entry
             if let Some(ranges) = shared_string.ranges.first() {
-                let uuid_index = ranges.unknown_uuid_index as usize;
+                let uuid_index = ranges.uuid_index as usize;
                 let uuid_len = shared_string.uuids.len();
                 if uuid_index >= uuid_len {
                     warn!(

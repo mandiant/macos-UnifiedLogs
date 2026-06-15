@@ -48,9 +48,10 @@ For each unchecked commit below:
   - Port note: important behavior change. Port decoder error lookup and parser updates to both parser implementations.
   - Commit message to use: `Further nom updates and additional error code lookup (#112)`
 
-- [ ] `0e31c7d` - `Minor code cleanup (#113)`
+- [x] `0e31c7d` - `Minor code cleanup (#113)`
   - Main files: firehose, `oversize`, `dsc`, `filesystem`, `parser`, `timesync`, `unified_log`, `uuidtext`
   - Port note: review for behavioral cleanup versus style-only churn; avoid undoing rewrite-specific structure.
+  - Commit message to use: `Minor code cleanup (#113)`
 
 - [ ] `26644e7` - `Code cleanup and fixes (#114)`
   - Main files: dependencies, example, firehose `activity`, `flags`, `message`, `nonactivity`, `signpost`, `trace`

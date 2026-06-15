@@ -14,8 +14,8 @@ use serde::{Deserialize, Serialize};
 pub struct UUIDText {
     pub uuid: String,
     pub signature: u32,
-    pub unknown_major_version: u32,
-    pub unknown_minor_version: u32,
+    pub major_version: u32,
+    pub minor_version: u32,
     pub number_entries: u32,
     pub entry_descriptors: Vec<UUIDTextEntry>,
     pub footer_data: Vec<u8>, // Collection of strings containing sender process/library with end of string characters
@@ -40,13 +40,13 @@ impl UUIDText {
             return Err(nom::Err::Incomplete(Needed::Unknown));
         }
 
-        let (input, uuidtext_unknown_major_version) = le_u32(input)?;
-        let (input, uuidtext_unknown_minor_version) = le_u32(input)?;
+        let (input, uuidtext_major_version) = le_u32(input)?;
+        let (input, uuidtext_minor_version) = le_u32(input)?;
         let (mut input, uuidtext_number_entries) = le_u32(input)?;
 
         uuidtext_data.signature = uuidtext_signature;
-        uuidtext_data.unknown_major_version = uuidtext_unknown_major_version;
-        uuidtext_data.unknown_minor_version = uuidtext_unknown_minor_version;
+        uuidtext_data.major_version = uuidtext_major_version;
+        uuidtext_data.minor_version = uuidtext_minor_version;
         uuidtext_data.number_entries = uuidtext_number_entries;
 
         let mut count = 0;
@@ -83,8 +83,8 @@ mod tests {
 
         let (_, uuidtext_data) = UUIDText::parse_uuidtext(&buffer).unwrap();
         assert_eq!(uuidtext_data.signature, 0x66778899);
-        assert_eq!(uuidtext_data.unknown_major_version, 2);
-        assert_eq!(uuidtext_data.unknown_minor_version, 1);
+        assert_eq!(uuidtext_data.major_version, 2);
+        assert_eq!(uuidtext_data.minor_version, 1);
         assert_eq!(uuidtext_data.number_entries, 2);
         assert_eq!(uuidtext_data.entry_descriptors[0].entry_size, 617);
         assert_eq!(uuidtext_data.entry_descriptors[1].entry_size, 2301);
@@ -103,8 +103,8 @@ mod tests {
 
         let (_, uuidtext_data) = UUIDText::parse_uuidtext(&buffer).unwrap();
         assert_eq!(uuidtext_data.signature, 0x66778899);
-        assert_eq!(uuidtext_data.unknown_major_version, 2);
-        assert_eq!(uuidtext_data.unknown_minor_version, 1);
+        assert_eq!(uuidtext_data.major_version, 2);
+        assert_eq!(uuidtext_data.minor_version, 1);
         assert_eq!(uuidtext_data.number_entries, 1);
         assert_eq!(uuidtext_data.entry_descriptors[0].entry_size, 2740);
         assert_eq!(uuidtext_data.entry_descriptors[0].range_start_offset, 21132);

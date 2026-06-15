@@ -18,7 +18,7 @@ pub struct RawOversize<'a> {
     pub first_proc_id: u64,
     pub second_proc_id: u32,
     pub ttl: u8,
-    pub unknown_reserved: [u8; 3],
+    pub reserved: [u8; 3],
     pub continuous_time: u64,
     pub data_ref_index: u32,
     pub public_data_size: u16,
@@ -33,7 +33,7 @@ impl<'a> RawOversize<'a> {
         let (input, second_proc_id) = le_u32(input)?;
         let (input, ttl) = le_u8(input)?;
         let (input, reserved_bytes) = take(3_usize)(input)?;
-        let unknown_reserved: [u8; 3] = [reserved_bytes[0], reserved_bytes[1], reserved_bytes[2]];
+        let reserved: [u8; 3] = [reserved_bytes[0], reserved_bytes[1], reserved_bytes[2]];
         let (input, continuous_time) = le_u64(input)?;
         let (input, data_ref_index) = le_u32(input)?;
         let (input, public_data_size) = le_u16(input)?;
@@ -56,7 +56,7 @@ impl<'a> RawOversize<'a> {
                 first_proc_id,
                 second_proc_id,
                 ttl,
-                unknown_reserved,
+                reserved,
                 continuous_time,
                 data_ref_index,
                 public_data_size,
@@ -257,7 +257,7 @@ mod tests {
         assert_eq!(result.first_proc_id, 192);
         assert_eq!(result.second_proc_id, 193);
         assert_eq!(result.ttl, 14);
-        assert_eq!(result.unknown_reserved, [0, 0, 0]);
+        assert_eq!(result.reserved, [0, 0, 0]);
         assert_eq!(result.continuous_time, 12_381_160_463);
         assert_eq!(result.data_ref_index, 1);
         assert_eq!(result.public_data_size, 3322);
