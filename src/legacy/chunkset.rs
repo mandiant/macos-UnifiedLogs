@@ -5,8 +5,6 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-use std::mem::size_of;
-
 use log::{error, warn};
 use lz4_flex::decompress;
 use nom::{
@@ -39,17 +37,11 @@ impl ChunksetChunk {
     pub fn parse_chunkset(data: &[u8]) -> nom::IResult<&[u8], ChunksetChunk> {
         let mut chunkset_chunk = ChunksetChunk::default();
 
-        let (input, chunk_tag) = take(size_of::<u32>())(data)?;
-        let (input, chunk_sub_tag) = take(size_of::<u32>())(input)?;
-        let (input, chunk_data_size) = take(size_of::<u64>())(input)?;
-        let (input, signature) = take(size_of::<u32>())(input)?;
-        let (input, uncompress_size) = take(size_of::<u32>())(input)?;
-
-        let (_, chunkset_chunk_tag) = le_u32(chunk_tag)?;
-        let (_, chunkset_chunk_sub_tag) = le_u32(chunk_sub_tag)?;
-        let (_, chunkset_chunk_data_size) = le_u64(chunk_data_size)?;
-        let (_, chunkset_sig) = le_u32(signature)?;
-        let (_, chunkset_uncompress_size) = le_u32(uncompress_size)?;
+        let (input, chunkset_chunk_tag) = le_u32(data)?;
+        let (input, chunkset_chunk_sub_tag) = le_u32(input)?;
+        let (input, chunkset_chunk_data_size) = le_u64(input)?;
+        let (input, chunkset_sig) = le_u32(input)?;
+        let (input, chunkset_uncompress_size) = le_u32(input)?;
 
         let bv41 = 825521762; // bv41 signature
         let bv41_uncompressed = 758412898; // bv41- signature
@@ -58,8 +50,7 @@ impl ChunksetChunk {
         if chunkset_sig == bv41_uncompressed {
             let (input, uncompressed_data) = take(chunkset_uncompress_size)(input)?;
             chunkset_chunk.decompressed_data = uncompressed_data.to_vec();
-            let (input, footer) = take(size_of::<u32>())(input)?;
-            let (_, chunkset_footer) = le_u32(footer)?;
+            let (input, chunkset_footer) = le_u32(input)?;
             chunkset_chunk.footer = chunkset_footer;
             return Ok((input, chunkset_chunk));
         }
@@ -72,8 +63,7 @@ impl ChunksetChunk {
             return Err(nom::Err::Incomplete(Needed::Unknown));
         }
 
-        let (input, block_size) = take(size_of::<u32>())(input)?;
-        let (_, chunkset_block_size) = le_u32(block_size)?;
+        let (input, chunkset_block_size) = le_u32(input)?;
 
         chunkset_chunk.chunk_tag = chunkset_chunk_tag;
         chunkset_chunk.chunk_sub_tag = chunkset_chunk_sub_tag;
@@ -95,8 +85,7 @@ impl ChunksetChunk {
             }
         }
 
-        let (input, footer) = take(size_of::<u32>())(input)?;
-        let (_, chunkset_footer) = le_u32(footer)?;
+        let (input, chunkset_footer) = le_u32(input)?;
         chunkset_chunk.footer = chunkset_footer;
 
         Ok((input, chunkset_chunk))

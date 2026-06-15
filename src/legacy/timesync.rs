@@ -7,11 +7,9 @@
 
 use log::error;
 use nom::Needed;
-use nom::bytes::complete::take;
 use nom::number::complete::{be_u128, le_i64, le_u16, le_u32, le_u64};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::mem::size_of;
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct TimesyncBoot {
@@ -47,8 +45,7 @@ impl TimesyncBoot {
         let mut timesync_boot = TimesyncBoot::default();
 
         while !input.is_empty() {
-            let (_, signature) = take(size_of::<u32>())(input)?;
-            let (_, timesync_signature) = le_u32(signature)?;
+            let (_, timesync_signature) = le_u32(input)?;
 
             let timesync_sig: u32 = 0x207354;
             if timesync_signature == timesync_sig {
@@ -78,8 +75,7 @@ impl TimesyncBoot {
     }
 
     fn parse_timesync_boot(data: &[u8]) -> nom::IResult<&[u8], TimesyncBoot> {
-        let (input, signature) = take(size_of::<u16>())(data)?;
-        let (_, timesync_signature) = le_u16(signature)?;
+        let (input, timesync_signature) = le_u16(data)?;
 
         let expected_boot_signature = 0xbbb0;
         if expected_boot_signature != timesync_signature {
@@ -89,23 +85,14 @@ impl TimesyncBoot {
             return Err(nom::Err::Incomplete(Needed::Unknown));
         }
 
-        let (input, header_size) = take(size_of::<u16>())(input)?;
-        let (input, unknown) = take(size_of::<u32>())(input)?;
-        let (input, boot_uuid) = take(size_of::<u128>())(input)?;
-        let (input, timebase_numerator) = take(size_of::<u32>())(input)?;
-        let (input, timebase_denominator) = take(size_of::<u32>())(input)?;
-        let (input, boot_time) = take(size_of::<i64>())(input)?;
-        let (input, timezone_offset_mins) = take(size_of::<u32>())(input)?;
-        let (input, daylight_savings) = take(size_of::<u32>())(input)?;
-
-        let (_, timesync_header_size) = le_u16(header_size)?;
-        let (_, timesync_unknown) = le_u32(unknown)?;
-        let (_, timesync_boot_uuid) = be_u128(boot_uuid)?;
-        let (_, timesync_timebase_numerator) = le_u32(timebase_numerator)?;
-        let (_, timesync_timebase_denominator) = le_u32(timebase_denominator)?;
-        let (_, timesync_boot_time) = le_i64(boot_time)?;
-        let (_, timesync_timezone_offset_mins) = le_u32(timezone_offset_mins)?;
-        let (_, timesync_daylight_savings) = le_u32(daylight_savings)?;
+        let (input, timesync_header_size) = le_u16(input)?;
+        let (input, timesync_unknown) = le_u32(input)?;
+        let (input, timesync_boot_uuid) = be_u128(input)?;
+        let (input, timesync_timebase_numerator) = le_u32(input)?;
+        let (input, timesync_timebase_denominator) = le_u32(input)?;
+        let (input, timesync_boot_time) = le_i64(input)?;
+        let (input, timesync_timezone_offset_mins) = le_u32(input)?;
+        let (input, timesync_daylight_savings) = le_u32(input)?;
 
         let timesync_boot = TimesyncBoot {
             signature: timesync_signature,
@@ -131,8 +118,7 @@ impl TimesyncBoot {
             timezone: 0,
             daylight_savings: 0,
         };
-        let (input, signature) = take(size_of::<u32>())(data)?;
-        let (_, timesync_signature) = le_u32(signature)?;
+        let (input, timesync_signature) = le_u32(data)?;
 
         let expected_record_signature = 0x207354;
         if expected_record_signature != timesync_signature {
@@ -142,17 +128,11 @@ impl TimesyncBoot {
             return Err(nom::Err::Incomplete(Needed::Unknown));
         }
 
-        let (input, unknown_flags) = take(size_of::<u32>())(input)?;
-        let (input, kernel_time) = take(size_of::<u64>())(input)?;
-        let (input, walltime) = take(size_of::<i64>())(input)?;
-        let (input, timezone) = take(size_of::<u32>())(input)?;
-        let (input, daylight_savings) = take(size_of::<u32>())(input)?;
-
-        let (_, timesync_unknown_flags) = le_u32(unknown_flags)?;
-        let (_, timesync_kernel_time) = le_u64(kernel_time)?;
-        let (_, timesync_walltime) = le_i64(walltime)?;
-        let (_, timesync_timezone) = le_u32(timezone)?;
-        let (_, timesync_daylight_savings) = le_u32(daylight_savings)?;
+        let (input, timesync_unknown_flags) = le_u32(input)?;
+        let (input, timesync_kernel_time) = le_u64(input)?;
+        let (input, timesync_walltime) = le_i64(input)?;
+        let (input, timesync_timezone) = le_u32(input)?;
+        let (input, timesync_daylight_savings) = le_u32(input)?;
 
         timesync.signature = timesync_signature;
         timesync.unknown_flags = timesync_unknown_flags;

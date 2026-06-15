@@ -38,33 +38,21 @@ impl Statedump {
     pub fn parse_statedump(data: &[u8]) -> nom::IResult<&[u8], Statedump> {
         let mut statedump_results = Statedump::default();
 
-        let (input, chunk_tag) = take(size_of::<u32>())(data)?;
-        let (input, chunk_sub_tag) = take(size_of::<u32>())(input)?;
-        let (input, chunk_data_size) = take(size_of::<u64>())(input)?;
-        let (input, first_number_proc_id) = take(size_of::<u64>())(input)?;
-        let (input, second_number_proc_id) = take(size_of::<u32>())(input)?;
+        let (input, statedump_chunk_tag) = le_u32(data)?;
+        let (input, statedump_chunk_sub_tag) = le_u32(input)?;
+        let (input, statedump_chunk_data_size) = le_u64(input)?;
+        let (input, statedump_first_proc_id) = le_u64(input)?;
+        let (input, statedump_second_proc_id) = le_u32(input)?;
 
-        let (input, ttl) = take(size_of::<u8>())(input)?;
+        let (input, statedump_ttl) = le_u8(input)?;
         let unknown_reserved_size: u8 = 3;
         let (input, unknown_reserved) = take(unknown_reserved_size)(input)?;
-        let (input, continuous_time) = take(size_of::<u64>())(input)?;
-        let (input, activity_id) = take(size_of::<u64>())(input)?;
+        let (input, statedump_continous_time) = le_u64(input)?;
+        let (input, statedump_activity_id) = le_u64(input)?;
         let (input, uuid) = take(size_of::<u128>())(input)?;
-        let (input, unknown_data_type) = take(size_of::<u32>())(input)?;
+        let (input, statedump_unknown_data_type) = le_u32(input)?;
 
-        let (_, statedump_chunk_tag) = le_u32(chunk_tag)?;
-        let (_, statedump_chunk_sub_tag) = le_u32(chunk_sub_tag)?;
-        let (_, statedump_chunk_data_size) = le_u64(chunk_data_size)?;
-        let (_, statedump_first_proc_id) = le_u64(first_number_proc_id)?;
-        let (_, statedump_second_proc_id) = le_u32(second_number_proc_id)?;
-
-        let (_, statedump_ttl) = le_u8(ttl)?;
-        let (_, statedump_continous_time) = le_u64(continuous_time)?;
-        let (_, statedump_activity_id) = le_u64(activity_id)?;
-        let (_, statedump_unknown_data_type) = le_u32(unknown_data_type)?;
-
-        let (mut input, unknown_data_size) = take(size_of::<u32>())(input)?;
-        let (_, statedump_unknown_data_size) = le_u32(unknown_data_size)?;
+        let (mut input, statedump_unknown_data_size) = le_u32(input)?;
 
         let custom_decoder = 3;
         let string_size: u8 = 64;

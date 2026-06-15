@@ -11,7 +11,7 @@ The core type is `LogEntry<'a, 'b>` — a zero-copy log entry that borrows direc
 Extracted fields:
 
 - Process, Library, Subsystem, Category
-- PID, Thread ID, Activity ID, EUID
+- PID, Thread ID, Activity ID, Parent Activity ID, EUID
 - Timestamp (Intel and ARM)
 - Event Type, Log Type
 - Format string and lazy-formatted message
