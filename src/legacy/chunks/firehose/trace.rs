@@ -128,7 +128,7 @@ impl FirehoseTrace {
     }
 
     /// Get base log message string formatter from shared cache strings (dsc) or UUID text file for firehose trace log entries (chunks)
-    pub fn get_firehose_trace_strings<'a>(
+    pub(crate) fn get_firehose_trace_strings<'a>(
         provider: &'a mut dyn FileProvider,
         string_offset: u64,
         first_proc_id: u64,

@@ -30,8 +30,9 @@ impl FirehoseFormatters {
     ) -> nom::IResult<&[u8], FirehoseFormatters> {
         let mut formatter_flags = FirehoseFormatters::default();
 
-        let message_strings_uuid: u16 = 0x2; // main_exe flag
+        let message_strings_uuid = 0x2; // main_exe flag
         let large_shared_cache = 0xc; // large_shared_cache flag
+        let shared_cache = 0x4; // shared_cache flag
         let large_offset = 0x20; // has_large_offset flag
 
         let flag_check = 0xe;
@@ -58,6 +59,8 @@ impl FirehoseFormatters {
                     let (firehose_input, firehose_large_shared_cache) = le_u16(firehose_input)?;
                     formatter_flags.large_shared_cache = firehose_large_shared_cache;
                     input = firehose_input;
+                } else if (firehose_flags & shared_cache) != 0 {
+                    formatter_flags.shared_cache = true;
                 }
             }
             0xc => {

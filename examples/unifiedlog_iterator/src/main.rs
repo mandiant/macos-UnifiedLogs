@@ -499,12 +499,14 @@ fn parse_trace_file(
             continue;
         }
         info!("Parsing: {path}", path = source.source_path());
+        let path = source.source_path().to_string();
         match iterate_chunks(
             source.reader(),
             provider,
             timesync_data,
             writer,
             &mut parse_context,
+            path,
         ) {
             Ok((new_count, new_skipped)) => {
                 log_count += new_count;
@@ -577,6 +579,7 @@ fn iterate_chunks(
     timesync_data: &HashMap<String, TimesyncBoot>,
     writer: &mut OutputWriter,
     parse_context: &mut ParseContext,
+    path: String,
 ) -> Result<(usize, usize), BrokenPipeError> {
     let mut buf = Vec::new();
 
@@ -588,7 +591,7 @@ fn iterate_chunks(
     let log_iterator = UnifiedLogIterator {
         data: buf,
         header: Vec::new(),
-        evidence: String::new(),
+        evidence: path,
     };
 
     // Exclude missing data from returned output. Keep separate until we parse all oversize entries.

@@ -55,11 +55,20 @@ impl<'a> RawSignpostBody<'a> {
         let (input, data_ref) =
             cond(flags.contains(FirehoseFlags::HAS_OVERSIZE), le_u32).parse(input)?;
 
-        let (input, signpost_name) =
+        let (input, mut signpost_name) =
             cond(flags.contains(FirehoseFlags::HAS_NAME), le_u32).parse(input)?;
-        // If the signpost has large_shared_cache flag, skip 2 extra bytes after name
+        // If the signpost has large_shared_cache or shared_cache flag, skip 2 extra bytes
+        // after name and add the shared-cache name base.
+        if signpost_name.is_some()
+            && ((formatter.shared_cache && formatter.has_large_offset != 0)
+                || formatter.large_shared_cache != 0)
+        {
+            signpost_name = signpost_name.map(|name| name + 0x80000000);
+        }
         let (input, _) = cond(
-            signpost_name.is_some() && formatter.large_shared_cache != 0,
+            signpost_name.is_some()
+                && ((formatter.shared_cache && formatter.has_large_offset != 0)
+                    || formatter.large_shared_cache != 0),
             take(2_usize),
         )
         .parse(input)?;

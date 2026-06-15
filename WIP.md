@@ -53,9 +53,10 @@ For each unchecked commit below:
   - Port note: review for behavioral cleanup versus style-only churn; avoid undoing rewrite-specific structure.
   - Commit message to use: `Minor code cleanup (#113)`
 
-- [ ] `26644e7` - `Code cleanup and fixes (#114)`
+- [x] `26644e7` - `Code cleanup and fixes (#114)`
   - Main files: dependencies, example, firehose `activity`, `flags`, `message`, `nonactivity`, `signpost`, `trace`
   - Port note: likely overlaps heavily with moved firehose code. Apply after prior nom/firehose commits.
+  - Commit message to use: `Code cleanup and fixes (#114)`
 
 - [ ] `359aac4` - `Fix for has_large_offset flag and more tests (#115)`
   - Main files: `src/chunks/firehose/message.rs`, `tests/tahoe_tests.rs`
