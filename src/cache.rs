@@ -13,13 +13,14 @@ use crate::uuidtext::UUIDText;
 /// misses the cache takes an exclusive write lock only for the duration of the insert.
 ///
 /// # Multithreaded tracev3 processing
-/// ```rust,ignore
+/// ```rust,no_run
+/// use crate::macos_unifiedlogs::traits::FileProvider;
 /// use macos_unifiedlogs::cache::MemoryStringCache;
 /// use macos_unifiedlogs::filesystem::LogarchiveProvider;
 /// use macos_unifiedlogs::parser::{build_log, collect_timesync};
 /// use std::{path::PathBuf, sync::Arc};
 ///
-/// let provider = Arc::new(LogarchiveProvider::new(&path));
+/// let provider = Arc::new(LogarchiveProvider::new(&PathBuf::from("/tmp/log.logarchive")));
 /// let cache    = MemoryStringCache::default();
 /// let timesync = collect_timesync(provider.as_ref()).unwrap();
 ///
