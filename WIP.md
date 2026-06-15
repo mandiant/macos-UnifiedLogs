@@ -78,9 +78,10 @@ For each unchecked commit below:
   - Port note: exposed semantic message flags through legacy `LogData`, rewrite `LogEntry`, and compat `LogData`; rewrite derives the same ordered flags from parsed entry and formatter state.
   - Commit message to use: `Add message flags to output (#118)`
 
-- [ ] `cea3d79` - `Dependency Updates (#119)`
+- [x] `cea3d79` - `Dependency Updates (#119)`
   - Main files: root and example `Cargo.toml`
   - Port note: apply after code ports so dependency-driven API changes are easier to isolate.
+  - Commit message to use: `Dependency Updates (#119)`
 
 - [ ] `868d56a` - `Prep Changelog for next release (#120)`
   - Main files: `.changes/v0.6.0.md`, `CHANGELOG.md`
