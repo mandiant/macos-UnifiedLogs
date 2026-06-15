@@ -4,8 +4,8 @@
 //! legacy's owned `LogData` / `UnifiedLogData` types that integration tests expect.
 
 pub use crate::rewrite::log_entry::{EventType, LogType};
-
 use std::fmt;
+use serde::Serialize;
 
 // ---------------------------------------------------------------------------
 // Error
@@ -127,6 +127,29 @@ pub struct TimesyncBoot {
 // LogData — resolved log entry with owned fields
 // ---------------------------------------------------------------------------
 
+#[derive(Debug, Clone, Serialize, Default, PartialEq)]
+pub enum FirehoseItem {
+    String,
+    PrivateNumber,
+    Number,
+    PrivateString,
+    Precision,
+    Sensitive,
+    Object,
+    #[default]
+    Unknown,
+}
+
+#[derive(Debug, Default, Clone, Serialize)]
+pub struct FirehoseItemType {
+    pub item_type: u8,
+    pub item_type_size: u8,
+    pub offset: u16,
+    pub item_size: u16,
+    pub message_strings: String,
+    pub item: FirehoseItem,
+}
+
 /// A single resolved log entry with all fields as owned `String` types.
 ///
 /// Mirrors the legacy `LogData` struct field-for-field so integration tests
@@ -150,8 +173,7 @@ pub struct LogData {
     pub raw_message: String,
     pub boot_uuid: String,
     pub timezone_name: String,
-    /// Tests never inspect contents — always empty.
-    pub message_entries: Vec<()>,
+    pub message_entries: Vec<FirehoseItemType>,
     pub timestamp: String,
     pub evidence: String,
 }

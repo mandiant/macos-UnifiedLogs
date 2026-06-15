@@ -5,7 +5,7 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-use crate::chunks::firehose::firehose_log::{FirehoseItemData, FirehoseItemInfo, FirehosePreamble};
+use crate::chunks::firehose::firehose_log::{FirehoseItemData, FirehoseItemType, FirehosePreamble};
 use log::{info, warn};
 use nom::bytes::complete::take;
 use nom::number::complete::{le_u8, le_u16, le_u32, le_u64};
@@ -88,30 +88,20 @@ impl Oversize {
         first_proc_id: u64,
         second_proc_id: u32,
         oversize_data: &Vec<Oversize>,
-    ) -> Vec<FirehoseItemInfo> {
-        let mut message_strings: Vec<FirehoseItemInfo> = Vec::new();
-
+    ) -> Vec<FirehoseItemType> {
         for oversize in oversize_data {
             if data_ref == oversize.data_ref_index
                 && first_proc_id == oversize.first_proc_id
                 && second_proc_id == oversize.second_proc_id
             {
-                for message in &oversize.message_items.item_info {
-                    let oversize_firehose = FirehoseItemInfo {
-                        message_strings: message.message_strings.to_owned(),
-                        item_type: message.item_type,
-                        item_size: message.item_size,
-                    };
-                    message_strings.push(oversize_firehose);
-                }
-                return message_strings;
+                return oversize.message_items.item_info.clone();
             }
         }
         // We may not find any oversize data (data may have rolled from logs?)
         info!(
             "Did not find any oversize log entries from Data Ref ID: {data_ref}, First Proc ID: {first_proc_id}, and Second Proc ID: {second_proc_id}"
         );
-        message_strings
+        Vec::new()
     }
 }
 
@@ -120,7 +110,7 @@ mod tests {
     use std::fs;
     use std::path::PathBuf;
 
-    use crate::chunks::firehose::firehose_log::{FirehoseItemData, FirehoseItemInfo};
+    use crate::chunks::firehose::firehose_log::{FirehoseItemData, FirehoseItemType};
     use crate::chunks::oversize::Oversize;
 
     #[test]
@@ -357,17 +347,19 @@ mod tests {
             private_data_size: 0,
             message_items: FirehoseItemData {
                 item_info: vec![
-                    FirehoseItemInfo {
+                    FirehoseItemType {
                         message_strings: String::from("system kext collection"),
                         item_type: 34,
                         item_size: 0,
+                        ..Default::default()
                     },
-                    FirehoseItemInfo {
+                    FirehoseItemType {
                         message_strings: String::from(
                             "/System/Library/KernelCollections/SystemKernelExtensions.kc",
                         ),
                         item_type: 34,
                         item_size: 0,
+                        ..Default::default()
                     },
                 ],
                 backtrace_strings: Vec::new(),

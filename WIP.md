@@ -63,9 +63,10 @@ For each unchecked commit below:
   - Port note: high-priority correctness fix; add Tahoe fixture tests if test data is available.
   - Commit message to use: `Fix for has_large_offset flag and more tests (#115)`
 
-- [ ] `b2eadea` - `Added enums for firehose items (#116)`
+- [x] `b2eadea` - `Added enums for firehose items (#116)`
   - Main files: `firehose_log`, `message`, `trace`, `oversize`, decoder trait, `message`, `unified_log`, Tahoe tests
   - Port note: port enum model carefully into rewrite item/message types, not just legacy structures.
+  - Commit message to use: `Added enums for firehose items (#116)`
 
 - [ ] `fb9bec5` - `Updates to message assembly (#117)`
   - Main files: `src/message.rs`

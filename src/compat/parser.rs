@@ -6,13 +6,19 @@
 use std::collections::HashMap;
 use std::io::Read;
 
+use base64::Engine;
 use log::{error, info, warn};
 use uuid::Uuid;
 
 use crate::rewrite::chunk::{ChunksReader, TopChunk};
 use crate::rewrite::chunks::ChunkTag;
+use crate::rewrite::chunks::firehose::item::{
+    RawFirehoseItem, RawItemKind, RawItemValue, fill_private_data_compat, parse_items_data,
+    parse_trace_items,
+};
 use crate::rewrite::chunks::oversize::RawOversize;
 use crate::rewrite::dsc::RawSharedCacheStrings;
+use crate::rewrite::log_entry::{ItemsData, LogEntry};
 use crate::rewrite::logarchive::{
     load_file_buffers_by_uuid, load_timesync_data, load_uuidtext_buffers,
 };
@@ -23,8 +29,8 @@ use crate::rewrite::uuidtext::RawUUIDText;
 use super::filesystem::LogarchiveProvider;
 use super::traits::FileProvider;
 use super::unified_log::{
-    CatalogInfo, CountVec, HeaderInfo, LogData, OversizeEntry, ParserError, TimesyncBoot,
-    UnifiedLogCatalogData, UnifiedLogData,
+    CatalogInfo, CountVec, FirehoseItem, FirehoseItemType, HeaderInfo, LogData, OversizeEntry,
+    ParserError, TimesyncBoot, UnifiedLogCatalogData, UnifiedLogData,
 };
 
 // ---------------------------------------------------------------------------
@@ -277,6 +283,8 @@ pub fn build_log(
                 .format("%Y-%m-%dT%H:%M:%S%.9fZ")
                 .to_string();
 
+            let message_entries = compat_message_entries(&entry);
+
             logs.push(LogData {
                 subsystem,
                 thread_id: entry.thread_id,
@@ -296,7 +304,7 @@ pub fn build_log(
                 raw_message,
                 boot_uuid: format!("{:X}", entry.boot_uuid.simple()),
                 timezone_name: entry.timezone_name.to_string(),
-                message_entries: Vec::new(),
+                message_entries,
                 timestamp,
                 evidence: evidence.clone(),
             });
@@ -315,4 +323,78 @@ pub fn build_log(
     };
 
     (logs, remaining)
+}
+
+fn compat_message_entries(entry: &LogEntry<'_, '_>) -> Vec<FirehoseItemType> {
+    match &entry.items {
+        ItemsData::Regular {
+            data,
+            flags,
+            private_data_context,
+        } => {
+            let Ok((_, parsed)) = parse_items_data(data, *flags) else {
+                return Vec::new();
+            };
+            let mut items = parsed.items;
+
+            if let Some(ctx) = private_data_context {
+                fill_private_data_compat(
+                    &mut items,
+                    ctx.private_data,
+                    ctx.private_strings_offset,
+                    ctx.private_data_virtual_offset,
+                    ctx.collapsed,
+                );
+            }
+
+            items.iter().map(compat_item_from_raw).collect()
+        }
+        ItemsData::Trace { data } => parse_trace_items(data)
+            .iter()
+            .map(compat_item_from_raw)
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn compat_item_from_raw(item: &RawFirehoseItem<'_>) -> FirehoseItemType {
+    FirehoseItemType {
+        item_type: item.item_type.into(),
+        item_type_size: if matches!(item.item_type, RawItemKind::Number | RawItemKind::Precision) {
+            u8::try_from(item.item_size).unwrap_or(0)
+        } else {
+            0
+        },
+        offset: 0,
+        item_size: item.item_size,
+        message_strings: compat_item_value_to_string(item.value),
+        item: compat_item_kind(item.item_type),
+    }
+}
+
+fn compat_item_kind(kind: RawItemKind) -> FirehoseItem {
+    match kind {
+        RawItemKind::String | RawItemKind::Object | RawItemKind::BaseRaw => FirehoseItem::String,
+        RawItemKind::PrivateString
+        | RawItemKind::PrivateArbitrary
+        | RawItemKind::PrivateObject
+        | RawItemKind::Sensitive => FirehoseItem::PrivateString,
+        RawItemKind::Arbitrary => FirehoseItem::Object,
+        RawItemKind::PrivateNumber => FirehoseItem::PrivateNumber,
+        RawItemKind::Number => FirehoseItem::Number,
+        RawItemKind::Precision => FirehoseItem::Precision,
+        RawItemKind::Unknown => FirehoseItem::Unknown,
+    }
+}
+
+fn compat_item_value_to_string(value: RawItemValue<'_>) -> String {
+    match value {
+        RawItemValue::Empty => String::new(),
+        RawItemValue::I64(value) => value.to_string(),
+        RawItemValue::U64(value) => value.to_string(),
+        RawItemValue::Str(value) => value.to_string(),
+        RawItemValue::Bytes(value) => base64::engine::general_purpose::STANDARD.encode(value),
+        RawItemValue::Private { .. } => String::from("<private>"),
+        RawItemValue::Null => String::from("(null)"),
+    }
 }
