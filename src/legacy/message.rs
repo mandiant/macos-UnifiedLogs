@@ -10,7 +10,7 @@ use std::mem::size_of;
 use crate::chunks::firehose::firehose_log::FirehoseItemType;
 use crate::decoders::darwin::errno_codes;
 use crate::decoders::decoder;
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use nom::Parser;
 use nom::branch::alt;
 use nom::bytes::complete::{is_a, is_not, take, take_until};
@@ -308,12 +308,10 @@ fn parse_formatter<'a>(
     }
 
     let mut left_justify = false;
-    //let mut space_value = false;
     let mut hashtag = false;
     let mut pad_zero = false;
     let mut plus_minus = false;
     let mut width_index = 1;
-    //let mut has_apostrophe = false;
     for (index, format_values) in formatter.chars().enumerate() {
         if index == 0 {
             continue;
@@ -322,10 +320,8 @@ fn parse_formatter<'a>(
         match format_values {
             '-' => left_justify = true,
             '+' => plus_minus = true,
-            //' ' => space_value = true,
             '#' => hashtag = true,
             '0' => pad_zero = true,
-            // '\'' => has_apostrophe = true,
             _ => {
                 width_index = index;
                 break;
@@ -403,63 +399,47 @@ fn parse_formatter<'a>(
         return Ok(("", errno_codes(&message)));
     }
 
+    let alignment = if left_justify {
+        Alignment::Left
+    } else {
+        Alignment::Right
+    };
+
+    let padding = if pad_zero {
+        Padding::Zero
+    } else {
+        Padding::Space
+    };
+
+    let mut message_data = MessageFormatters {
+        item_string: None,
+        item_number: None,
+        item_float: None,
+        precision: Some(precision_value),
+        width: 0,
+        item_format: type_data.to_string(),
+        plus_minus,
+        hashtag,
+        alignment,
+        message,
+        number_format: NumberFormat::None,
+        padding,
+    };
+    determine_message_item(&mut message_data);
+
     if !width.is_empty() {
-        let mut width_value = 0;
         let width_results = width.parse::<usize>();
         match width_results {
-            Ok(value) => width_value = value,
+            Ok(value) => message_data.width = value,
             Err(err) => error!("[macos-unifiedlogs] Failed to parse format width value: {err:?}"),
         }
-        if pad_zero {
-            // Pad using zeros instead of spaces
-            if left_justify {
-                message = format_alignment_left(
-                    message,
-                    width_value,
-                    precision_value,
-                    type_data,
-                    plus_minus,
-                    hashtag,
-                )
-            } else {
-                message = format_alignment_right(
-                    message,
-                    width_value,
-                    precision_value,
-                    type_data,
-                    plus_minus,
-                    hashtag,
-                )
-            }
-        } else {
-            // Pad spaces instead of zeros
-            if left_justify {
-                message = format_alignment_left_space(
-                    message,
-                    width_value,
-                    precision_value,
-                    type_data,
-                    plus_minus,
-                    hashtag,
-                )
-            } else {
-                message = format_alignment_right_space(
-                    message,
-                    width_value,
-                    precision_value,
-                    type_data,
-                    plus_minus,
-                    hashtag,
-                )
-            }
-        }
-    } else if left_justify {
-        message = format_left(message, precision_value, type_data, plus_minus, hashtag)
-    } else {
-        message = format_right(message, precision_value, type_data, plus_minus, hashtag);
+
+        format_message_padding(&mut message_data);
+        return Ok(("", message_data.message));
     }
 
-    Ok(("", message))
+    format_message(&mut message_data);
+    Ok(("", message_data.message))
 }
 
 // Function to parse formatters containing types. Ex: %{errno}d, %{public}s, %{private}s, %{sensitive}
@@ -505,466 +485,489 @@ fn parse_signpost_format(signpost_format: &str) -> nom::IResult<&str, String> {
     Ok(("", signpost_message))
 }
 
-// Align the message to the left and pad using zeros instead of spaces
-fn format_alignment_left(
-    format_message: String,
-    format_width: usize,
-    format_precision: usize,
-    type_data: &str,
+#[derive(Debug)]
+struct MessageFormatters {
+    /// If Some then message item is a string
+    item_string: Option<String>,
+    /// If Some then message item is an integer
+    item_number: Option<i64>,
+    /// If Some then message item is float
+    item_float: Option<f64>,
+    precision: Option<usize>,
+    width: usize,
+    item_format: String,
     plus_minus: bool,
     hashtag: bool,
-) -> String {
-    let mut message = format_message;
-    let mut precision_value = format_precision;
+    /// Determines direction `padding` will be applied to
+    alignment: Alignment,
+    message: String,
+    /// Determines `item_number` format (Decimal, Octal, or Hex)
+    number_format: NumberFormat,
+    /// If width value is not 0. Then padding of Spaces or Zeros will be added (if required)
+    padding: Padding,
+}
+
+#[derive(Debug, PartialEq)]
+enum Padding {
+    Zero,
+    Space,
+}
+
+#[derive(Debug, PartialEq)]
+enum Alignment {
+    Left,
+    Right,
+}
+
+#[derive(Debug, PartialEq)]
+enum NumberFormat {
+    Octal,
+    Hex,
+    Decimal,
+    None,
+}
+
+/// Determine how the message item should be formatted as
+fn determine_message_item(message: &mut MessageFormatters) {
+    if FLOAT_TYPES.contains(&message.item_format.as_str()) {
+        message.item_float = Some(parse_float(message.message.clone()));
+    } else if INT_TYPES.contains(&message.item_format.as_str()) {
+        message.item_number = Some(parse_int(message.message.clone()));
+        message.number_format = NumberFormat::Decimal;
+    } else if OCTAL_TYPES.contains(&message.item_format.as_str()) {
+        message.item_number = Some(parse_int(message.message.clone()));
+        message.number_format = NumberFormat::Octal;
+    } else if HEX_TYPES.contains(&message.item_format.as_str()) {
+        message.item_number = Some(parse_int(message.message.clone()));
+        message.number_format = NumberFormat::Hex;
+    } else if STRING_TYPES.contains(&message.item_format.as_str()) {
+        message.item_string = Some(message.message.clone());
+    }
+}
+
+/// Format the event message with no padding
+fn format_message(message: &mut MessageFormatters) {
+    let mut precision_value = 0;
     let mut plus_option = String::new();
 
+    if let Some(precise) = message.precision {
+        precision_value = precise;
+    }
+    if message.plus_minus {
+        plus_option = String::from("+");
+    }
+
+    if let Some(item) = message.item_float {
+        if precision_value == 0 {
+            let message_float = item.to_string();
+            let float_precision: Vec<&str> = message_float.split('.').collect();
+            if float_precision.len() == 2 {
+                precision_value = float_precision[1].len();
+            }
+        }
+
+        if message.alignment == Alignment::Right {
+            message.message = format!("{plus_option}{item:>.precision_value$}");
+            return;
+        }
+
+        // Align to left <
+        message.message = format!("{plus_option}{item:<.precision_value$}");
+    } else if let Some(item) = message.item_number {
+        match message.number_format {
+            NumberFormat::Octal => {
+                if message.alignment == Alignment::Right {
+                    if message.hashtag {
+                        message.message = format!("{plus_option}{item:>#.precision_value$o}");
+                        return;
+                    }
+                    // No hashtag option aligned to the right
+                    message.message = format!("{plus_option}{item:>.precision_value$o}");
+                    return;
+                }
+
+                // Align to left <
+                if message.hashtag {
+                    message.message = format!("{plus_option}{item:<#.precision_value$o}");
+                    return;
+                }
+                // No hashtag option aligned to the left
+                message.message = format!("{plus_option}{item:<.precision_value$o}");
+            }
+            NumberFormat::Hex => {
+                if message.alignment == Alignment::Right {
+                    if message.hashtag {
+                        message.message = format!("{plus_option}{item:>#.precision_value$X}");
+                        return;
+                    }
+                    // No hashtag option aligned to the right
+                    message.message = format!("{plus_option}{item:>.precision_value$X}");
+                    return;
+                }
+
+                if message.hashtag {
+                    message.message = format!("{plus_option}{item:<#.precision_value$X}");
+                    return;
+                }
+                // No hashtag option aligned to the left
+                message.message = format!("{plus_option}{item:<.precision_value$X}");
+            }
+            NumberFormat::Decimal => {
+                if message.alignment == Alignment::Right {
+                    message.message = format!("{plus_option}{item:>.precision_value$}");
+                    return;
+                }
+
+                message.message = format!("{plus_option}{item:<.precision_value$}");
+            }
+            NumberFormat::None => {
+                error!("[macos-unifiedlogs] Got NumberFormat None for {message:?}")
+            }
+        }
+    } else if let Some(item) = &message.item_string {
+        if precision_value == 0 {
+            precision_value = item.len()
+        }
+        if message.alignment == Alignment::Right {
+            message.message = format!("{plus_option}{item:>.precision_value$}");
+            return;
+        }
+
+        // Align to left <
+        message.message = format!("{plus_option}{item:<.precision_value$}");
+    }
+}
+
+/// Format the event message using zeros or spaces as padding. All messages have alignment to left or right with padding if needed
+/// Message values can also have width and precision requirements
+fn format_message_padding(message: &mut MessageFormatters) {
+    let mut precision_value = 0;
+    let mut plus_option = String::new();
     let mut adjust_width = 0;
-    if plus_minus {
+
+    if let Some(precise) = message.precision {
+        precision_value = precise;
+    }
+    if message.plus_minus {
         plus_option = String::from("+");
         adjust_width = 1;
     }
 
-    if FLOAT_TYPES.contains(&type_data) {
-        let float_message = parse_float(message);
+    // Handle different types of message values
+    // 3 types: floats, integer, strings.
+    // Integers can be decimal, octal, or hex format
+    // All types can have precision requirements
+    if let Some(item) = message.item_float {
         if precision_value == 0 {
-            let message_float = float_message.to_string();
-            let float_precision: Vec<&str> = message_float.split('.').collect();
-            if float_precision.len() == 2 {
-                precision_value = float_precision[1].len();
-            }
-        }
-        message = format!(
-            "{plus_symbol}{float_message:0<width$.precision$}",
-            width = format_width - adjust_width,
-            precision = precision_value,
-            plus_symbol = plus_option
-        );
-    } else if INT_TYPES.contains(&type_data) {
-        let int_message = parse_int(message);
-        message = format!(
-            "{plus_symbol}{int_message:0<width$.precision$}",
-            width = format_width - adjust_width,
-            precision = precision_value,
-            plus_symbol = plus_option
-        );
-    } else if STRING_TYPES.contains(&type_data) {
-        if precision_value == 0 {
-            precision_value = message.len()
-        }
-        message = format!(
-            "{plus_symbol}{message:0<width$.precision$}",
-            width = format_width - adjust_width,
-            precision = precision_value,
-            plus_symbol = plus_option
-        );
-    } else if HEX_TYPES.contains(&type_data) {
-        let hex_message = parse_int(message);
-        if hashtag {
-            message = format!(
-                "{plus_symbol}{hex_message:0<#width$.precision$X}",
-                width = format_width - adjust_width,
-                precision = precision_value,
-                plus_symbol = plus_option
-            );
-        } else {
-            message = format!(
-                "{plus_symbol}{hex_message:0<width$.precision$X}",
-                width = format_width - adjust_width,
-                precision = precision_value,
-                plus_symbol = plus_option
-            );
-        }
-    } else if OCTAL_TYPES.contains(&type_data) {
-        let octal_message = parse_int(message);
-        if hashtag {
-            message = format!(
-                "{plus_symbol}{octal_message:0<#width$.precision$o}",
-                width = format_width - adjust_width,
-                precision = precision_value,
-                plus_symbol = plus_option
-            );
-        } else {
-            message = format!(
-                "{plus_symbol}{octal_message:0<width$.precision$o}",
-                width = format_width - adjust_width,
-                precision = precision_value,
-                plus_symbol = plus_option
-            );
-        }
-    }
-    message
-}
-
-// Align the message to the right and pad using zeros instead of spaces
-fn format_alignment_right(
-    format_message: String,
-    format_width: usize,
-    format_precision: usize,
-    type_data: &str,
-    plus_minus: bool,
-    hashtag: bool,
-) -> String {
-    let mut message = format_message;
-    let mut precision_value = format_precision;
-    let mut plus_option = String::new();
-
-    let mut adjust_width = 0;
-    if plus_minus {
-        plus_option = String::from("+");
-        adjust_width = 1;
-    }
-
-    if FLOAT_TYPES.contains(&type_data) {
-        let float_message = parse_float(message);
-        if precision_value == 0 {
-            let message_float = float_message.to_string();
-            let float_precision: Vec<&str> = message_float.split('.').collect();
-            if float_precision.len() == 2 {
-                precision_value = float_precision[1].len();
-            }
-        }
-        message = format!(
-            "{plus_symbol}{float_message:0>width$.precision$}",
-            width = format_width - adjust_width,
-            precision = precision_value,
-            plus_symbol = plus_option
-        );
-    } else if INT_TYPES.contains(&type_data) {
-        let int_message = parse_int(message);
-        message = format!(
-            "{plus_symbol}{int_message:0>width$.precision$}",
-            width = format_width - adjust_width,
-            precision = precision_value,
-            plus_symbol = plus_option
-        );
-    } else if STRING_TYPES.contains(&type_data) {
-        if precision_value == 0 {
-            precision_value = message.len()
-        }
-        message = format!(
-            "{plus_symbol}{message:0>width$.precision$}",
-            width = format_width - adjust_width,
-            precision = precision_value,
-            plus_symbol = plus_option
-        );
-    } else if HEX_TYPES.contains(&type_data) {
-        let hex_message = parse_int(message);
-        if hashtag {
-            message = format!(
-                "{plus_symbol}{hex_message:0>#width$.precision$X}",
-                width = format_width - adjust_width,
-                precision = precision_value,
-                plus_symbol = plus_option
-            );
-        } else {
-            message = format!(
-                "{plus_symbol}{hex_message:0>width$.precision$X}",
-                width = format_width - adjust_width,
-                precision = precision_value,
-                plus_symbol = plus_option
-            );
-        }
-    } else if OCTAL_TYPES.contains(&type_data) {
-        let octal_message = parse_int(message);
-        if hashtag {
-            message = format!(
-                "{plus_symbol}{octal_message:0>#width$.precision$o}",
-                width = format_width - adjust_width,
-                precision = precision_value,
-                plus_symbol = plus_option
-            );
-        } else {
-            message = format!(
-                "{plus_symbol}{octal_message:0>width$.precision$o}",
-                width = format_width - adjust_width,
-                precision = precision_value,
-                plus_symbol = plus_option
-            );
-        }
-    }
-    message
-}
-
-// Align the message to the left and pad using spaces
-fn format_alignment_left_space(
-    format_message: String,
-    format_width: usize,
-    format_precision: usize,
-    type_data: &str,
-    plus_minus: bool,
-    hashtag: bool,
-) -> String {
-    let mut message = format_message;
-    let mut precision_value = format_precision;
-    let mut plus_option = String::new();
-
-    let mut adjust_width = 0;
-    if plus_minus {
-        plus_option = String::from("+");
-        adjust_width = 1;
-    }
-
-    if FLOAT_TYPES.contains(&type_data) {
-        let float_message = parse_float(message);
-        if precision_value == 0 {
-            let message_float = float_message.to_string();
-            let float_precision: Vec<&str> = message_float.split('.').collect();
-            if float_precision.len() == 2 {
-                precision_value = float_precision[1].len();
-            }
-        }
-        message = format!(
-            "{plus_symbol}{float_message:<width$.precision$}",
-            width = format_width - adjust_width,
-            precision = precision_value,
-            plus_symbol = plus_option
-        );
-    } else if INT_TYPES.contains(&type_data) {
-        let int_message = parse_int(message);
-        message = format!(
-            "{plus_symbol}{int_message:<width$.precision$}",
-            width = format_width - adjust_width,
-            precision = precision_value,
-            plus_symbol = plus_option
-        );
-    } else if STRING_TYPES.contains(&type_data) {
-        if precision_value == 0 {
-            precision_value = message.len()
-        }
-        message = format!(
-            "{plus_symbol}{message:<width$.precision$}",
-            width = format_width - adjust_width,
-            precision = precision_value,
-            plus_symbol = plus_option
-        );
-    } else if HEX_TYPES.contains(&type_data) {
-        let hex_message = parse_int(message);
-        if hashtag {
-            message = format!(
-                "{plus_symbol}{hex_message:<#width$.precision$X}",
-                width = format_width - adjust_width,
-                precision = precision_value,
-                plus_symbol = plus_option
-            );
-        } else {
-            message = format!(
-                "{plus_symbol}{hex_message:<width$.precision$X}",
-                width = format_width - adjust_width,
-                precision = precision_value,
-                plus_symbol = plus_option
-            );
-        }
-    } else if OCTAL_TYPES.contains(&type_data) {
-        let octal_message = parse_int(message);
-        if hashtag {
-            message = format!(
-                "{plus_symbol}{octal_message:<#width$.precision$o}",
-                width = format_width - adjust_width,
-                precision = precision_value,
-                plus_symbol = plus_option
-            );
-        } else {
-            message = format!(
-                "{plus_symbol}{octal_message:<width$.precision$o}",
-                width = format_width - adjust_width,
-                precision = precision_value,
-                plus_symbol = plus_option
-            );
-        }
-    }
-    message
-}
-
-// Align the message to the right and pad using spaces
-fn format_alignment_right_space(
-    format_message: String,
-    format_width: usize,
-    format_precision: usize,
-    type_data: &str,
-    plus_minus: bool,
-    hashtag: bool,
-) -> String {
-    let mut message = format_message;
-    let mut precision_value = format_precision;
-    let mut plus_option = String::new();
-
-    let mut adjust_width = 0;
-    if plus_minus {
-        plus_option = String::from("+");
-        adjust_width = 1;
-    }
-
-    if FLOAT_TYPES.contains(&type_data) {
-        let float_message = parse_float(message);
-        if precision_value == 0 {
-            let message_float = float_message.to_string();
-            let float_precision: Vec<&str> = message_float.split('.').collect();
-            if float_precision.len() == 2 {
-                precision_value = float_precision[1].len();
-            }
-        }
-        message = format!(
-            "{plus_symbol}{float_message:>width$.precision$}",
-            width = format_width - adjust_width,
-            precision = precision_value,
-            plus_symbol = plus_option
-        );
-    } else if INT_TYPES.contains(&type_data) {
-        let int_message = parse_int(message);
-        message = format!(
-            "{plus_symbol}{int_message:>width$.precision$}",
-            width = format_width - adjust_width,
-            precision = precision_value,
-            plus_symbol = plus_option
-        );
-    } else if STRING_TYPES.contains(&type_data) {
-        if precision_value == 0 {
-            precision_value = message.len()
-        }
-        message = format!(
-            "{plus_symbol}{message:>width$.precision$}",
-            width = format_width - adjust_width,
-            precision = precision_value,
-            plus_symbol = plus_option
-        );
-    } else if HEX_TYPES.contains(&type_data) {
-        let hex_message = parse_int(message);
-        if hashtag {
-            message = format!(
-                "{plus_symbol}{hex_message:>#width$.precision$X}",
-                width = format_width - adjust_width,
-                precision = precision_value,
-                plus_symbol = plus_option
-            );
-        } else {
-            message = format!(
-                "{plus_symbol}{hex_message:>width$.precision$X}",
-                width = format_width - adjust_width,
-                precision = precision_value,
-                plus_symbol = plus_option
-            );
-        }
-    } else if OCTAL_TYPES.contains(&type_data) {
-        let octal_message = parse_int(message);
-        if hashtag {
-            message = format!(
-                "{plus_symbol}{octal_message:>#width$.precision$o}",
-                width = format_width - adjust_width,
-                precision = precision_value,
-                plus_symbol = plus_option
-            );
-        } else {
-            message = format!(
-                "{plus_symbol}{octal_message:>width$.precision$o}",
-                width = format_width - adjust_width,
-                precision = precision_value,
-                plus_symbol = plus_option
-            );
-        }
-    }
-    message
-}
-
-// Align the message to the left
-fn format_left(
-    format_message: String,
-    format_precision: usize,
-    type_data: &str,
-    plus_minus: bool,
-    hashtag: bool,
-) -> String {
-    let mut message = format_message;
-    let mut precision_value = format_precision;
-    let mut plus_option = String::new();
-
-    if plus_minus {
-        plus_option = String::from("+");
-    }
-
-    if FLOAT_TYPES.contains(&type_data) {
-        let float_message = parse_float(message);
-        if precision_value == 0 {
-            let message_float = float_message.to_string();
+            let message_float = item.to_string();
             let float_precision: Vec<&str> = message_float.split('.').collect();
             if float_precision.len() == 2 {
                 precision_value = float_precision[1].len();
             }
         }
 
-        message = format!("{plus_option}{float_message:<.precision_value$}");
-    } else if INT_TYPES.contains(&type_data) {
-        let int_message = parse_int(message);
-        message = format!("{plus_option}{int_message:<.precision_value$}");
-    } else if STRING_TYPES.contains(&type_data) {
-        if precision_value == 0 {
-            precision_value = message.len()
-        }
-        message = format!("{plus_option}{message:<.precision_value$}");
-    } else if HEX_TYPES.contains(&type_data) {
-        let hex_message = parse_int(message);
-        if hashtag {
-            message = format!("{plus_option}{hex_message:<#.precision_value$X}");
-        } else {
-            message = format!("{plus_option}{hex_message:<.precision_value$X}");
-        }
-    } else if OCTAL_TYPES.contains(&type_data) {
-        let octal_message = parse_int(message);
-        if hashtag {
-            message = format!("{plus_option}{octal_message:<#.precision_value$o}");
-        } else {
-            message = format!("{plus_option}{octal_message:<.precision_value$o}");
-        }
-    }
-    message
-}
+        // Use Zeros padding
+        if message.padding == Padding::Zero {
+            if message.alignment == Alignment::Right {
+                message.message = format!(
+                    "{plus_symbol}{item:0>width$.precision$}",
+                    width = message.width - adjust_width,
+                    precision = precision_value,
+                    plus_symbol = plus_option
+                );
+                return;
+            }
 
-// Align the message to the right (default)
-fn format_right(
-    format_message: String,
-    format_precision: usize,
-    type_data: &str,
-    plus_minus: bool,
-    hashtag: bool,
-) -> String {
-    let mut message = format_message;
-    let mut precision_value = format_precision;
-    let mut plus_option = String::new();
+            message.message = format!(
+                "{plus_symbol}{item:0<width$.precision$}",
+                width = message.width - adjust_width,
+                precision = precision_value,
+                plus_symbol = plus_option
+            );
+            return;
+        }
 
-    if plus_minus {
-        plus_option = String::from("+");
-    }
+        // Use Spaces padding
+        if message.alignment == Alignment::Right {
+            message.message = format!(
+                "{plus_symbol}{item:>width$.precision$}",
+                width = message.width - adjust_width,
+                precision = precision_value,
+                plus_symbol = plus_option
+            );
+            return;
+        }
 
-    if FLOAT_TYPES.contains(&type_data) {
-        let float_message = parse_float(message);
-        if precision_value == 0 {
-            let message_float = float_message.to_string();
-            let float_precision: Vec<&str> = message_float.split('.').collect();
-            if float_precision.len() == 2 {
-                precision_value = float_precision[1].len();
+        message.message = format!(
+            "{plus_symbol}{item:<width$.precision$}",
+            width = message.width - adjust_width,
+            precision = precision_value,
+            plus_symbol = plus_option
+        );
+    } else if let Some(item) = message.item_number {
+        match message.number_format {
+            NumberFormat::Octal => {
+                // Use Zeros padding
+                if message.padding == Padding::Zero {
+                    if message.alignment == Alignment::Right {
+                        if message.hashtag {
+                            message.message = format!(
+                                "{plus_symbol}{item:0>#width$.precision$o}",
+                                width = message.width - adjust_width,
+                                precision = precision_value,
+                                plus_symbol = plus_option
+                            );
+                            return;
+                        }
+                        // No hashtag option aligned to the right
+                        message.message = format!(
+                            "{plus_symbol}{item:0>width$.precision$o}",
+                            width = message.width - adjust_width,
+                            precision = precision_value,
+                            plus_symbol = plus_option
+                        );
+                        return;
+                    }
+
+                    // Align to left <
+                    if message.hashtag {
+                        message.message = format!(
+                            "{plus_symbol}{item:0<#width$.precision$o}",
+                            width = message.width - adjust_width,
+                            precision = precision_value,
+                            plus_symbol = plus_option
+                        );
+                        return;
+                    }
+                    // No hashtag option aligned to the left
+                    message.message = format!(
+                        "{plus_symbol}{item:0<width$.precision$o}",
+                        width = message.width - adjust_width,
+                        precision = precision_value,
+                        plus_symbol = plus_option
+                    );
+
+                    return;
+                }
+
+                // Use Spaces padding
+                if message.alignment == Alignment::Right {
+                    if message.hashtag {
+                        message.message = format!(
+                            "{plus_symbol}{item:>#width$.precision$o}",
+                            width = message.width - adjust_width,
+                            precision = precision_value,
+                            plus_symbol = plus_option
+                        );
+                        return;
+                    }
+                    // No hashtag option aligned to the right
+                    message.message = format!(
+                        "{plus_symbol}{item:>width$.precision$o}",
+                        width = message.width - adjust_width,
+                        precision = precision_value,
+                        plus_symbol = plus_option
+                    );
+                    return;
+                }
+
+                if message.hashtag {
+                    message.message = format!(
+                        "{plus_symbol}{item:<#width$.precision$o}",
+                        width = message.width - adjust_width,
+                        precision = precision_value,
+                        plus_symbol = plus_option
+                    );
+                    return;
+                }
+                // No hashtag option aligned to the left
+                message.message = format!(
+                    "{plus_symbol}{item:<width$.precision$o}",
+                    width = message.width - adjust_width,
+                    precision = precision_value,
+                    plus_symbol = plus_option
+                );
+            }
+            NumberFormat::Hex => {
+                // Use Zeros padding
+                if message.padding == Padding::Zero {
+                    if message.alignment == Alignment::Right {
+                        if message.hashtag {
+                            message.message = format!(
+                                "{plus_symbol}{item:0>#width$.precision$X}",
+                                width = message.width - adjust_width,
+                                precision = precision_value,
+                                plus_symbol = plus_option
+                            );
+                            return;
+                        }
+                        // No hashtag option aligned to the right
+                        message.message = format!(
+                            "{plus_symbol}{item:0>width$.precision$X}",
+                            width = message.width - adjust_width,
+                            precision = precision_value,
+                            plus_symbol = plus_option
+                        );
+                        return;
+                    }
+
+                    // Align to left <
+                    if message.hashtag {
+                        message.message = format!(
+                            "{plus_symbol}{item:0<#width$.precision$X}",
+                            width = message.width - adjust_width,
+                            precision = precision_value,
+                            plus_symbol = plus_option
+                        );
+                        return;
+                    }
+                    // No hashtag option aligned to the left
+                    message.message = format!(
+                        "{plus_symbol}{item:0<width$.precision$X}",
+                        width = message.width - adjust_width,
+                        precision = precision_value,
+                        plus_symbol = plus_option
+                    );
+
+                    return;
+                }
+
+                // Use Spaces padding
+                if message.alignment == Alignment::Right {
+                    if message.hashtag {
+                        message.message = format!(
+                            "{plus_symbol}{item:>#width$.precision$X}",
+                            width = message.width - adjust_width,
+                            precision = precision_value,
+                            plus_symbol = plus_option
+                        );
+                        return;
+                    }
+                    // No hashtag option aligned to the right
+                    message.message = format!(
+                        "{plus_symbol}{item:>width$.precision$X}",
+                        width = message.width - adjust_width,
+                        precision = precision_value,
+                        plus_symbol = plus_option
+                    );
+                    return;
+                }
+
+                if message.hashtag {
+                    message.message = format!(
+                        "{plus_symbol}{item:<#width$.precision$X}",
+                        width = message.width - adjust_width,
+                        precision = precision_value,
+                        plus_symbol = plus_option
+                    );
+                }
+                // No hashtag option aligned to the left
+                message.message = format!(
+                    "{plus_symbol}{item:0<width$.precision$X}",
+                    width = message.width - adjust_width,
+                    precision = precision_value,
+                    plus_symbol = plus_option
+                );
+            }
+            NumberFormat::Decimal => {
+                // Use Zeros padding
+                if message.padding == Padding::Zero {
+                    if message.alignment == Alignment::Right {
+                        message.message = format!(
+                            "{plus_symbol}{item:0>width$.precision$}",
+                            width = message.width - adjust_width,
+                            precision = precision_value,
+                            plus_symbol = plus_option
+                        );
+                        return;
+                    }
+
+                    // Align to left <
+                    message.message = format!(
+                        "{plus_symbol}{item:0<width$.precision$}",
+                        width = message.width - adjust_width,
+                        precision = precision_value,
+                        plus_symbol = plus_option
+                    );
+
+                    return;
+                }
+                // Use Spaces padding
+                if message.alignment == Alignment::Right {
+                    message.message = format!(
+                        "{plus_symbol}{item:>width$.precision$}",
+                        width = message.width - adjust_width,
+                        precision = precision_value,
+                        plus_symbol = plus_option
+                    );
+                    return;
+                }
+
+                message.message = format!(
+                    "{plus_symbol}{item:<width$.precision$}",
+                    width = message.width - adjust_width,
+                    precision = precision_value,
+                    plus_symbol = plus_option
+                );
+            }
+            NumberFormat::None => {
+                error!("[macos-unifiedlogs] Got NumberFormat None for {message:?}")
             }
         }
+    } else if let Some(item) = &message.item_string {
+        // Use Zeros padding
+        if message.padding == Padding::Zero {
+            if message.alignment == Alignment::Right {
+                if precision_value == 0 {
+                    precision_value = item.len()
+                }
+                message.message = format!(
+                    "{plus_symbol}{item:0>width$.precision$}",
+                    width = message.width - adjust_width,
+                    precision = precision_value,
+                    plus_symbol = plus_option
+                );
+                return;
+            }
 
-        message = format!("{plus_option}{float_message:>.precision_value$}");
-    } else if INT_TYPES.contains(&type_data) {
-        let int_message = parse_int(message);
-        message = format!("{plus_option}{int_message:>.precision_value$}");
-    } else if STRING_TYPES.contains(&type_data) {
+            if precision_value == 0 {
+                precision_value = item.len()
+            }
+            // Align to left <
+            message.message = format!(
+                "{plus_symbol}{item:0<width$.precision$}",
+                width = message.width - adjust_width,
+                precision = precision_value,
+                plus_symbol = plus_option
+            );
+
+            return;
+        }
+
+        // Use Spaces padding
+        if message.alignment == Alignment::Right {
+            if precision_value == 0 {
+                precision_value = item.len()
+            }
+            message.message = format!(
+                "{plus_symbol}{item:>width$.precision$}",
+                width = message.width - adjust_width,
+                precision = precision_value,
+                plus_symbol = plus_option
+            );
+            return;
+        }
+
         if precision_value == 0 {
-            precision_value = message.len()
+            precision_value = item.len()
         }
-        message = format!("{plus_option}{message:>.precision_value$}");
-    } else if HEX_TYPES.contains(&type_data) {
-        let hex_message = parse_int(message);
-        if hashtag {
-            message = format!("{plus_option}{hex_message:>#.precision_value$X}");
-        } else {
-            message = format!("{plus_option}{hex_message:>.precision_value$X}");
-        }
-    } else if OCTAL_TYPES.contains(&type_data) {
-        let octal_message = parse_int(message);
-        message = format!("{plus_option}{octal_message:>#.precision_value$o}");
+        message.message = format!(
+            "{plus_symbol}{item:<width$.precision$}",
+            width = message.width - adjust_width,
+            precision = precision_value,
+            plus_symbol = plus_option
+        );
     }
-    message
 }
 
 // Parse the float string log message to float value
@@ -984,7 +987,7 @@ fn parse_int(message: String) -> i64 {
     let int_results = message.parse::<i64>();
     match int_results {
         Ok(message) => return message,
-        Err(err) => warn!(
+        Err(err) => debug!(
             "[macos-unifiedlogs] Failed to parse int log message value: {message}, err: {err:?}. Log message possibly incorrectly formatted ex: printf(%u, \"message\") instead of printf(%u, 10). Apple may record message as '<decode: mismatch for [%u] got [STRING sz:10]>'",
         ),
     }
@@ -995,9 +998,9 @@ fn parse_int(message: String) -> i64 {
 mod tests {
     use crate::chunks::firehose::firehose_log::FirehoseItemType;
     use crate::message::{
-        format_alignment_left, format_alignment_left_space, format_alignment_right,
-        format_alignment_right_space, format_firehose_log_message, format_left, format_right,
-        parse_float, parse_formatter, parse_int, parse_signpost_format, parse_type_formatter,
+        Alignment, MessageFormatters, NumberFormat, Padding, format_firehose_log_message,
+        format_message, format_message_padding, parse_float, parse_formatter, parse_int,
+        parse_signpost_format, parse_type_formatter,
     };
     use regex::Regex;
 
@@ -1322,103 +1325,129 @@ mod tests {
     }
 
     #[test]
-    fn test_format_alignment_left() {
-        let test_type = "d";
-        let test_width = 4;
-        let test_precision = 0;
-        let test_format = String::from("2");
-        let plus_minus = false;
-        let hashtag = false;
-        let formatted_results = format_alignment_left(
-            test_format,
-            test_width,
-            test_precision,
-            test_type,
-            plus_minus,
-            hashtag,
-        );
-        assert_eq!(formatted_results, "2000");
+    fn test_format_message_padding() {
+        let mut message = MessageFormatters {
+            item_format: String::from("d"),
+            item_number: Some(2),
+            item_float: None,
+            item_string: None,
+            precision: None,
+            width: 4,
+            plus_minus: false,
+            hashtag: false,
+            alignment: Alignment::Left,
+            message: String::from("2"),
+            number_format: NumberFormat::Decimal,
+            padding: Padding::Zero,
+        };
+
+        format_message_padding(&mut message);
+        assert_eq!(message.message, "2000");
     }
 
     #[test]
-    fn test_format_alignment_right() {
-        let test_type = "d";
-        let test_width = 4;
-        let test_precision = 0;
-        let test_format = String::from("2");
-        let plus_minus = false;
-        let hashtag = false;
-        let formatted_results = format_alignment_right(
-            test_format,
-            test_width,
-            test_precision,
-            test_type,
-            plus_minus,
-            hashtag,
-        );
-        assert_eq!(formatted_results, "0002");
+    fn test_format_message_padding_right() {
+        let mut message = MessageFormatters {
+            item_format: String::from("d"),
+            item_number: Some(2),
+            item_float: None,
+            item_string: None,
+            precision: None,
+            width: 4,
+            plus_minus: false,
+            hashtag: false,
+            alignment: Alignment::Right,
+            message: String::from("2"),
+            number_format: NumberFormat::Decimal,
+            padding: Padding::Zero,
+        };
+
+        format_message_padding(&mut message);
+        assert_eq!(message.message, "0002");
     }
 
     #[test]
-    fn test_format_alignment_left_space() {
-        let test_type = "d";
-        let test_width = 4;
-        let test_precision = 0;
-        let test_format = String::from("2");
-        let plus_minus = false;
-        let hashtag = false;
-        let formatted_results = format_alignment_left_space(
-            test_format,
-            test_width,
-            test_precision,
-            test_type,
-            plus_minus,
-            hashtag,
-        );
-        assert_eq!(formatted_results, "2   ");
+    fn test_format_message_padding_space_left() {
+        let mut message = MessageFormatters {
+            item_string: None,
+            item_number: Some(2),
+            item_float: None,
+            precision: Some(0),
+            width: 4,
+            item_format: String::from("d"),
+            plus_minus: false,
+            hashtag: false,
+            alignment: Alignment::Left,
+            message: String::from("2"),
+            number_format: NumberFormat::Decimal,
+            padding: Padding::Space,
+        };
+
+        format_message_padding(&mut message);
+        assert_eq!(message.message, "2   ");
     }
 
     #[test]
-    fn test_format_alignment_right_space() {
-        let test_type = "d";
-        let test_width = 4;
-        let test_precision = 0;
-        let test_format = String::from("2");
-        let plus_minus = false;
-        let hashtag = false;
-        let formatted_results = format_alignment_right_space(
-            test_format,
-            test_width,
-            test_precision,
-            test_type,
-            plus_minus,
-            hashtag,
-        );
-        assert_eq!(formatted_results, "   2");
+    fn test_format_message_padding_right_space() {
+        let mut message = MessageFormatters {
+            item_string: None,
+            item_number: Some(2),
+            item_float: None,
+            precision: Some(0),
+            width: 4,
+            item_format: String::from("d"),
+            plus_minus: false,
+            hashtag: false,
+            alignment: Alignment::Right,
+            message: String::from("2"),
+            number_format: NumberFormat::Decimal,
+            padding: Padding::Space,
+        };
+
+        format_message_padding(&mut message);
+        assert_eq!(message.message, "   2");
     }
 
     #[test]
     fn test_format_left() {
-        let test_type = "d";
-        let test_precision = 0;
-        let test_format = String::from("2");
-        let plus_minus = false;
-        let hashtag = false;
-        let formatted_results =
-            format_left(test_format, test_precision, test_type, plus_minus, hashtag);
-        assert_eq!(formatted_results, "2");
+        let mut message = MessageFormatters {
+            item_string: None,
+            item_number: Some(2),
+            item_float: None,
+            precision: Some(0),
+            width: 4,
+            item_format: String::from("d"),
+            plus_minus: false,
+            hashtag: false,
+            alignment: Alignment::Left,
+            message: String::from("2"),
+            number_format: NumberFormat::Decimal,
+            padding: Padding::Zero,
+        };
+
+        format_message(&mut message);
+        assert_eq!(message.message, "2");
     }
 
     #[test]
     fn test_format_right() {
-        let test_type = "d";
-        let test_precision = 0;
-        let test_format = String::from("2");
-        let plus_minus = false;
-        let hashtag = false;
-        let formatted_results =
-            format_right(test_format, test_precision, test_type, plus_minus, hashtag);
-        assert_eq!(formatted_results, "2");
+        let mut message = MessageFormatters {
+            item_string: None,
+            item_number: Some(2),
+            item_float: None,
+            precision: Some(0),
+            width: 4,
+            item_format: String::from("d"),
+            plus_minus: false,
+            hashtag: false,
+            alignment: Alignment::Right,
+            message: String::from("2"),
+            number_format: NumberFormat::Decimal,
+            padding: Padding::Zero,
+        };
+
+        format_message(&mut message);
+        assert_eq!(message.message, "2");
     }
 
     #[test]

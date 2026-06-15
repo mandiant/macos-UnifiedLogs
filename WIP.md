@@ -68,9 +68,10 @@ For each unchecked commit below:
   - Port note: port enum model carefully into rewrite item/message types, not just legacy structures.
   - Commit message to use: `Added enums for firehose items (#116)`
 
-- [ ] `fb9bec5` - `Updates to message assembly (#117)`
+- [x] `fb9bec5` - `Updates to message assembly (#117)`
   - Main files: `src/message.rs`
-  - Port note: compare against `src/rewrite/format.rs`; this may map to lazy message formatting rather than legacy `message.rs` only.
+  - Port note: legacy message assembly refactor ported; rewrite formatter updated so plain octal formatting no longer forces alternate `0o` output in compat mode.
+  - Commit message to use: `Updates to message assembly (#117)`
 
 - [ ] `9c54de4` - `Add message flags to output (#118)`
   - Main files: firehose parsers and `src/unified_log.rs`

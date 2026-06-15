@@ -251,18 +251,7 @@ fn apply_format(output: &mut String, item: &RawFirehoseItem<'_>, spec: &FormatSp
 
     if is_octal_conversion(c) {
         let n = extract_int(&item.value);
-        // Old pipeline bug: format_right() in message.rs always uses `#` for octal
-        // (unlike hex which properly checks the hashtag flag). Replicate for parity.
-        #[cfg(feature = "rewrite-compat")]
-        {
-            let mut spec = spec.clone();
-            spec.alternate = true;
-            apply_octal_format(output, n, &spec);
-        }
-        #[cfg(not(feature = "rewrite-compat"))]
-        {
-            apply_octal_format(output, n, spec);
-        }
+        apply_octal_format(output, n, spec);
         return;
     }
 
@@ -425,6 +414,7 @@ fn apply_hex_format(output: &mut String, n: i64, spec: &FormatSpec) {
     }
 }
 
+#[cfg(not(feature = "rewrite-compat"))]
 fn hex_digits_len(n: i64) -> usize {
     format!("{:X}", n).len()
 }
@@ -1035,23 +1025,15 @@ mod tests {
         format_message(Some(fmt), &[i64_item(n)])
     }
 
-    // Octal without explicit `#` flag: under rewrite_behave_previous, the old pipeline
-    // always adds `#` (0o prefix), matching its format_right() behavior.
     #[test]
     fn octal() {
         let result = format_message(Some("%o"), &[i64_item(493)]);
-        #[cfg(feature = "rewrite-compat")]
-        assert_eq!(result, "0o755");
-        #[cfg(not(feature = "rewrite-compat"))]
         assert_eq!(result, "755");
     }
 
     #[test]
     fn octal_zero_pad() {
         let result = format_message(Some("%07o"), &[i64_item(100)]);
-        #[cfg(feature = "rewrite-compat")]
-        assert_eq!(result, "0o00144");
-        #[cfg(not(feature = "rewrite-compat"))]
         assert_eq!(result, "0000144");
     }
 
