@@ -73,9 +73,10 @@ For each unchecked commit below:
   - Port note: legacy message assembly refactor ported; rewrite formatter updated so plain octal formatting no longer forces alternate `0o` output in compat mode.
   - Commit message to use: `Updates to message assembly (#117)`
 
-- [ ] `9c54de4` - `Add message flags to output (#118)`
+- [x] `9c54de4` - `Add message flags to output (#118)`
   - Main files: firehose parsers and `src/unified_log.rs`
-  - Port note: expose flags consistently through legacy, rewrite `LogEntry`, and compat output.
+  - Port note: exposed semantic message flags through legacy `LogData`, rewrite `LogEntry`, and compat `LogData`; rewrite derives the same ordered flags from parsed entry and formatter state.
+  - Commit message to use: `Add message flags to output (#118)`
 
 - [ ] `cea3d79` - `Dependency Updates (#119)`
   - Main files: root and example `Cargo.toml`

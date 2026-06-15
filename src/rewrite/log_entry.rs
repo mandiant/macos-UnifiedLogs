@@ -58,6 +58,28 @@ pub enum LogType {
     Loss,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum MessageFlags {
+    SharedCache,
+    MainExe,
+    HasLargeOffset,
+    LargeSharedCache,
+    Absolute,
+    UuidRelative,
+    MainPlugin,
+    PcStyle,
+    HasUniquePid,
+    HasCurrentAid,
+    HasOtherAid,
+    HasRules,
+    HasName,
+    AltIndex,
+    Unknown,
+    HasPrivateData,
+    HasOversize,
+    HasSubsystem,
+}
+
 /// Context for filling private item values from the firehose private data section.
 #[derive(Debug, Clone, Copy)]
 pub struct PrivateDataContext<'b> {
@@ -139,6 +161,7 @@ pub struct LogEntry<'a, 'b> {
     pub format_string: Option<&'a str>,
     pub boot_uuid: Uuid,
     pub timezone_name: &'a str,
+    pub message_flags: Vec<MessageFlags>,
     // Private: deferred message data
     pub items: ItemsData<'b>,
     // Signpost fields — populated only for Signpost entries, 0 otherwise.
@@ -421,7 +444,7 @@ fn format_statedump_object(data: &[u8], title_name: &str) -> String {
 
 impl Serialize for LogEntry<'_, '_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut state = serializer.serialize_struct("LogEntry", 18)?;
+        let mut state = serializer.serialize_struct("LogEntry", 19)?;
         state.serialize_field("subsystem", &self.subsystem)?;
         state.serialize_field("category", &self.category)?;
         state.serialize_field("thread_id", &self.thread_id)?;
@@ -441,6 +464,7 @@ impl Serialize for LogEntry<'_, '_> {
         state.serialize_field("format_string", &self.effective_format_string())?;
         state.serialize_field("boot_uuid", &self.boot_uuid)?;
         state.serialize_field("timezone_name", self.timezone_name)?;
+        state.serialize_field("message_flags", &self.message_flags)?;
         state.end()
     }
 }

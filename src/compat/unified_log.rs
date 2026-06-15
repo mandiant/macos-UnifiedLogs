@@ -3,9 +3,9 @@
 //! These types bridge the rewrite pipeline's zero-copy `LogEntry` to the
 //! legacy's owned `LogData` / `UnifiedLogData` types that integration tests expect.
 
-pub use crate::rewrite::log_entry::{EventType, LogType};
-use std::fmt;
+pub use crate::rewrite::log_entry::{EventType, LogType, MessageFlags};
 use serde::Serialize;
+use std::fmt;
 
 // ---------------------------------------------------------------------------
 // Error
@@ -175,5 +175,6 @@ pub struct LogData {
     pub timezone_name: String,
     pub message_entries: Vec<FirehoseItemType>,
     pub timestamp: String,
+    pub message_flags: Vec<MessageFlags>,
     pub evidence: String,
 }

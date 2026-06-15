@@ -66,6 +66,7 @@ pub struct Firehose {
     pub firehose_trace: FirehoseTrace,
     pub item: u8,
     pub number_items: u8,
+    pub message_flags: Vec<MessageFlags>,
     /// Log values extracted
     pub message: FirehoseItemData,
 }
@@ -95,6 +96,28 @@ pub enum FirehoseItem {
     Object,
     #[default]
     Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub enum MessageFlags {
+    SharedCache,
+    MainExe,
+    HasLargeOffset,
+    LargeSharedCache,
+    Absolute,
+    UuidRelative,
+    MainPlugin,
+    PcStyle,
+    HasUniquePid,
+    HasCurrentAid,
+    HasOtherAid,
+    HasRules,
+    HasName,
+    AltIndex,
+    Unknown,
+    HasPrivateData,
+    HasOversize,
+    HasSubsystem,
 }
 
 #[derive(Debug, Clone, Default)]

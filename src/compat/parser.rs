@@ -306,6 +306,7 @@ pub fn build_log(
                 timezone_name: entry.timezone_name.to_string(),
                 message_entries,
                 timestamp,
+                message_flags: entry.message_flags.clone(),
                 evidence: evidence.clone(),
             });
         },

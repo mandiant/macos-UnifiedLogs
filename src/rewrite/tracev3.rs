@@ -6,13 +6,14 @@ use super::chunks::ChunkTag;
 use super::chunks::firehose::RawFirehose;
 use super::chunks::firehose::body::{RawActivityBody, RawFirehoseBody, RawFormatterFlags};
 use super::chunks::firehose::entry::FirehoseLogType;
+use super::chunks::firehose::flags::{FirehoseFlags, FormatterType};
 use super::chunks::oversize::RawOversize;
 use super::chunks::simpledump::RawSimpleDump;
 use super::chunks::statedump::RawStatedump;
 use super::dsc::RawSharedCacheStrings;
 use super::error::{NomExt, ParseError};
 use super::header::RawHeaderChunk;
-use super::log_entry::{EventType, ItemsData, LogEntry, LogType, PrivateDataContext};
+use super::log_entry::{EventType, ItemsData, LogEntry, LogType, MessageFlags, PrivateDataContext};
 use super::resolve::resolve_strings;
 use super::timesync::TimestampResolver;
 use super::uuidtext::RawUUIDText;
@@ -250,6 +251,7 @@ fn flush_deferred_entries<'a>(
                         format_string: None,
                         boot_uuid: header.boot_uuid,
                         timezone_name,
+                        message_flags: Vec::new(),
                         items: ItemsData::Simpledump {
                             subsystem: sd.subsystem,
                             message: sd.message_string,
@@ -307,6 +309,7 @@ fn flush_deferred_entries<'a>(
                         format_string: None,
                         boot_uuid: header.boot_uuid,
                         timezone_name,
+                        message_flags: Vec::new(),
                         items: ItemsData::Statedump {
                             title_name: sd.title_name,
                             decoder_library: sd.decoder_library,
@@ -464,6 +467,7 @@ fn visit_firehose_entries<'a: 'b, 'b>(
                     format_string: None,
                     boot_uuid,
                     timezone_name,
+                    message_flags: Vec::new(),
                     items: ItemsData::Loss {
                         count: b.count,
                         start_time: b.start_time,
@@ -542,6 +546,7 @@ fn visit_firehose_entries<'a: 'b, 'b>(
                 _ => None,
             }
         };
+        let message_flags = message_flags_for_body(&body, entry.flags, &formatter);
         let items = if let Some(data_ref) = data_ref {
             match oversize_cache.get(data_ref, fh.first_proc_id, fh.second_proc_id) {
                 Some(d) => ItemsData::Regular {
@@ -601,6 +606,7 @@ fn visit_firehose_entries<'a: 'b, 'b>(
             format_string: resolved.format_string,
             boot_uuid,
             timezone_name,
+            message_flags,
             items,
             signpost_id,
             signpost_name,
@@ -614,6 +620,102 @@ fn visit_firehose_entries<'a: 'b, 'b>(
 // ---------------------------------------------------------------------------
 // Mapping helpers
 // ---------------------------------------------------------------------------
+
+fn message_flags_for_body(
+    body: &RawFirehoseBody<'_>,
+    flags: FirehoseFlags,
+    formatter: &RawFormatterFlags,
+) -> Vec<MessageFlags> {
+    let mut message_flags = Vec::new();
+
+    match body {
+        RawFirehoseBody::Activity(body) => {
+            if body.pid.is_some() {
+                message_flags.push(MessageFlags::HasUniquePid);
+            }
+            if body.current_aid.is_some() {
+                message_flags.push(MessageFlags::HasCurrentAid);
+            }
+            if body.other_aid.is_some() {
+                message_flags.push(MessageFlags::HasOtherAid);
+            }
+            push_formatter_message_flags(flags, formatter, &mut message_flags);
+        }
+        RawFirehoseBody::NonActivity(body) => {
+            if body.activity_id.is_some() {
+                message_flags.push(MessageFlags::HasCurrentAid);
+            }
+            if body.private_strings.is_some() {
+                message_flags.push(MessageFlags::HasPrivateData);
+            }
+            push_formatter_message_flags(flags, formatter, &mut message_flags);
+            if body.subsystem.is_some() {
+                message_flags.push(MessageFlags::HasSubsystem);
+            }
+            if body.ttl.is_some() {
+                message_flags.push(MessageFlags::HasRules);
+            }
+            if body.data_ref.is_some() {
+                message_flags.push(MessageFlags::HasOversize);
+            }
+        }
+        RawFirehoseBody::Signpost(body) => {
+            if body.activity_id.is_some() {
+                message_flags.push(MessageFlags::HasCurrentAid);
+            }
+            if body.private_strings.is_some() {
+                message_flags.push(MessageFlags::HasPrivateData);
+            }
+            push_formatter_message_flags(flags, formatter, &mut message_flags);
+            if body.subsystem.is_some() {
+                message_flags.push(MessageFlags::HasSubsystem);
+            }
+            if body.ttl.is_some() {
+                message_flags.push(MessageFlags::HasRules);
+            }
+            if body.data_ref.is_some() {
+                message_flags.push(MessageFlags::HasOversize);
+            }
+        }
+        _ => {}
+    }
+
+    message_flags
+}
+
+fn push_formatter_message_flags(
+    flags: FirehoseFlags,
+    formatter: &RawFormatterFlags,
+    message_flags: &mut Vec<MessageFlags>,
+) {
+    match FormatterType::from((flags.bits() & 0x000E) as u8) {
+        FormatterType::LargeSharedCache => {
+            if formatter.has_large_offset != 0 {
+                message_flags.push(MessageFlags::HasLargeOffset);
+            }
+            message_flags.push(MessageFlags::LargeSharedCache);
+        }
+        FormatterType::Absolute => {
+            message_flags.push(MessageFlags::Absolute);
+            message_flags.push(MessageFlags::AltIndex);
+        }
+        FormatterType::MainExe => {
+            message_flags.push(MessageFlags::MainExe);
+        }
+        FormatterType::SharedCache => {
+            message_flags.push(MessageFlags::SharedCache);
+            if formatter.has_large_offset != 0 {
+                message_flags.push(MessageFlags::HasLargeOffset);
+            }
+        }
+        FormatterType::UuidRelative => {
+            message_flags.push(MessageFlags::UuidRelative);
+        }
+        FormatterType::Unknown => {
+            message_flags.push(MessageFlags::Unknown);
+        }
+    }
+}
 
 fn map_activity_log_type(log_type: FirehoseLogType) -> LogType {
     match log_type {
@@ -809,6 +911,78 @@ mod tests {
         };
 
         assert_eq!(activity_and_parent_ids(&activity), (30, Some(10)));
+    }
+
+    #[test]
+    fn test_message_flags_for_activity() {
+        let activity = RawActivityBody {
+            activity_id: Some((10, 0)),
+            pid: Some(236),
+            current_aid: Some((10, 0)),
+            other_aid: Some((30, 0)),
+            pc_id: 0,
+            formatter: RawFormatterFlags {
+                has_large_offset: 1,
+                large_shared_cache: 2,
+                ..Default::default()
+            },
+            items_data: &[],
+        };
+        let body = RawFirehoseBody::Activity(activity);
+        let flags = FirehoseFlags::HAS_UNIQUE_PID
+            | FirehoseFlags::HAS_CURRENT_AID
+            | FirehoseFlags::HAS_SUBSYSTEM
+            | FirehoseFlags::HAS_LARGE_OFFSET
+            | FirehoseFlags::from_bits_retain(0x000c);
+
+        assert_eq!(
+            message_flags_for_body(&body, flags, &activity.formatter),
+            vec![
+                MessageFlags::HasUniquePid,
+                MessageFlags::HasCurrentAid,
+                MessageFlags::HasOtherAid,
+                MessageFlags::HasLargeOffset,
+                MessageFlags::LargeSharedCache,
+            ]
+        );
+    }
+
+    #[test]
+    fn test_message_flags_for_non_activity() {
+        use crate::rewrite::chunks::firehose::nonactivity::RawNonActivityBody;
+
+        let nonactivity = RawNonActivityBody {
+            activity_id: Some((10, 0)),
+            private_strings: Some((1, 2)),
+            pc_id: 0,
+            formatter: RawFormatterFlags {
+                main_exe: true,
+                ..Default::default()
+            },
+            subsystem: Some(41),
+            ttl: Some(1),
+            data_ref: Some(2),
+            items_data: &[],
+        };
+        let body = RawFirehoseBody::NonActivity(nonactivity);
+        let flags = FirehoseFlags::HAS_CURRENT_AID
+            | FirehoseFlags::HAS_PRIVATE_DATA
+            | FirehoseFlags::HAS_SUBSYSTEM
+            | FirehoseFlags::HAS_RULES
+            | FirehoseFlags::HAS_OVERSIZE
+            | FirehoseFlags::from_bits_retain(0x0002);
+
+        assert_eq!(
+            message_flags_for_body(&body, flags, &nonactivity.formatter),
+            vec![
+                MessageFlags::HasCurrentAid,
+                MessageFlags::HasPrivateData,
+                MessageFlags::MainExe,
+                MessageFlags::HasSubsystem,
+                MessageFlags::HasRules,
+                MessageFlags::HasOversize,
+            ]
+        );
     }
 
     // --- extract_timezone_name tests ---
