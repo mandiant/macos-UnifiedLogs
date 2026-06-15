@@ -33,9 +33,10 @@ For each unchecked commit below:
   - Port note: add parent activity output through legacy structs, rewrite `LogEntry`/format path if applicable, compat API, and the example binary.
   - Commit message to use: `feat(unified_log): add support for parent activity ID (#109)`
 
-- [ ] `bcd444d` - `Test and dependency updates (#110)`
+- [x] `bcd444d` - `Test and dependency updates (#110)`
   - Main files: `Cargo.toml`, `examples/unifiedlog_iterator/Cargo.toml`, `tests/big_sur_tests.rs`
   - Port note: review dependency changes and test fixture expectations before applying.
+  - Commit message to use: `Test and dependency updates (#110)`
 
 - [ ] `c43f3f4` - `Minor update to nom parsing (#111)`
   - Main files: `src/chunks/{oversize,simpledump,statedump}.rs`, `src/chunkset.rs`, `src/{dsc,header,timesync,uuidtext}.rs`, docs/CI
