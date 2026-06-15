@@ -23,8 +23,8 @@ use crate::rewrite::uuidtext::RawUUIDText;
 use super::filesystem::LogarchiveProvider;
 use super::traits::FileProvider;
 use super::unified_log::{
-    CatalogInfo, CountVec, HeaderInfo, LogData, OversizeEntry, ParserError,
-    TimesyncBoot, UnifiedLogCatalogData, UnifiedLogData,
+    CatalogInfo, CountVec, HeaderInfo, LogData, OversizeEntry, ParserError, TimesyncBoot,
+    UnifiedLogCatalogData, UnifiedLogData,
 };
 
 // ---------------------------------------------------------------------------
@@ -285,6 +285,7 @@ pub fn build_log(
                 library: entry.library.unwrap_or("").to_string(),
                 library_uuid: format!("{:X}", entry.library_uuid.simple()),
                 activity_id: entry.activity_id,
+                parent_activity_id: entry.parent_activity_id.unwrap_or(0),
                 time: entry.time,
                 category: entry.category.unwrap_or("").to_string(),
                 event_type: entry.event_type,

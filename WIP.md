@@ -28,9 +28,10 @@ For each unchecked commit below:
 
 ## Commit Checklist
 
-- [ ] `bf5bb3d` - `feat(unified_log): add support for parent activity ID (#109)`
+- [x] `bf5bb3d` - `feat(unified_log): add support for parent activity ID (#109)`
   - Main files: `src/unified_log.rs`, `examples/unifiedlog_iterator/src/main.rs`
   - Port note: add parent activity output through legacy structs, rewrite `LogEntry`/format path if applicable, compat API, and the example binary.
+  - Commit message to use: `feat(unified_log): add support for parent activity ID (#109)`
 
 - [ ] `bcd444d` - `Test and dependency updates (#110)`
   - Main files: `Cargo.toml`, `examples/unifiedlog_iterator/Cargo.toml`, `tests/big_sur_tests.rs`

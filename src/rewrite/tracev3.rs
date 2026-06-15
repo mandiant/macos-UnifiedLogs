@@ -4,7 +4,7 @@ use super::catalog::RawCatalogChunk;
 use super::chunk::{ChunkSetReader, ChunksReader, TopChunk};
 use super::chunks::ChunkTag;
 use super::chunks::firehose::RawFirehose;
-use super::chunks::firehose::body::{RawFirehoseBody, RawFormatterFlags};
+use super::chunks::firehose::body::{RawActivityBody, RawFirehoseBody, RawFormatterFlags};
 use super::chunks::firehose::entry::FirehoseLogType;
 use super::chunks::oversize::RawOversize;
 use super::chunks::simpledump::RawSimpleDump;
@@ -184,7 +184,12 @@ pub fn visit_tracev3<'a>(
     }
 
     // Flush remaining deferred entries at EOF
-    flush_deferred_entries(&mut deferred_readers, &current_header, resolver, &mut callback);
+    flush_deferred_entries(
+        &mut deferred_readers,
+        &current_header,
+        resolver,
+        &mut callback,
+    );
 
     Ok(())
 }
@@ -236,6 +241,7 @@ fn flush_deferred_entries<'a>(
                         library: None,
                         library_uuid: sd.sender_uuid,
                         activity_id: 0,
+                        parent_activity_id: None,
                         time,
                         event_type: EventType::Simpledump,
                         log_type: LogType::Simpledump,
@@ -292,6 +298,7 @@ fn flush_deferred_entries<'a>(
                         library: None,
                         library_uuid: Uuid::nil(),
                         activity_id: sd.activity_id,
+                        parent_activity_id: None,
                         time,
                         event_type: EventType::Statedump,
                         log_type: LogType::Statedump,
@@ -369,96 +376,109 @@ fn visit_firehose_entries<'a: 'b, 'b>(
         };
 
         // Extract body-specific fields
-        let (event_type, log_type, activity_id, subsystem_value, data_ref, pc_id, formatter) =
-            match &body {
-                RawFirehoseBody::Activity(b) => (
+        let (
+            event_type,
+            log_type,
+            activity_id,
+            parent_activity_id,
+            subsystem_value,
+            data_ref,
+            pc_id,
+            formatter,
+        ) = match &body {
+            RawFirehoseBody::Activity(b) => {
+                let (activity_id, parent_activity_id) = activity_and_parent_ids(b);
+                (
                     EventType::Activity,
                     map_activity_log_type(entry.log_type),
-                    combine_activity_id(b.activity_id),
+                    activity_id,
+                    parent_activity_id,
                     None,
                     None,
                     b.pc_id,
                     b.formatter,
-                ),
-                RawFirehoseBody::NonActivity(b) => (
-                    EventType::Log,
-                    map_default_log_type(entry.log_type),
-                    combine_activity_id(b.activity_id),
-                    b.subsystem,
-                    b.data_ref,
-                    b.pc_id,
-                    b.formatter,
-                ),
-                RawFirehoseBody::Signpost(b) => (
-                    EventType::Signpost,
-                    map_signpost_log_type(entry.log_type),
-                    combine_activity_id(b.activity_id),
-                    b.subsystem,
-                    b.data_ref,
-                    b.pc_id,
-                    b.formatter,
-                ),
-                RawFirehoseBody::Trace(b) => (
-                    EventType::Trace,
-                    LogType::Default,
-                    0,
-                    None,
-                    None,
-                    b.pc_id,
-                    RawFormatterFlags::default(),
-                ),
-                RawFirehoseBody::Loss(b) => {
-                    let abs_ct = entry.absolute_continuous_time(fh.base_continuous_time);
-                    let time = resolver.resolve(&boot_uuid, abs_ct, fh.base_continuous_time);
+                )
+            }
+            RawFirehoseBody::NonActivity(b) => (
+                EventType::Log,
+                map_default_log_type(entry.log_type),
+                combine_activity_id(b.activity_id),
+                None,
+                b.subsystem,
+                b.data_ref,
+                b.pc_id,
+                b.formatter,
+            ),
+            RawFirehoseBody::Signpost(b) => (
+                EventType::Signpost,
+                map_signpost_log_type(entry.log_type),
+                combine_activity_id(b.activity_id),
+                None,
+                b.subsystem,
+                b.data_ref,
+                b.pc_id,
+                b.formatter,
+            ),
+            RawFirehoseBody::Trace(b) => (
+                EventType::Trace,
+                LogType::Default,
+                0,
+                None,
+                None,
+                None,
+                b.pc_id,
+                RawFormatterFlags::default(),
+            ),
+            RawFirehoseBody::Loss(b) => {
+                let abs_ct = entry.absolute_continuous_time(fh.base_continuous_time);
+                let time = resolver.resolve(&boot_uuid, abs_ct, fh.base_continuous_time);
 
-                    // Catalog lookups — same as other entry types
-                    let pid = catalog
-                        .get_pid(fh.first_proc_id, fh.second_proc_id)
-                        .unwrap_or(0);
-                    let euid = catalog
-                        .get_euid(fh.first_proc_id, fh.second_proc_id)
-                        .unwrap_or(0);
+                // Catalog lookups — same as other entry types
+                let pid = catalog
+                    .get_pid(fh.first_proc_id, fh.second_proc_id)
+                    .unwrap_or(0);
+                let euid = catalog
+                    .get_euid(fh.first_proc_id, fh.second_proc_id)
+                    .unwrap_or(0);
 
-                    // Process/library from UUIDText via main_uuid
-                    let entry_info =
-                        catalog.get_process_info(fh.first_proc_id, fh.second_proc_id);
-                    let main_uuid = entry_info.map_or(Uuid::nil(), |e| e.main_uuid);
-                    let process = uuidtext_files
-                        .get(&main_uuid)
-                        .and_then(|u| u.image_path());
+                // Process/library from UUIDText via main_uuid
+                let entry_info = catalog.get_process_info(fh.first_proc_id, fh.second_proc_id);
+                let main_uuid = entry_info.map_or(Uuid::nil(), |e| e.main_uuid);
+                let process = uuidtext_files.get(&main_uuid).and_then(|u| u.image_path());
 
-                    callback(LogEntry {
-                        subsystem: None,
-                        category: None,
-                        thread_id: entry.thread_id,
-                        pid,
-                        euid,
-                        library: process,
-                        library_uuid: main_uuid,
-                        activity_id: 0,
-                        time,
-                        event_type: EventType::Loss,
-                        log_type: LogType::Loss,
-                        process,
-                        process_uuid: main_uuid,
-                        format_string: None,
-                        boot_uuid,
-                        timezone_name,
-                        items: ItemsData::Loss {
-                            count: b.count,
-                            start_time: b.start_time,
-                            end_time: b.end_time,
-                        },
-                        signpost_id: 0,
-                        signpost_name: 0,
-                        resolved_message: RefCell::new(None),
-                        #[cfg(feature = "rewrite-compat")]
-                        format_string_error: None,
-                    });
-                    continue;
-                }
-                RawFirehoseBody::Unknown(_) => continue,
-            };
+                callback(LogEntry {
+                    subsystem: None,
+                    category: None,
+                    thread_id: entry.thread_id,
+                    pid,
+                    euid,
+                    library: process,
+                    library_uuid: main_uuid,
+                    activity_id: 0,
+                    parent_activity_id: None,
+                    time,
+                    event_type: EventType::Loss,
+                    log_type: LogType::Loss,
+                    process,
+                    process_uuid: main_uuid,
+                    format_string: None,
+                    boot_uuid,
+                    timezone_name,
+                    items: ItemsData::Loss {
+                        count: b.count,
+                        start_time: b.start_time,
+                        end_time: b.end_time,
+                    },
+                    signpost_id: 0,
+                    signpost_name: 0,
+                    resolved_message: RefCell::new(None),
+                    #[cfg(feature = "rewrite-compat")]
+                    format_string_error: None,
+                });
+                continue;
+            }
+            RawFirehoseBody::Unknown(_) => continue,
+        };
 
         // Signpost-specific fields
         let (signpost_id, signpost_name) = match &body {
@@ -572,6 +592,7 @@ fn visit_firehose_entries<'a: 'b, 'b>(
             library: resolved.library,
             library_uuid: resolved.library_uuid,
             activity_id,
+            parent_activity_id,
             time,
             event_type,
             log_type,
@@ -643,6 +664,19 @@ fn combine_activity_id(ids: Option<(u32, u32)>) -> u64 {
             }
         }
         None => 0,
+    }
+}
+
+fn activity_and_parent_ids(activity: &RawActivityBody<'_>) -> (u64, Option<u64>) {
+    match activity.other_aid {
+        Some(other_aid) if combine_activity_id(Some(other_aid)) != 0 => {
+            let parent_activity_id = combine_activity_id(activity.activity_id);
+            (
+                combine_activity_id(Some(other_aid)),
+                (parent_activity_id != 0).then_some(parent_activity_id),
+            )
+        }
+        _ => (combine_activity_id(activity.activity_id), None),
     }
 }
 
@@ -760,6 +794,21 @@ mod tests {
     #[test_case(Some((0, 0))           => 0                ; "zero")]
     fn test_combine_activity_id(input: Option<(u32, u32)>) -> u64 {
         combine_activity_id(input)
+    }
+
+    #[test]
+    fn test_activity_and_parent_ids() {
+        let activity = RawActivityBody {
+            activity_id: Some((10, 0)),
+            pid: None,
+            current_aid: None,
+            other_aid: Some((30, 0)),
+            pc_id: 0,
+            formatter: RawFormatterFlags::default(),
+            items_data: &[],
+        };
+
+        assert_eq!(activity_and_parent_ids(&activity), (30, Some(10)));
     }
 
     // --- extract_timezone_name tests ---

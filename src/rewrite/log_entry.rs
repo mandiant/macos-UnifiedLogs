@@ -130,6 +130,7 @@ pub struct LogEntry<'a, 'b> {
     pub library: Option<&'a str>,
     pub library_uuid: Uuid,
     pub activity_id: u64,
+    pub parent_activity_id: Option<u64>,
     pub time: f64,
     pub event_type: EventType,
     pub log_type: LogType,
@@ -420,7 +421,7 @@ fn format_statedump_object(data: &[u8], title_name: &str) -> String {
 
 impl Serialize for LogEntry<'_, '_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut state = serializer.serialize_struct("LogEntry", 17)?;
+        let mut state = serializer.serialize_struct("LogEntry", 18)?;
         state.serialize_field("subsystem", &self.subsystem)?;
         state.serialize_field("category", &self.category)?;
         state.serialize_field("thread_id", &self.thread_id)?;
@@ -429,6 +430,7 @@ impl Serialize for LogEntry<'_, '_> {
         state.serialize_field("library", &self.library)?;
         state.serialize_field("library_uuid", &self.library_uuid)?;
         state.serialize_field("activity_id", &self.activity_id)?;
+        state.serialize_field("parent_activity_id", &self.parent_activity_id)?;
         state.serialize_field("time", &self.time)?;
         state.serialize_field("event_type", &self.event_type)?;
         state.serialize_field("log_type", &self.log_type)?;

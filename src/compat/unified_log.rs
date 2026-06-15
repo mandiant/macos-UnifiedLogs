@@ -139,6 +139,7 @@ pub struct LogData {
     pub library: String,
     pub library_uuid: String,
     pub activity_id: u64,
+    pub parent_activity_id: u64,
     pub time: f64,
     pub category: String,
     pub event_type: EventType,
