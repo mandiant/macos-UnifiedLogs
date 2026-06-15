@@ -9,6 +9,23 @@ Comparison used:
 
 `main` now uses the flat legacy layout (`src/*.rs`, `src/chunks/...`). This branch moved code under `src/legacy/`, added `src/rewrite/`, and added `src/compat/`. Do not cherry-pick blindly; port each behavior into the relevant legacy, rewrite, and compatibility paths.
 
+## Per-Commit Porting Workflow
+
+For each unchecked commit below:
+
+1. Cherry-pick or manually apply the original diff onto the legacy implementation, reconciling the flat `main` paths with `src/legacy/...`.
+2. Preserve the original commit message text for the eventual commit.
+3. Implement the corresponding feature, increment, or fix in the rewrite implementation when the change is not purely common infrastructure.
+4. Update the compatibility layer when public API or output shape changes.
+5. Run the checks/tests needed for the touched feature flavors, normally:
+   - `just test_legacy`
+   - `just test_rewrite`
+   - `just test_compat`
+   - targeted tests such as `just compare_big_sur` when ordering or parser parity is affected
+   - `cd examples && cargo build --release` when example code changes
+6. Check the matching checkbox in this file only after the port and validation are done.
+7. Pause for human review. The user will create the commit manually.
+
 ## Commit Checklist
 
 - [ ] `bf5bb3d` - `feat(unified_log): add support for parent activity ID (#109)`
