@@ -1,6 +1,7 @@
 */target
 /target
 Cargo.lock
+mise.local.toml
 *.DS_Store
 *.logarchive
 test*.zip
