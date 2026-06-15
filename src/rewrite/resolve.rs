@@ -304,8 +304,8 @@ fn resolve_uuid_relative<'a>(
 /// - `has_large_offset == 0` → return unchanged
 /// - Mismatched `has_large_offset` vs `large_shared_cache / 2` AND NOT `shared_cache`
 ///   → recovery using `large_shared_cache / 2`
-/// - `shared_cache` flag set with `has_large_offset == 1`
-///   → `0x10000000 * 8 + string_offset`
+/// - `shared_cache` flag set with `has_large_offset == 1 || 2`
+///   → `0x80000000 * has_large_offset + string_offset`
 /// - Otherwise → `LARGE_OFFSET_BASE * has_large_offset + string_offset`
 fn compute_shared_cache_offset(string_offset: u64, formatter: &RawFormatterFlags) -> u64 {
     if formatter.has_large_offset == 0 {
@@ -315,8 +315,10 @@ fn compute_shared_cache_offset(string_offset: u64, formatter: &RawFormatterFlags
     if formatter.has_large_offset != formatter.large_shared_cache / 2 && !formatter.shared_cache {
         let large_offset = formatter.large_shared_cache / 2;
         (LARGE_OFFSET_BASE * u64::from(large_offset)) + string_offset
-    } else if formatter.shared_cache && formatter.has_large_offset == 1 {
-        0x1000_0000 * 8 + string_offset
+    } else if formatter.shared_cache
+        && (formatter.has_large_offset == 1 || formatter.has_large_offset == 2)
+    {
+        0x8000_0000 * u64::from(formatter.has_large_offset) + string_offset
     } else {
         (LARGE_OFFSET_BASE * u64::from(formatter.has_large_offset)) + string_offset
     }
@@ -333,8 +335,8 @@ mod tests {
     #[test_case(0, 0, false, 12345,  12345                          ; "no large offset")]
     #[test_case(2, 4, false, 0x1000, LARGE_OFFSET_BASE * 2 + 0x1000 ; "matching")]
     #[test_case(3, 4, false, 0x1000, LARGE_OFFSET_BASE * 2 + 0x1000 ; "mismatched recovery")]
-    #[test_case(1, 0, true,  0x1000, 0x1000_0000 * 8 + 0x1000      ; "shared cache special large offset")]
-    #[test_case(2, 4, true,  0x1000, LARGE_OFFSET_BASE * 2 + 0x1000 ; "shared cache large offset")]
+    #[test_case(1, 0, true,  0x1000, 0x8000_0000 + 0x1000          ; "shared cache special large offset")]
+    #[test_case(2, 4, true,  0x1000, 0x8000_0000 * 2 + 0x1000      ; "shared cache large offset")]
     fn test_compute_shared_cache_offset(
         has_large_offset: u16,
         large_shared_cache: u16,

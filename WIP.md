@@ -58,9 +58,10 @@ For each unchecked commit below:
   - Port note: likely overlaps heavily with moved firehose code. Apply after prior nom/firehose commits.
   - Commit message to use: `Code cleanup and fixes (#114)`
 
-- [ ] `359aac4` - `Fix for has_large_offset flag and more tests (#115)`
+- [x] `359aac4` - `Fix for has_large_offset flag and more tests (#115)`
   - Main files: `src/chunks/firehose/message.rs`, `tests/tahoe_tests.rs`
   - Port note: high-priority correctness fix; add Tahoe fixture tests if test data is available.
+  - Commit message to use: `Fix for has_large_offset flag and more tests (#115)`
 
 - [ ] `b2eadea` - `Added enums for firehose items (#116)`
   - Main files: `firehose_log`, `message`, `trace`, `oversize`, decoder trait, `message`, `unified_log`, Tahoe tests
