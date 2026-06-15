@@ -1,6 +1,9 @@
 default:
     just --list
 
+alias t:= test
+test: test_legacy test_rewrite test_compat
+
 test_legacy:
     cargo t --release --no-default-features
 
