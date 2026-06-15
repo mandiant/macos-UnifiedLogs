@@ -12,7 +12,7 @@ Rust library for parsing macOS Unified Log files (tracev3 format). Cross-platfor
 # Build
 cargo build --release
 
-# Run all tests (release mode recommended — debug is very slow)
+# Run default-feature tests (release mode recommended — debug is very slow)
 cargo test --release
 
 # Run a single test
@@ -31,9 +31,10 @@ cargo bench
 ### Feature-gated testing (justfile tasks)
 
 ```bash
-just test_legacy           # cargo t --release (legacy module, no rewrite feature)
-just test_rewrite          # cargo t --release --features rewrite --lib --bins
-just test_rewrite_compat   # cargo t --release --features rewrite-compat --lib --bins
+just test_legacy           # cargo t --release --no-default-features
+just test_rewrite          # cargo t --release --no-default-features --features rewrite --lib --bins --tests
+just test_compat           # cargo t --release --no-default-features --features rewrite-compat
+just test                  # runs all three modes above
 ```
 
 ### Test data setup
@@ -53,11 +54,11 @@ The crate uses feature flags to switch between two implementations at compile ti
 
 | Feature | Default | Effect |
 |---------|---------|--------|
-| (none) | — | Compiles `legacy` module only (original implementation) |
+| (none) | **yes** | Compiles `legacy` module only (original implementation) |
 | `rewrite` | no | Compiles `rewrite` module only (performance-optimized, zero-copy) |
-| `rewrite-compat` | **yes** | Implies `rewrite` + adds `compat` module for backward-compatible API |
+| `rewrite-compat` | no | Implies `rewrite` + adds `compat` module for backward-compatible API |
 
-The default build (`rewrite-compat`) uses the new rewrite pipeline with a compatibility shim. Only one of `legacy` or `rewrite` is compiled — they are mutually exclusive via `cfg(not(feature = "rewrite"))` / `cfg(feature = "rewrite")`.
+The default build uses the legacy implementation because `Cargo.toml` sets `default = []`. Enable `rewrite` for the new zero-copy pipeline, or `rewrite-compat` for the rewrite pipeline plus the compatibility shim. Only one of `legacy` or `rewrite` is compiled — they are mutually exclusive via `cfg(not(feature = "rewrite"))` / `cfg(feature = "rewrite")`.
 
 ### Module layout
 
@@ -89,7 +90,7 @@ Uses `nom` 8 for all binary parsing. Parsers return `IResult` types throughout.
 
 Both modules have matching decoder implementations: DNS, network, OpenDirectory, location, time, UUID, Darwin, bool, config. These decode custom binary objects embedded in log message items.
 
-### Firehose subsystem (`chunkset/firehose/`)
+### Firehose subsystem (`chunks/firehose/`)
 
 The most complex part of the codebase. Firehose log entries come in types: activity, nonactivity, signpost, trace, loss — each with distinct binary layouts and flag-dependent parsing.
 
