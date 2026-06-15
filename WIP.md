@@ -43,9 +43,10 @@ For each unchecked commit below:
   - Port note: apply parser changes to `src/legacy/...`; audit equivalent rewrite parsers.
   - Commit message to use: `Minor update to nom parsing (#111)`
 
-- [ ] `2cf2760` - `Further nom updates and additional error code lookup (#112)`
+- [x] `2cf2760` - `Further nom updates and additional error code lookup (#112)`
   - Main files: firehose parsers, `simpledump`, `statedump`, decoders, `message`, `unified_log`, `util`, tests
   - Port note: important behavior change. Port decoder error lookup and parser updates to both parser implementations.
+  - Commit message to use: `Further nom updates and additional error code lookup (#112)`
 
 - [ ] `0e31c7d` - `Minor code cleanup (#113)`
   - Main files: firehose, `oversize`, `dsc`, `filesystem`, `parser`, `timesync`, `unified_log`, `uuidtext`

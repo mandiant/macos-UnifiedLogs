@@ -10,7 +10,7 @@ pub(crate) mod config;
 pub(crate) mod location;
 mod network;
 
-mod darwin;
+pub(crate) mod darwin;
 pub(crate) mod decoder;
 mod dns;
 mod opendirectory;

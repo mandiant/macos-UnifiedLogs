@@ -10,7 +10,7 @@ use std::net::IpAddr;
 
 use super::{
     DecoderError,
-    darwin::{Errno, errno_codes, format_permission, permission},
+    darwin::{Errno, MachErrno, errno_codes, format_permission, mach_codes, permission},
     dns::{
         DnsAcceptable, DnsAddRmv, DnsCounts, DnsDomainName, DnsHeader, DnsIdFlags, DnsMacAddr,
         DnsProtocol, DnsReason, DnsRecordType, DnsSvcbRecord, DnsYesNo, dns_acceptable, dns_addrmv,
@@ -42,6 +42,7 @@ pub enum Decoded {
     LoBool(bool),
     Uuid(Uuid),
     Errno(Errno),
+    MachErrno(MachErrno),
     OdError(OdError),
     MemberIdType(MemberIdType),
     MemberDetails(MemberDetails),
@@ -80,6 +81,7 @@ impl fmt::Display for Decoded {
             Self::LoBool(value) => f.write_str(if *value { "false" } else { "true" }),
             Self::Uuid(value) => f.write_str(&format_uuid(*value)),
             Self::Errno(value) => write!(f, "{value}"),
+            Self::MachErrno(value) => write!(f, "{value}"),
             Self::OdError(value) => write!(f, "{value}"),
             Self::MemberIdType(value) => write!(f, "{value}"),
             Self::MemberDetails(value) => write!(f, "{value}"),
@@ -124,6 +126,10 @@ pub(crate) fn to_decoded_value<'a>(
     } else if format_string.contains("uuid_t") {
         Decoded::Uuid(parse_uuid(&message_strings)?)
     } else if format_string.contains("darwin.errno") {
+        Decoded::Errno(errno_codes(&message_strings))
+    } else if format_string.contains("mach.errno") {
+        Decoded::MachErrno(mach_codes(&message_strings))
+    } else if format_string == "errno" || format_string.contains("%{errno") {
         Decoded::Errno(errno_codes(&message_strings))
     } else if format_string.contains("darwin.mode") {
         permission(&message_strings)

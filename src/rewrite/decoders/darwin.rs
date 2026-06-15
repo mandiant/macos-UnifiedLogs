@@ -239,6 +239,40 @@ pub enum Errno {
     Unknown(String),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, strum::Display)]
+pub enum MachErrno {
+    #[strum(to_string = "(ipc/send) invalid destination port")]
+    InvalidDestinationPort,
+    #[strum(to_string = "invalid header")]
+    InvalidHeader,
+    #[strum(to_string = "invalid memory")]
+    InvalidMemory,
+    #[strum(to_string = "invalid notify")]
+    InvalidNotify,
+    #[strum(to_string = "invalid reply")]
+    InvalidReply,
+    #[strum(to_string = "invalid right")]
+    InvalidRight,
+    #[strum(to_string = "invalid rt ool size")]
+    InvalidRtOolSize,
+    #[strum(to_string = "invalid trailer")]
+    InvalidTrailer,
+    #[strum(to_string = "invalid type")]
+    InvalidType,
+    #[strum(to_string = "invalid voucher")]
+    InvalidVoucher,
+    #[strum(to_string = "message too small")]
+    MessageTooSmall,
+    #[strum(to_string = "no buffer")]
+    NoBuffer,
+    #[strum(to_string = "timed out")]
+    TimedOut,
+    #[strum(to_string = "too large")]
+    TooLarge,
+    #[strum(to_string = "Unknown mach errno: {0}")]
+    Unknown(String),
+}
+
 /// Convert Darwin errno codes to message
 pub(crate) fn errno_codes(errno: &str) -> Errno {
     // Found at https://github.com/apple/darwin-xnu/blob/main/bsd/sys/errno.h
@@ -363,6 +397,28 @@ pub(crate) fn errno_codes(errno: &str) -> Errno {
     }
 }
 
+/// Kernel error codes. Have only seen "(ipc/send) invalid destination port"
+/// <https://www.koingosw.com/products/macpilot/error-codes.php?page=248>
+pub(crate) fn mach_codes(errno: &str) -> MachErrno {
+    match errno {
+        "268435459" => MachErrno::InvalidDestinationPort,
+        "268435472" => MachErrno::InvalidHeader,
+        "268435468" => MachErrno::InvalidMemory,
+        "268435467" => MachErrno::InvalidNotify,
+        "268435465" => MachErrno::InvalidReply,
+        "268435466" => MachErrno::InvalidRight,
+        "4294967644" => MachErrno::InvalidRtOolSize,
+        "268435473" => MachErrno::InvalidTrailer,
+        "268435471" => MachErrno::InvalidType,
+        "268435461" => MachErrno::InvalidVoucher,
+        "268435464" => MachErrno::MessageTooSmall,
+        "268435469" => MachErrno::NoBuffer,
+        "268435460" => MachErrno::TimedOut,
+        "268435470" => MachErrno::TooLarge,
+        _ => MachErrno::Unknown(errno.to_string()),
+    }
+}
+
 /// Parse UNIX permissions to string version
 pub(crate) fn permission(permissions: &str) -> super::decoder::Decoded {
     let v = |v: char| match v {
@@ -421,6 +477,25 @@ mod tests {
         test_data = "82";
         result = errno_codes(test_data);
         assert_eq!(result, Errno::DevicePowerIsOff);
+    }
+
+    #[test]
+    fn test_mach_errno_codes() {
+        let mut test_data = "268435465";
+        let mut result = mach_codes(test_data);
+        assert_eq!(result, MachErrno::InvalidReply);
+
+        test_data = "268435470";
+        result = mach_codes(test_data);
+        assert_eq!(result, MachErrno::TooLarge);
+
+        test_data = "268435469";
+        result = mach_codes(test_data);
+        assert_eq!(result, MachErrno::NoBuffer);
+
+        test_data = "268435468";
+        result = mach_codes(test_data);
+        assert_eq!(result, MachErrno::InvalidMemory);
     }
 
     #[test]

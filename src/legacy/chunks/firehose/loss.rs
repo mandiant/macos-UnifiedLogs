@@ -5,9 +5,7 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-use nom::bytes::complete::take;
 use nom::number::complete::le_u64;
-use std::mem::size_of;
 
 #[derive(Debug, Clone, Default)]
 pub struct FirehoseLoss {
@@ -22,13 +20,9 @@ impl FirehoseLoss {
     pub fn parse_firehose_loss(data: &[u8]) -> nom::IResult<&[u8], FirehoseLoss> {
         let mut firehose_loss = FirehoseLoss::default();
 
-        let (input, start_time) = take(size_of::<u64>())(data)?;
-        let (input, end_time) = take(size_of::<u64>())(input)?;
-        let (input, count) = take(size_of::<u64>())(input)?;
-
-        let (_, firehose_start_time) = le_u64(start_time)?;
-        let (_, firehose_end_time) = le_u64(end_time)?;
-        let (_, firehose_count) = le_u64(count)?;
+        let (input, firehose_start_time) = le_u64(data)?;
+        let (input, firehose_end_time) = le_u64(input)?;
+        let (input, firehose_count) = le_u64(input)?;
 
         firehose_loss.start_time = firehose_start_time;
         firehose_loss.end_time = firehose_end_time;

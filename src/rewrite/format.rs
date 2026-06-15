@@ -8,6 +8,7 @@ use crate::rewrite::helpers::utf8_str;
 use base64::Engine;
 
 use super::chunks::firehose::item::{RawFirehoseItem, RawItemKind, RawItemValue};
+use super::decoders::darwin::errno_codes;
 use std::fmt::Write;
 
 // ---------------------------------------------------------------------------
@@ -186,7 +187,7 @@ fn apply_format(output: &mut String, item: &RawFirehoseItem<'_>, spec: &FormatSp
 
     if is_error_conversion(c) {
         let n = extract_int(&item.value);
-        let _ = write!(output, "Error code: {n}");
+        let _ = write!(output, "{}", errno_codes(&n.to_string()));
         return;
     }
 
@@ -642,10 +643,7 @@ fn parse_specifier(bytes: &[u8]) -> (FormatSpec, usize, bool) {
 ///
 /// Returns an owned `String` — this is where the rewrite transitions from
 /// zero-copy borrowed data to owned formatted output.
-pub fn format_message(
-    format_string: Option<&str>,
-    items: &[RawFirehoseItem<'_>],
-) -> String {
+pub fn format_message(format_string: Option<&str>, items: &[RawFirehoseItem<'_>]) -> String {
     let fmt = match format_string {
         None => return String::from("<missing format string>"),
         Some("") if items.is_empty() => return String::new(),
@@ -756,13 +754,7 @@ pub fn format_message(
                 pos += spec_consumed;
 
                 // We have a conversion after annotation+flags
-                format_annotated_item(
-                    &mut result,
-                    &annotation,
-                    &spec,
-                    items,
-                    &mut item_index,
-                );
+                format_annotated_item(&mut result, &annotation, &spec, items, &mut item_index);
                 continue;
             }
 
@@ -779,13 +771,7 @@ pub fn format_message(
                 continue;
             }
 
-            format_annotated_item(
-                &mut result,
-                &annotation,
-                &spec,
-                items,
-                &mut item_index,
-            );
+            format_annotated_item(&mut result, &annotation, &spec, items, &mut item_index);
             continue;
         }
 
@@ -1038,7 +1024,7 @@ mod tests {
     #[test_case("%04d", 2        => "0002" ; "zero pad width")]
     #[test_case("%+d", 42        => "+42" ; "plus sign")]
     #[test_case("%c", 65         => "A" ; "char")]
-    #[test_case("err: %m", 2     => "err: Error code: 2" ; "error code")]
+    #[test_case("err: %m", 2     => "err: No such file or directory" ; "error code")]
     #[test_case("%+04d", 2       => "+002" ; "plus zero pad width")]
     #[test_case("%d", -248       => "-248" ; "negative int")]
     #[test_case("%x", 10         => "A" ; "hex lowercase spec uppercase output")]

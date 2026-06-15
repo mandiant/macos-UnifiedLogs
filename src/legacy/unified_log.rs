@@ -197,13 +197,10 @@ impl Iterator for LogIterator<'_> {
                     time: timestamp,
                     timestamp: unixepoch_to_iso(&(timestamp as i64)),
                     category: String::new(),
-                    log_type: LogData::get_log_type(
-                        firehose.unknown_log_type,
-                        firehose.unknown_log_activity_type,
-                    ),
+                    log_type: LogData::get_log_type(firehose.log_type, firehose.log_activity_type),
                     process: String::new(),
                     message: String::new(),
-                    event_type: LogData::get_event_type(firehose.unknown_log_activity_type),
+                    event_type: LogData::get_event_type(firehose.log_activity_type),
                     euid: catalog_data.catalog.get_euid(
                         preamble.first_number_proc_id,
                         preamble.second_number_proc_id,
@@ -227,16 +224,16 @@ impl Iterator for LogIterator<'_> {
                 // 0x7 - Loss log entry. Ex: loss
                 // 0x6 - Signpost entry. Ex: process signpost, thread signpost, system signpost
                 // 0x3 - Trace log entry. Ex: trace default
-                match firehose.unknown_log_activity_type {
+                match firehose.log_activity_type {
                     0x4 => {
                         log_data.activity_id =
-                            u64::from(firehose.firehose_non_activity.unknown_activity_id);
+                            u64::from(firehose.firehose_non_activity.activity_id);
                         let message_data = FirehoseNonActivity::get_firehose_nonactivity_strings(
                             &firehose.firehose_non_activity,
                             self.provider,
                             u64::from(firehose.format_string_location),
-                            &preamble.first_number_proc_id,
-                            &preamble.second_number_proc_id,
+                            preamble.first_number_proc_id,
+                            preamble.second_number_proc_id,
                             &catalog_data.catalog,
                         );
 
@@ -341,8 +338,8 @@ impl Iterator for LogIterator<'_> {
                             &firehose.firehose_activity,
                             self.provider,
                             u64::from(firehose.format_string_location),
-                            &preamble.first_number_proc_id,
-                            &preamble.second_number_proc_id,
+                            preamble.first_number_proc_id,
+                            preamble.second_number_proc_id,
                             &catalog_data.catalog,
                         );
                         match message_data {
@@ -396,8 +393,8 @@ impl Iterator for LogIterator<'_> {
                             &firehose.firehose_signpost,
                             self.provider,
                             u64::from(firehose.format_string_location),
-                            &preamble.first_number_proc_id,
-                            &preamble.second_number_proc_id,
+                            preamble.first_number_proc_id,
+                            preamble.second_number_proc_id,
                             &catalog_data.catalog,
                         );
                         match message_data {
@@ -486,8 +483,8 @@ impl Iterator for LogIterator<'_> {
                         let message_data = FirehoseTrace::get_firehose_trace_strings(
                             self.provider,
                             u64::from(firehose.format_string_location),
-                            &preamble.first_number_proc_id,
-                            &preamble.second_number_proc_id,
+                            preamble.first_number_proc_id,
+                            preamble.second_number_proc_id,
                             &catalog_data.catalog,
                         );
                         match message_data {
