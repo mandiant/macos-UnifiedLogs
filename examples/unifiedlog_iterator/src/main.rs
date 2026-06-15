@@ -6,13 +6,13 @@
 // See the License for the specific language governing permissions and limitations under the License.
 
 use chrono::{SecondsFormat, TimeZone, Utc};
-use log::{debug, error, info, warn, LevelFilter};
+use log::{LevelFilter, debug, error, info, warn};
 use macos_unifiedlogs::cache::MemoryStringCache;
 use macos_unifiedlogs::filesystem::{LiveSystemProvider, LogarchiveProvider};
 use macos_unifiedlogs::iterator::UnifiedLogIterator;
 use macos_unifiedlogs::parser::{build_log, collect_timesync, parse_log};
 use macos_unifiedlogs::timesync::TimesyncBoot;
-use macos_unifiedlogs::traits::{FileProvider, StringCache};
+use macos_unifiedlogs::traits::{FileProvider, SourceFile, StringCache};
 use macos_unifiedlogs::unified_log::{LogData, UnifiedLogData};
 use simplelog::{ColorChoice, Config, TermLogger, TerminalMode};
 use std::collections::HashMap;
@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use clap::{builder, Parser, ValueEnum};
+use clap::{Parser, ValueEnum, builder};
 use csv::Writer;
 
 /// Global atomic flag to track SIGINT signal
@@ -90,7 +90,9 @@ fn filter_and_update_bookmark(
         .collect();
 
     // Update bookmark with max timestamp seen (not just filtered) to avoid re-scanning
-    if let Some(max_time) = max_seen_timestamp && let Ok(mut book) = bookmark.lock() {
+    if let Some(max_time) = max_seen_timestamp
+        && let Ok(mut book) = bookmark.lock()
+    {
         book.update_timestamp(max_time);
     }
 
@@ -209,8 +211,7 @@ fn main() {
     // Determine source ID for bookmark
     let source_id = match (&args.mode, &args.input) {
         (Mode::Live, _) => "live".to_string(),
-        (Mode::LogArchive, Some(path)) => path.to_string_lossy().to_string(),
-        (Mode::SingleFile, Some(path)) => path.to_string_lossy().to_string(),
+        (Mode::LogArchive | Mode::SingleFile, Some(path)) => path.to_string_lossy().to_string(),
         _ => "unknown".to_string(),
     };
 
@@ -220,11 +221,17 @@ fn main() {
         .clone()
         .unwrap_or_else(|| Bookmark::default_path(&mode_str));
 
-    info!("Using bookmark path: {path:?}", path = bookmark_path);
+    info!(
+        "Using bookmark path: {path}",
+        path = bookmark_path.display()
+    );
 
     let mut bookmark = if args.resume {
         Bookmark::load_bookmark(&bookmark_path).unwrap_or_else(|| {
-            info!("Creating new bookmark at {path:?}", path = bookmark_path);
+            info!(
+                "Creating new bookmark at {path}",
+                path = bookmark_path.display()
+            );
             Bookmark::new(source_id.clone())
         })
     } else {
@@ -277,7 +284,8 @@ fn main() {
             parse_log_archive(&path, &mut writer, Arc::clone(&bookmark), resume)
         }
         (Mode::SingleFile, Some(path)) => {
-            parse_single_file(&path, &mut writer, Arc::clone(&bookmark), resume)
+            parse_single_file(&path, &mut writer, Arc::clone(&bookmark), resume);
+            Ok(())
         }
         _ => {
             error!("log-archive and single-file modes require an --input argument");
@@ -291,13 +299,15 @@ fn main() {
         match bookmark.lock() {
             Ok(bookmark) => {
                 if let Err(e) = bookmark.save_bookmark(&bookmark_path) {
-                    eprintln!("Failed to save bookmark on interrupt: {error}", error = e);
+                    eprintln!("Failed to save bookmark on interrupt: {e}");
                 } else {
-                    eprintln!("Bookmark saved to {path:?}", path = bookmark_path);
+                    eprintln!("Bookmark saved to {path}", path = bookmark_path.display());
                 }
             }
             Err(_) => {
-                eprintln!("Warning: Could not acquire bookmark lock (mutex poisoned). Bookmark not saved.");
+                eprintln!(
+                    "Warning: Could not acquire bookmark lock (mutex poisoned). Bookmark not saved."
+                );
             }
         }
         std::process::exit(0);
@@ -308,9 +318,9 @@ fn main() {
         match bookmark.lock() {
             Ok(bookmark) => {
                 if let Err(e) = bookmark.save_bookmark(&bookmark_path) {
-                    error!("Failed to save bookmark: {error}", error = e);
+                    error!("Failed to save bookmark: {e}");
                 } else {
-                    info!("Bookmark saved to {path:?}", path = bookmark_path);
+                    info!("Bookmark saved to {path}", path = bookmark_path.display());
                 }
             }
             Err(_) => {
@@ -320,7 +330,7 @@ fn main() {
     }
 
     if let Err(e) = result {
-        error!("Error during parsing: {error}", error = e);
+        error!("Error during parsing: {e}");
     }
 }
 
@@ -329,7 +339,7 @@ fn parse_single_file(
     writer: &mut OutputWriter,
     bookmark: Arc<Mutex<Bookmark>>,
     resume: bool,
-) -> Result<(), Box<dyn Error>> {
+) {
     let mut provider = LogarchiveProvider::new(path);
     let results = match fs::File::open(path)
         .map_err(|e| RuntimeError::FileOpen {
@@ -337,19 +347,27 @@ fn parse_single_file(
             message: e.to_string(),
         })
         .and_then(|mut reader| {
-            parse_log(&mut reader, path.to_str().unwrap_or_default()).map_err(|err| RuntimeError::FileParse {
-                path: path.to_string_lossy().to_string(),
-                message: format!("{err}"),
+            parse_log(&mut reader, path.to_str().unwrap_or_default()).map_err(|err| {
+                RuntimeError::FileParse {
+                    path: path.to_string_lossy().to_string(),
+                    message: format!("{err}"),
+                }
             })
         })
         .map(|ref log| {
-            let (results, _) = build_log(log, &mut provider, &HashMap::new(), false);
+            let (results, _) = build_log(
+                log,
+                &mut provider,
+                &MemoryStringCache::default(),
+                &HashMap::new(),
+                false,
+            );
             results
         }) {
         Ok(reader) => reader,
         Err(e) => {
             error!("Failed to parse {path:?}: {error}", path = path, error = e);
-            return Ok(());
+            return;
         }
     };
 
@@ -380,7 +398,9 @@ fn parse_single_file(
         }
 
         // Update bookmark with max timestamp seen (not just written) to avoid re-scanning
-        if max_seen_timestamp > 0.0 && let Ok(mut bookmark) = bookmark.lock() {
+        if max_seen_timestamp > 0.0
+            && let Ok(mut bookmark) = bookmark.lock()
+        {
             bookmark.update_timestamp(max_seen_timestamp);
         }
     } else {
@@ -399,7 +419,6 @@ fn parse_single_file(
         written = count,
         skipped = total_count - count
     );
-    Ok(())
 }
 
 // Parse a provided directory path. Currently, expect the path to follow macOS log collect structure
@@ -416,7 +435,14 @@ fn parse_log_archive(
 
     // Keep UUID, UUID cache, timesync files in memory while we parse all tracev3 files
     // Allows for faster lookups
-    match parse_trace_file(&timesync_data, &mut provider, writer, bookmark, resume) {
+    match parse_trace_file(
+        &timesync_data,
+        &mut provider,
+        &MemoryStringCache::default(),
+        writer,
+        bookmark,
+        resume,
+    ) {
         Ok(()) => {
             info!("Finished parsing Unified Log data.");
             Ok(())
@@ -434,7 +460,7 @@ fn parse_live_system(
     bookmark: Arc<Mutex<Bookmark>>,
     resume: bool,
 ) -> Result<(), Box<dyn Error>> {
-    let mut provider = LiveSystemProvider::default();
+    let provider = LiveSystemProvider::default();
     let cache = MemoryStringCache::default();
     let timesync_data = collect_timesync(&provider).unwrap();
 
@@ -469,10 +495,7 @@ fn parse_trace_file(
         },
     };
     let resume_timestamp = if resume {
-        bookmark
-            .lock()
-            .map(|b| b.last_timestamp)
-            .unwrap_or(0.0)
+        bookmark.lock().map(|b| b.last_timestamp).unwrap_or(0.0)
     } else {
         0.0
     };
@@ -503,7 +526,7 @@ fn parse_trace_file(
         }
         info!("Parsing: {path}", path = source.source_path());
         let path = source.source_path().to_string();
-        match iterate_chunks(
+        if let Ok((new_count, new_skipped)) = iterate_chunks(
             source.reader(),
             provider,
             cache,
@@ -512,19 +535,12 @@ fn parse_trace_file(
             &mut parse_context,
             path,
         ) {
-            Ok((new_count, new_skipped)) => {
-                log_count += new_count;
-                skipped_count += new_skipped;
-                debug!(
-                    "count: {count}, skipped: {skipped}",
-                    count = log_count,
-                    skipped = skipped_count
-                );
-            }
-            Err(BrokenPipeError) => {
-                info!("Broken pipe detected, stopping log parsing");
-                return Err(BrokenPipeError);
-            }
+            log_count += new_count;
+            skipped_count += new_skipped;
+            debug!("count: {log_count}, skipped: {skipped_count}");
+        } else {
+            info!("Broken pipe detected, stopping log parsing");
+            return Err(BrokenPipeError);
         }
     }
     let include_missing = false;
@@ -542,12 +558,20 @@ fn parse_trace_file(
     let leftover_data = std::mem::take(&mut parse_context.context.missing_data);
     for mut leftover_data in leftover_data {
         // Add all of our previous oversize data to logs for lookups
-        leftover_data.oversize = parse_context.context.oversize_strings.oversize.clone();
+        leftover_data
+            .oversize
+            .clone_from(&parse_context.context.oversize_strings.oversize);
 
         // Exclude_missing = false
         // If we fail to find any missing data its probably due to the logs rolling
         // Ex: tracev3A rolls, tracev3B references Oversize entry in tracev3A will trigger missing data since tracev3A is gone
-        let (results, _) = build_log(&leftover_data, provider, cache, timesync_data, include_missing);
+        let (results, _) = build_log(
+            &leftover_data,
+            provider,
+            cache,
+            timesync_data,
+            include_missing,
+        );
 
         // Filter by bookmark and update bookmark with max timestamp seen
         let (filtered_results, new_skipped) = filter_and_update_bookmark(
@@ -569,11 +593,7 @@ fn parse_trace_file(
             log::error!("Failed to output remaining log data: {err:?}");
         }
     }
-    info!(
-        "Parsed {count} log entries (skipped {skipped} older entries)",
-        count = log_count,
-        skipped = skipped_count
-    );
+    info!("Parsed {log_count} log entries (skipped {skipped_count} older entries)");
     Ok(())
 }
 
@@ -615,7 +635,8 @@ fn iterate_chunks(
         chunk
             .oversize
             .append(&mut parse_context.context.oversize_strings.oversize);
-        let (results, missing_logs) = build_log(&chunk, provider, cache, timesync_data, exclude_missing);
+        let (results, missing_logs) =
+            build_log(&chunk, provider, cache, timesync_data, exclude_missing);
 
         // Filter by bookmark and update bookmark with max timestamp seen
         let (filtered_results, new_skipped) = filter_and_update_bookmark(
@@ -710,21 +731,21 @@ impl OutputWriter {
                     date_time.to_rfc3339_opts(SecondsFormat::Millis, true),
                     format!("{:?}", record.event_type),
                     format!("{:?}", record.log_type),
-                    record.subsystem.to_owned(),
+                    record.subsystem.clone(),
                     record.thread_id.to_string(),
                     record.pid.to_string(),
                     record.euid.to_string(),
-                    record.library.to_owned(),
-                    record.library_uuid.to_owned(),
+                    record.library.clone(),
+                    record.library_uuid.clone(),
                     record.activity_id.to_string(),
                     record.parent_activity_id.to_string(),
-                    record.category.to_owned(),
-                    record.process.to_owned(),
-                    record.process_uuid.to_owned(),
-                    record.message.to_owned(),
-                    record.raw_message.to_owned(),
-                    record.boot_uuid.to_owned(),
-                    record.timezone_name.to_owned(),
+                    record.category.clone(),
+                    record.process.clone(),
+                    record.process_uuid.clone(),
+                    record.message.clone(),
+                    record.raw_message.clone(),
+                    record.boot_uuid.clone(),
+                    record.timezone_name.clone(),
                 ])?;
             }
             OutputWriterEnum::Json(json_writer) => {
