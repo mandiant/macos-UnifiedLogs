@@ -89,6 +89,7 @@ pub fn visit_logarchive(
 /// Load and merge all `.timesync` files from the timesync directory.
 pub fn load_timesync_data(dir: &Path) -> Result<HashMap<Uuid, RawTimesyncBoot>, std::io::Error> {
     let mut all_data: HashMap<Uuid, RawTimesyncBoot> = HashMap::new();
+    let mut paths = Vec::new();
 
     for entry in std::fs::read_dir(dir)? {
         let entry = entry?;
@@ -96,6 +97,10 @@ pub fn load_timesync_data(dir: &Path) -> Result<HashMap<Uuid, RawTimesyncBoot>, 
         if path.extension().and_then(|e| e.to_str()) != Some("timesync") {
             continue;
         }
+        paths.push(path);
+    }
+
+    for path in sorted_paths(paths.into_iter()) {
         let buffer = match std::fs::read(&path) {
             Ok(b) => b,
             Err(e) => {
@@ -129,12 +134,9 @@ pub fn load_file_buffers_by_uuid(dir: &Path) -> Vec<(Uuid, Vec<u8>)> {
         Ok(e) => e,
         Err(_) => return buffers,
     };
-    for entry in entries {
-        let entry = match entry {
-            Ok(e) => e,
-            Err(_) => continue,
-        };
-        let path = entry.path();
+    let paths = sorted_paths(entries.filter_map(|entry| entry.ok().map(|e| e.path())));
+
+    for path in paths {
         let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
             continue;
         };
@@ -159,18 +161,16 @@ pub fn load_uuidtext_buffers(base: &Path) -> Vec<(Uuid, Vec<u8>)> {
         Ok(e) => e,
         Err(_) => return buffers,
     };
-    for dir_entry in entries {
-        let dir_entry = match dir_entry {
-            Ok(e) => e,
-            Err(_) => continue,
+    let dir_paths = sorted_paths(entries.filter_map(|entry| entry.ok().map(|e| e.path())));
+
+    for dir_path in dir_paths {
+        let Some(dir_name_str) = dir_path.file_name().and_then(|n| n.to_str()) else {
+            continue;
         };
-        let dir_name = dir_entry.file_name();
-        let dir_name_str = dir_name.to_string_lossy();
         // Only 2-char hex directories
         if dir_name_str.len() != 2 || !dir_name_str.chars().all(|c| c.is_ascii_hexdigit()) {
             continue;
         }
-        let dir_path = dir_entry.path();
         if !dir_path.is_dir() {
             continue;
         }
@@ -178,17 +178,16 @@ pub fn load_uuidtext_buffers(base: &Path) -> Vec<(Uuid, Vec<u8>)> {
             Ok(e) => e,
             Err(_) => continue,
         };
-        for file_entry in file_entries {
-            let file_entry = match file_entry {
-                Ok(e) => e,
-                Err(_) => continue,
-            };
-            let file_path = file_entry.path();
+        let file_paths =
+            sorted_paths(file_entries.filter_map(|entry| entry.ok().map(|e| e.path())));
+
+        for file_path in file_paths {
             if !file_path.is_file() {
                 continue;
             }
-            let file_name = file_entry.file_name();
-            let file_name_str = file_name.to_string_lossy();
+            let Some(file_name_str) = file_path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
             let uuid_str = format!("{dir_name_str}{file_name_str}");
             let Ok(uuid) = Uuid::parse_str(&uuid_str) else {
                 continue;
@@ -213,12 +212,12 @@ fn collect_tracev3_paths(base: &Path) -> Vec<PathBuf> {
     for subdir in &subdirs {
         let dir = base.join(subdir);
         if let Ok(entries) = std::fs::read_dir(&dir) {
-            let mut dir_paths: Vec<PathBuf> = entries
-                .filter_map(|e| e.ok())
-                .map(|e| e.path())
-                .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("tracev3"))
-                .collect();
-            dir_paths.sort();
+            let dir_paths = sorted_paths(
+                entries
+                    .filter_map(|e| e.ok())
+                    .map(|e| e.path())
+                    .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("tracev3")),
+            );
             paths.extend(dir_paths);
         }
     }
@@ -229,6 +228,13 @@ fn collect_tracev3_paths(base: &Path) -> Vec<PathBuf> {
         paths.push(live_data);
     }
 
+    paths
+}
+
+/// Sort paths to keep parser output deterministic across filesystems.
+fn sorted_paths(paths: impl Iterator<Item = PathBuf>) -> Vec<PathBuf> {
+    let mut paths = paths.collect::<Vec<_>>();
+    paths.sort();
     paths
 }
 

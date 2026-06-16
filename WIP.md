@@ -88,9 +88,10 @@ For each unchecked commit below:
   - Port note: release bookkeeping only; probably port after functional commits, or skip until this branch is release-ready.
   - Commit message to use: `Prep Changelog for next release (#120)`
 
-- [ ] `27ff665` - `Sort all fileproviders outputs (#121)`
+- [x] `27ff665` - `Sort all fileproviders outputs (#121)`
   - Main files: `src/filesystem.rs`, `src/parser.rs`
   - Port note: port ordering behavior to `src/legacy/filesystem.rs`, `src/legacy/parser.rs`, and any rewrite logarchive/file provider traversal.
+  - Commit message to use: `Sort all fileproviders outputs (#121)`
 
 ## Suggested Port Order
 

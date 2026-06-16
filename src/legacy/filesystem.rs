@@ -112,7 +112,7 @@ impl From<&Path> for LogFileType {
 impl FileProvider for LiveSystemProvider {
     fn tracev3_files(&self) -> Box<dyn Iterator<Item = Box<dyn SourceFile>>> {
         let path = PathBuf::from("/private/var/db/diagnostics");
-        Box::new(
+        sort_files(
             WalkDir::new(path)
                 .sort_by(|a, b| a.file_name().cmp(b.file_name()))
                 .into_iter()
@@ -126,7 +126,7 @@ impl FileProvider for LiveSystemProvider {
 
     fn uuidtext_files(&self) -> Box<dyn Iterator<Item = Box<dyn SourceFile>>> {
         let path = PathBuf::from("/private/var/db/uuidtext");
-        Box::new(
+        sort_files(
             WalkDir::new(path)
                 .into_iter()
                 .filter_map(|entry| entry.ok())
@@ -277,7 +277,7 @@ impl FileProvider for LiveSystemProvider {
 
     fn dsc_files(&self) -> Box<dyn Iterator<Item = Box<dyn SourceFile>>> {
         let path = PathBuf::from("/private/var/db/uuidtext/dsc");
-        Box::new(WalkDir::new(path).into_iter().filter_map(|entry| {
+        sort_files(WalkDir::new(path).into_iter().filter_map(|entry| {
             if !matches!(
                 LogFileType::from(entry.as_ref().ok()?.path()),
                 LogFileType::Dsc
@@ -290,7 +290,7 @@ impl FileProvider for LiveSystemProvider {
 
     fn timesync_files(&self) -> Box<dyn Iterator<Item = Box<dyn SourceFile>>> {
         let path = PathBuf::from("/private/var/db/diagnostics/timesync");
-        Box::new(
+        sort_files(
             WalkDir::new(path)
                 .into_iter()
                 .filter_map(|entry| entry.ok())
@@ -346,7 +346,7 @@ impl FileProvider for LogarchiveProvider {
     ///    }
     /// ```
     fn tracev3_files(&self) -> Box<dyn Iterator<Item = Box<dyn SourceFile>>> {
-        Box::new(
+        sort_files(
             WalkDir::new(&self.base)
                 .sort_by(|a, b| a.file_name().cmp(b.file_name()))
                 .into_iter()
@@ -359,7 +359,7 @@ impl FileProvider for LogarchiveProvider {
     }
 
     fn uuidtext_files(&self) -> Box<dyn Iterator<Item = Box<dyn SourceFile>>> {
-        Box::new(
+        sort_files(
             WalkDir::new(&self.base)
                 .into_iter()
                 .filter_map(|entry| entry.ok())
@@ -466,7 +466,7 @@ impl FileProvider for LogarchiveProvider {
     }
 
     fn dsc_files(&self) -> Box<dyn Iterator<Item = Box<dyn SourceFile>>> {
-        Box::new(
+        sort_files(
             WalkDir::new(&self.base)
                 .into_iter()
                 .filter_map(|entry| entry.ok())
@@ -521,7 +521,7 @@ impl FileProvider for LogarchiveProvider {
     }
 
     fn timesync_files(&self) -> Box<dyn Iterator<Item = Box<dyn SourceFile>>> {
-        Box::new(
+        sort_files(
             WalkDir::new(&self.base)
                 .into_iter()
                 .filter_map(|entry| entry.ok())
@@ -531,6 +531,18 @@ impl FileProvider for LogarchiveProvider {
                 }),
         )
     }
+}
+
+/// Sort files by their source path,
+/// in order to have deterministic output of the parser.
+/// Not having it would cause parsing differences across systems
+/// (macOS does not guarantee order of files returned by the filesystem).
+fn sort_files(
+    files: impl Iterator<Item = Box<dyn SourceFile>>,
+) -> Box<dyn Iterator<Item = Box<dyn SourceFile>>> {
+    let mut files = files.collect::<Vec<_>>();
+    files.sort_by(|a, b| a.source_path().cmp(b.source_path()));
+    Box::new(files.into_iter())
 }
 
 #[cfg(test)]
