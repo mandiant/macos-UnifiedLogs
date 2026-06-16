@@ -18,14 +18,13 @@ All three dumps currently contain `887890` entries, so entry count and ordering 
 
 ### Legacy vs Compat
 
-Total differing entries: `536`.
+Total differing entries: `530`.
 
 - `530` `message`: mostly formatter/decoder edge cases:
   - OpenDirectory `ODError...` strings are truncated by one or more trailing characters in compat.
   - Some long object/private strings differ by truncation or masking.
   - One install-phase plist/object string is truncated.
   - Four DNS Configuration statedump entries still differ in object formatting.
-- `6` `library`, `library_uuid`, `process`, `process_uuid`: loss entries are unattributed in legacy but attributed to `/kernel` in compat.
 
 ### Compat vs Rewrite
 
@@ -95,9 +94,13 @@ Compat and rewrite now produce identical normalized dumps for all `887890` entri
   - Compat `LogData` can represent this as an empty string; native rewrite still uses typed `Uuid::nil()`.
   - Result: `legacy vs compat` diff count dropped from `1016` to `536`; `compat vs rewrite` stayed at `0`.
 
+- [x] Normalize loss attribution to legacy empty strings in compat/dump output.
+  - Expected impact: `6` entries over `library`, `library_uuid`, `process`, and `process_uuid`.
+  - Native rewrite still keeps resolved `/kernel` metadata for loss entries.
+  - Result: `legacy vs compat` diff count dropped from `536` to `530`; `compat vs rewrite` stayed at `0`.
+
 - [ ] Bring compat closer to legacy for low-volume differences after rewrite parity is stable.
   - OpenDirectory decoder truncation.
-  - Loss attribution to `/kernel`.
   - DNS Configuration statedump formatting.
 
 ## Validation Loop

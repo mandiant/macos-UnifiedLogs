@@ -286,13 +286,15 @@ pub fn build_log(
             let message_entries = compat_message_entries(&entry);
             let library_uuid = compat_uuid_string(entry.event_type, entry.library_uuid);
             let process_uuid = compat_uuid_string(entry.event_type, entry.process_uuid);
+            let library = compat_attribution_string(entry.event_type, entry.library);
+            let process = compat_attribution_string(entry.event_type, entry.process);
 
             logs.push(LogData {
                 subsystem,
                 thread_id: entry.thread_id,
                 pid: entry.pid,
                 euid: entry.euid,
-                library: entry.library.unwrap_or("").to_string(),
+                library,
                 library_uuid,
                 activity_id: entry.activity_id,
                 parent_activity_id: entry.parent_activity_id.unwrap_or(0),
@@ -300,7 +302,7 @@ pub fn build_log(
                 category: entry.category.unwrap_or("").to_string(),
                 event_type: entry.event_type,
                 log_type: entry.log_type,
-                process: entry.process.unwrap_or("").to_string(),
+                process,
                 process_uuid,
                 message: (*message).clone(),
                 raw_message,
@@ -329,10 +331,18 @@ pub fn build_log(
 }
 
 fn compat_uuid_string(event_type: EventType, uuid: Uuid) -> String {
-    if event_type == EventType::Statedump && uuid.is_nil() {
+    if (event_type == EventType::Statedump && uuid.is_nil()) || event_type == EventType::Loss {
         String::new()
     } else {
         format!("{:X}", uuid.simple())
+    }
+}
+
+fn compat_attribution_string(event_type: EventType, value: Option<&str>) -> String {
+    if event_type == EventType::Loss {
+        String::new()
+    } else {
+        value.unwrap_or("").to_string()
     }
 }
 
