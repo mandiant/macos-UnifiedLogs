@@ -31,24 +31,23 @@ Total differing entries: `3872`.
 
 ### Compat vs Rewrite
 
-Total differing entries: `432418`.
+Current differing entries after the activity-id fix: `92859`.
 
-- `304636` `activity_id`: rewrite keeps the high-bit sentinel (`+ 2^63`), compat masks it.
-- `34922` `activity_id`, `parent_activity_id`: same high-bit sentinel issue affects both IDs.
-- `64322` `message`: rewrite omits the compat/legacy signpost prefix (`Signpost ID: ... - Signpost Name: ...`).
-- `16974` mixed `activity_id + message`: same high-bit issue plus message formatting differences.
-- `24600` `message`: compat renders null pointers as `(null)`, rewrite renders an empty string.
+- `66696` `message`: rewrite omits the compat/legacy signpost prefix (`Signpost ID: ... - Signpost Name: ...`).
+- `24402` `message`: compat renders null pointers as `(null)`, rewrite renders an empty string.
 - `785` `message`: rewrite omits compat backtrace prefix formatting.
 - `267` `message`: rewrite returns empty strings for `%s%.*s` style messages that compat resolves, for example CAML warnings.
 - `60` `message`, `raw_message`: invalid format-string offsets use compat error text, while rewrite emits `<missing format string>`.
-- `8` `message`: very large floating/decimal values lose precision in rewrite output.
+- `7` `message`: very large floating/decimal values lose precision in rewrite output.
 - `6` `message`: loss entries include a rewrite-only "Lost N log entries..." message.
+- `636` `message`: remaining formatter/object rendering differences that need further bucketing.
 
 ## Reduction Plan
 
-- [ ] Mask the high-bit sentinel in rewrite `activity_id` and `parent_activity_id` for normal rewrite output, not only under `rewrite-compat`.
+- [x] Mask the high-bit sentinel in rewrite `activity_id` and `parent_activity_id` for normal rewrite output, not only under `rewrite-compat`.
   - Expected impact: about `339558` compat/rewrite entries.
   - Start in `src/rewrite/tracev3.rs::combine_activity_id`.
+  - Result: `compat vs rewrite` diff count dropped from `432418` to `92859`; `activity_id` and `parent_activity_id` no longer appear in the structural diff.
 
 - [ ] Decide whether rewrite should intentionally match compat/legacy signpost and backtrace prefixes.
   - If yes, remove the `rewrite-compat` gating in `src/rewrite/log_entry.rs::apply_parity_prefix`.

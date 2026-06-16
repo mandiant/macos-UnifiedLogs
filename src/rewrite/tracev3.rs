@@ -2,14 +2,14 @@
 
 use super::catalog::RawCatalogChunk;
 use super::chunk::{ChunkSetReader, ChunksReader, TopChunk};
-use super::chunks::ChunkTag;
-use super::chunks::firehose::RawFirehose;
 use super::chunks::firehose::body::{RawActivityBody, RawFirehoseBody, RawFormatterFlags};
 use super::chunks::firehose::entry::FirehoseLogType;
 use super::chunks::firehose::flags::{FirehoseFlags, FormatterType};
+use super::chunks::firehose::RawFirehose;
 use super::chunks::oversize::RawOversize;
 use super::chunks::simpledump::RawSimpleDump;
 use super::chunks::statedump::RawStatedump;
+use super::chunks::ChunkTag;
 use super::dsc::RawSharedCacheStrings;
 use super::error::{NomExt, ParseError};
 use super::header::RawHeaderChunk;
@@ -754,16 +754,7 @@ fn combine_activity_id(ids: Option<(u32, u32)>) -> u64 {
     match ids {
         Some((lo, hi)) => {
             let raw = u64::from(lo) | (u64::from(hi) << 32);
-            // Under the feature flag, mask off the high bit sentinel (0x80000000 in hi)
-            // to match the old pipeline which used only the lower u32: u64::from(lo).
-            #[cfg(feature = "rewrite-compat")]
-            {
-                raw & 0x7FFFFFFFFFFFFFFF
-            }
-            #[cfg(not(feature = "rewrite-compat"))]
-            {
-                raw
-            }
+            raw & 0x7FFF_FFFF_FFFF_FFFF
         }
         None => 0,
     }
@@ -893,6 +884,7 @@ mod tests {
 
     #[test_case(None                    => 0                ; "none")]
     #[test_case(Some((0xDEAD, 0xBEEF)) => 0xBEEF_0000_DEAD; "some")]
+    #[test_case(Some((0xDEAD, 0x8000_BEEF)) => 0x0000_BEEF_0000_DEAD; "high bit sentinel")]
     #[test_case(Some((0, 0))           => 0                ; "zero")]
     fn test_combine_activity_id(input: Option<(u32, u32)>) -> u64 {
         combine_activity_id(input)
