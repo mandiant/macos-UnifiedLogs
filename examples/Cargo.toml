@@ -1,2 +1,8 @@
 [workspace]
-members = ["unifiedlog_iterator"]
+resolver = "3"
+members = [
+    "dump_compat",
+    "dump_legacy",
+    "dump_rewrite",
+    "unifiedlog_iterator",
+]
