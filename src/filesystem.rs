@@ -111,7 +111,9 @@ impl FileProvider for LiveSystemProvider {
                 .into_iter()
                 .filter_map(Result::ok)
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::TraceV3))
-                .filter_map(|entry| LocalFile::new(entry.path()).ok()),
+                .filter_map(|entry| {
+                    LocalFile::new(entry.path()).ok()
+                }),
         )
     }
 
@@ -122,7 +124,9 @@ impl FileProvider for LiveSystemProvider {
                 .into_iter()
                 .filter_map(Result::ok)
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::UUIDText))
-                .filter_map(|entry| LocalFile::new(entry.path()).ok()),
+                .filter_map(|entry| {
+                    LocalFile::new(entry.path()).ok()
+                }),
         )
     }
 
@@ -228,7 +232,9 @@ impl FileProvider for LiveSystemProvider {
                 .into_iter()
                 .filter_map(Result::ok)
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::Timesync))
-                .filter_map(|entry| LocalFile::new(entry.path()).ok()),
+                .filter_map(|entry| {
+                    LocalFile::new(entry.path()).ok()
+                }),
         )
     }
 }
@@ -279,7 +285,9 @@ impl FileProvider for LogarchiveProvider {
                 .into_iter()
                 .filter_map(Result::ok)
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::TraceV3))
-                .filter_map(|entry| LocalFile::new(entry.path()).ok()),
+                .filter_map(|entry| {
+                    LocalFile::new(entry.path()).ok()
+                }),
         )
     }
 
@@ -289,7 +297,9 @@ impl FileProvider for LogarchiveProvider {
                 .into_iter()
                 .filter_map(Result::ok)
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::UUIDText))
-                .filter_map(|entry| LocalFile::new(entry.path()).ok()),
+                .filter_map(|entry| {
+                    LocalFile::new(entry.path()).ok()
+                }),
         )
     }
 
@@ -382,7 +392,9 @@ impl FileProvider for LogarchiveProvider {
                 .into_iter()
                 .filter_map(Result::ok)
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::Dsc))
-                .filter_map(|entry| LocalFile::new(entry.path()).ok()),
+                .filter_map(|entry| {
+                    LocalFile::new(entry.path()).ok()
+                }),
         )
     }
 
@@ -392,7 +404,9 @@ impl FileProvider for LogarchiveProvider {
                 .into_iter()
                 .filter_map(Result::ok)
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::Timesync))
-                .filter_map(|entry| LocalFile::new(entry.path()).ok()),
+                .filter_map(|entry| {
+                    LocalFile::new(entry.path()).ok()
+                }),
         )
     }
 }
