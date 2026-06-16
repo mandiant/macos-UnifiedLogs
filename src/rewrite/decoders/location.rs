@@ -754,14 +754,14 @@ mod tests {
     use super::*;
     use crate::rewrite::helpers::decode_standard;
 
-        #[test]
+    #[test]
     fn test_client_authorization_status() {
         let test_data = "0";
         let result = client_authorization_status(test_data).unwrap();
         assert_eq!(result, ClientAuthorizationStatus::NotDetermined)
     }
 
-        #[test]
+    #[test]
     fn test_daemon_status_type() {
         let test_data = "2";
         let result = daemon_status_type(test_data).unwrap();
@@ -769,7 +769,7 @@ mod tests {
         assert_eq!(result, DaemonStatusType::ReachabilityLarge)
     }
 
-        #[test]
+    #[test]
     fn test_subharvester_identifier() {
         let test_data = "2";
         let result = subharvester_identifier(test_data).unwrap();
@@ -777,7 +777,7 @@ mod tests {
         assert_eq!(result, SubharvesterIdentifier::Wifi)
     }
 
-        #[test]
+    #[test]
     fn test_sqlite() {
         let test_data = "AAAAAA==";
         let result = sqlite_location(test_data).unwrap();
@@ -785,7 +785,7 @@ mod tests {
         assert_eq!(result, SqliteError::SQLITE_OK)
     }
 
-        #[test]
+    #[test]
     fn test_get_sqlite_data() {
         let test_data = "AAAAAA==";
         let decoded_data_result = decode_standard(test_data).unwrap();
@@ -795,7 +795,7 @@ mod tests {
         assert_eq!(result, SqliteError::SQLITE_OK)
     }
 
-        #[test]
+    #[test]
     fn test_client_manager_state_tracker_state() {
         let test_data = "AQAAAAAAAAA=";
         let result = client_manager_state_tracker_state(test_data).unwrap();
@@ -828,7 +828,7 @@ mod tests {
         )
     }
 
-        #[test]
+    #[test]
     fn test_location_manager_state_tracker_state() {
         let test_data = "AAAAAAAA8L8AAAAAAABZQAAAAAAAAAAAAAAAAAAA8D8BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAQAAAAAAAAAA";
         let result = location_manager_state_tracker_state(test_data).unwrap();
@@ -852,7 +852,7 @@ mod tests {
         )
     }
 
-        #[test]
+    #[test]
     fn test_io_message() {
         let test_data = "3758096981";
         let result = io_message(test_data).unwrap();

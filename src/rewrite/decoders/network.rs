@@ -176,7 +176,7 @@ mod tests {
     use super::*;
     use crate::rewrite::helpers::decode_standard;
 
-        #[test]
+    #[test]
     fn test_ipv_six() {
         let test_data = "/wIAAAAAAAAAAAAAAAAA+w==";
         let result = ipv_six(test_data).unwrap();
@@ -192,7 +192,7 @@ mod tests {
         assert_eq!(result.to_string(), "ff02::fb");
     }
 
-        #[test]
+    #[test]
     fn test_ipv_four() {
         let test_data = "4AAA+w==";
         let result = ipv_four(test_data).unwrap();
@@ -207,7 +207,7 @@ mod tests {
         let (_, result) = get_ip_four(&decoded_data_result).unwrap();
         assert_eq!(result.to_string(), "224.0.0.251");
     }
-        #[test]
+    #[test]
     fn test_sockaddr() {
         let mut test_data = "EAIAALgciWcAAAAAAAAAAA==";
         let mut result = sockaddr(test_data).unwrap();
@@ -218,7 +218,7 @@ mod tests {
         assert_eq!(result.to_string(), "::, Flow ID: 0, Scope ID: 0");
     }
 
-        #[test]
+    #[test]
     fn test_get_sockaddr_data() {
         let test_data = "EAIAALgciWcAAAAAAAAAAA==";
         let decoded_data_result = decode_standard(test_data).unwrap();

@@ -721,14 +721,15 @@ fn test_big_sur_loss_entries_resolved() {
             loss.process_uuid, loss.library_uuid,
             "Loss entry {i}: library_uuid should equal process_uuid (MainExe pattern)"
         );
-        assert!(
-            loss.count > 0,
-            "Loss entry {i} should have non-zero count"
-        );
+        assert!(loss.count > 0, "Loss entry {i} should have non-zero count");
     }
 
     // Verify the specific values for the Big Sur test data
-    assert!(loss_entries.iter().all(|l| l.process.as_deref() == Some("/kernel")));
+    assert!(
+        loss_entries
+            .iter()
+            .all(|l| l.process.as_deref() == Some("/kernel"))
+    );
     assert!(loss_entries.iter().all(|l| l.pid == 0 && l.euid == 0));
     assert!(loss_entries.iter().all(|l| l.count == 63));
 }

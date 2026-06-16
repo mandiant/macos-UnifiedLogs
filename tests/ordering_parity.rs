@@ -1,8 +1,7 @@
 use std::path::PathBuf;
 
-
 fn log_archive_path() -> PathBuf {
- PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/test_data/system_logs_big_sur.logarchive")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/test_data/system_logs_big_sur.logarchive")
 }
 
 #[cfg(not(feature = "rewrite"))]

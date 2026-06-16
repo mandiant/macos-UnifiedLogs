@@ -17,7 +17,7 @@
     clippy::inefficient_to_string,
     clippy::verbose_file_reads,
     clippy::unnested_or_patterns,
-    rust_2018_idioms,
+    rust_2018_idioms
 )]
 #![deny(
     clippy::cast_lossless,
