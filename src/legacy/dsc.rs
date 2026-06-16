@@ -115,6 +115,7 @@ impl SharedCacheStrings {
         range_data.range_offset = if version == version_number {
             let (data_input, dsc_range_offset) = le_u64(input)?;
             input = data_input;
+
             dsc_range_offset
         } else {
             // Get data based on version 1
@@ -125,7 +126,6 @@ impl SharedCacheStrings {
             input = data_input;
             u64::from(dsc_range_offset)
         };
-
         let (input, dsc_data_offset) = le_u32(input)?;
         let (mut input, dsc_range_size) = le_u32(input)?;
 
