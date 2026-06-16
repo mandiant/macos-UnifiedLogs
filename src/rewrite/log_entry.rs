@@ -165,9 +165,7 @@ pub struct LogEntry<'a, 'b> {
     // Private: deferred message data
     pub items: ItemsData<'b>,
     // Signpost fields — populated only for Signpost entries, 0 otherwise.
-    #[cfg_attr(not(feature = "rewrite-compat"), allow(dead_code))]
     pub signpost_id: u64,
-    #[cfg_attr(not(feature = "rewrite-compat"), allow(dead_code))]
     pub signpost_name: u32,
 
     pub resolved_message: std::cell::RefCell<Option<Rc<String>>>,
@@ -289,35 +287,25 @@ impl<'a, 'b> LogEntry<'a, 'b> {
         DateTime::from_timestamp_nanos(self.time as i64)
     }
 
-    /// Apply signpost prefix and backtrace prefix for parity with the old pipeline.
-    /// Without the feature flag, returns the message unchanged.
-    fn apply_parity_prefix(&self, msg: String, _backtrace: Option<&[u8]>) -> String {
-        #[cfg(feature = "rewrite-compat")]
-        {
-            let mut result = msg;
+    /// Apply signpost and backtrace prefixes for parity with the old pipeline.
+    fn apply_parity_prefix(&self, msg: String, backtrace: Option<&[u8]>) -> String {
+        let mut result = msg;
 
-            // Signpost entries get "Signpost ID: XX - Signpost Name: XX\n " prefix
-            if self.event_type == EventType::Signpost {
-                result = format!(
-                    "Signpost ID: {:X} - Signpost Name: {:X}\n {result}",
-                    self.signpost_id, self.signpost_name,
-                );
-            }
-
-            // Backtrace data gets "Backtrace:\n{lines}\n" prefix
-            if let Some(bt_data) = _backtrace {
-                let bt_str = format_backtrace(bt_data);
-                if !bt_str.is_empty() {
-                    result = format!("Backtrace:\n{bt_str}\n{result}");
-                }
-            }
-
-            result
+        if self.event_type == EventType::Signpost {
+            result = format!(
+                "Signpost ID: {:X} - Signpost Name: {:X}\n {result}",
+                self.signpost_id, self.signpost_name,
+            );
         }
-        #[cfg(not(feature = "rewrite-compat"))]
-        {
-            msg
+
+        if let Some(bt_data) = backtrace {
+            let bt_str = format_backtrace(bt_data);
+            if !bt_str.is_empty() {
+                result = format!("Backtrace:\n{bt_str}\n{result}");
+            }
         }
+
+        result
     }
 }
 
@@ -329,7 +317,6 @@ impl<'a, 'b> LogEntry<'a, 'b> {
 ///
 /// Output: one line per offset: `"UUID_HEX" +0xOFFSET_DECIMAL` joined by newlines.
 /// Matches old pipeline's `FirehosePreamble::get_backtrace_data()`.
-#[cfg(feature = "rewrite-compat")]
 fn format_backtrace(data: &[u8]) -> String {
     if data.len() < 6 {
         return String::new();

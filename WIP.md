@@ -31,16 +31,14 @@ Total differing entries: `3872`.
 
 ### Compat vs Rewrite
 
-Current differing entries after the activity-id fix: `92859`.
+Current differing entries after the signpost/backtrace prefix fix: `25686`.
 
-- `66696` `message`: rewrite omits the compat/legacy signpost prefix (`Signpost ID: ... - Signpost Name: ...`).
-- `24402` `message`: compat renders null pointers as `(null)`, rewrite renders an empty string.
-- `785` `message`: rewrite omits compat backtrace prefix formatting.
+- `24600` `message`: compat renders null pointers as `(null)`, rewrite renders an empty string.
 - `267` `message`: rewrite returns empty strings for `%s%.*s` style messages that compat resolves, for example CAML warnings.
 - `60` `message`, `raw_message`: invalid format-string offsets use compat error text, while rewrite emits `<missing format string>`.
 - `7` `message`: very large floating/decimal values lose precision in rewrite output.
 - `6` `message`: loss entries include a rewrite-only "Lost N log entries..." message.
-- `636` `message`: remaining formatter/object rendering differences that need further bucketing.
+- `746` `message`: remaining formatter/object rendering differences that need further bucketing.
 
 ## Reduction Plan
 
@@ -49,9 +47,10 @@ Current differing entries after the activity-id fix: `92859`.
   - Start in `src/rewrite/tracev3.rs::combine_activity_id`.
   - Result: `compat vs rewrite` diff count dropped from `432418` to `92859`; `activity_id` and `parent_activity_id` no longer appear in the structural diff.
 
-- [ ] Decide whether rewrite should intentionally match compat/legacy signpost and backtrace prefixes.
+- [x] Decide whether rewrite should intentionally match compat/legacy signpost and backtrace prefixes.
   - If yes, remove the `rewrite-compat` gating in `src/rewrite/log_entry.rs::apply_parity_prefix`.
   - Expected impact: about `67481` message entries.
+  - Result: signpost and backtrace prefix buckets disappeared; `compat vs rewrite` diff count dropped from `92859` to `25686`.
 
 - [ ] Normalize null pointer formatting.
   - Decide target behavior: compat/legacy `(null)` or rewrite empty string.
