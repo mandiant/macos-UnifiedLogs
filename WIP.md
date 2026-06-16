@@ -1,110 +1,95 @@
-# WIP: Port `main` Into `rewrite3`
+# WIP: Dump Parity Reduction
 
-Comparison used:
+Generated with:
 
-- Current branch: `rewrite3` at `14253f8` (`agents init`)
-- Target source: `main` at `27ff665` (`Sort all fileproviders outputs (#121)`)
-- Merge base: `6603050` (`Update #104 to new release (#105)`)
-- Command basis: `git log --reverse rewrite3..main`
+```bash
+just dump_all_and_compare
+```
 
-`main` now uses the flat legacy layout (`src/*.rs`, `src/chunks/...`). This branch moved code under `src/legacy/`, added `src/rewrite/`, and added `src/compat/`. Do not cherry-pick blindly; port each behavior into the relevant legacy, rewrite, and compatibility paths.
+Fixture:
 
-## Per-Commit Porting Workflow
+```text
+tests/test_data/system_logs_big_sur_private_enabled.logarchive
+```
 
-For each unchecked commit below:
+All three dumps currently contain `887890` entries, so entry count and ordering are aligned. The remaining work is field/value parity.
 
-1. Cherry-pick or manually apply the original diff onto the legacy implementation, reconciling the flat `main` paths with `src/legacy/...`.
-2. Preserve the original commit message text for the eventual commit.
-3. Implement the corresponding feature, increment, or fix in the rewrite implementation when the change is not purely common infrastructure.
-4. Update the compatibility layer when public API or output shape changes.
-5. Run the checks/tests needed for the touched feature flavors, normally:
-   - `just test_legacy`
-   - `just test_rewrite`
-   - `just test_compat`
-   - targeted tests such as `just compare_big_sur` when ordering or parser parity is affected
-   - `cd examples && cargo build --release` when example code changes
-6. Check the matching checkbox in this file only after the port and validation are done.
-7. Pause for human review. The user will create the commit manually.
+## Difference Summary
 
-## Commit Checklist
+### Legacy vs Compat
 
-- [x] `bf5bb3d` - `feat(unified_log): add support for parent activity ID (#109)`
-  - Main files: `src/unified_log.rs`, `examples/unifiedlog_iterator/src/main.rs`
-  - Port note: add parent activity output through legacy structs, rewrite `LogEntry`/format path if applicable, compat API, and the example binary.
-  - Commit message to use: `feat(unified_log): add support for parent activity ID (#109)`
+Total differing entries: `3872`.
 
-- [x] `bcd444d` - `Test and dependency updates (#110)`
-  - Main files: `Cargo.toml`, `examples/unifiedlog_iterator/Cargo.toml`, `tests/big_sur_tests.rs`
-  - Port note: review dependency changes and test fixture expectations before applying.
-  - Commit message to use: `Test and dependency updates (#110)`
+- `2856` `message`: mDNS DNS-header decoder whitespace. Legacy keeps a space before newline after commas, compat/rewrite do not.
+- `526` `message`: mostly formatter/decoder edge cases:
+  - OpenDirectory `ODError...` strings are truncated by one or more trailing characters in compat.
+  - Some long object/private strings differ by truncation or masking.
+  - One install-phase plist/object string is truncated.
+- `480` `library_uuid`, `process_uuid`: statedump entries use empty UUIDs in legacy and zero UUIDs in compat.
+- `6` `library`, `library_uuid`, `process`, `process_uuid`: loss entries are unattributed in legacy but attributed to `/kernel` in compat.
+- `4` statedump entries combine zero UUID differences with DNS Configuration decoder formatting differences.
 
-- [x] `c43f3f4` - `Minor update to nom parsing (#111)`
-  - Main files: `src/chunks/{oversize,simpledump,statedump}.rs`, `src/chunkset.rs`, `src/{dsc,header,timesync,uuidtext}.rs`, docs/CI
-  - Port note: apply parser changes to `src/legacy/...`; audit equivalent rewrite parsers.
-  - Commit message to use: `Minor update to nom parsing (#111)`
+### Compat vs Rewrite
 
-- [x] `2cf2760` - `Further nom updates and additional error code lookup (#112)`
-  - Main files: firehose parsers, `simpledump`, `statedump`, decoders, `message`, `unified_log`, `util`, tests
-  - Port note: important behavior change. Port decoder error lookup and parser updates to both parser implementations.
-  - Commit message to use: `Further nom updates and additional error code lookup (#112)`
+Total differing entries: `432418`.
 
-- [x] `0e31c7d` - `Minor code cleanup (#113)`
-  - Main files: firehose, `oversize`, `dsc`, `filesystem`, `parser`, `timesync`, `unified_log`, `uuidtext`
-  - Port note: review for behavioral cleanup versus style-only churn; avoid undoing rewrite-specific structure.
-  - Commit message to use: `Minor code cleanup (#113)`
+- `304636` `activity_id`: rewrite keeps the high-bit sentinel (`+ 2^63`), compat masks it.
+- `34922` `activity_id`, `parent_activity_id`: same high-bit sentinel issue affects both IDs.
+- `64322` `message`: rewrite omits the compat/legacy signpost prefix (`Signpost ID: ... - Signpost Name: ...`).
+- `16974` mixed `activity_id + message`: same high-bit issue plus message formatting differences.
+- `24600` `message`: compat renders null pointers as `(null)`, rewrite renders an empty string.
+- `785` `message`: rewrite omits compat backtrace prefix formatting.
+- `267` `message`: rewrite returns empty strings for `%s%.*s` style messages that compat resolves, for example CAML warnings.
+- `60` `message`, `raw_message`: invalid format-string offsets use compat error text, while rewrite emits `<missing format string>`.
+- `8` `message`: very large floating/decimal values lose precision in rewrite output.
+- `6` `message`: loss entries include a rewrite-only "Lost N log entries..." message.
 
-- [x] `26644e7` - `Code cleanup and fixes (#114)`
-  - Main files: dependencies, example, firehose `activity`, `flags`, `message`, `nonactivity`, `signpost`, `trace`
-  - Port note: likely overlaps heavily with moved firehose code. Apply after prior nom/firehose commits.
-  - Commit message to use: `Code cleanup and fixes (#114)`
+## Reduction Plan
 
-- [x] `359aac4` - `Fix for has_large_offset flag and more tests (#115)`
-  - Main files: `src/chunks/firehose/message.rs`, `tests/tahoe_tests.rs`
-  - Port note: high-priority correctness fix; add Tahoe fixture tests if test data is available.
-  - Commit message to use: `Fix for has_large_offset flag and more tests (#115)`
+- [ ] Mask the high-bit sentinel in rewrite `activity_id` and `parent_activity_id` for normal rewrite output, not only under `rewrite-compat`.
+  - Expected impact: about `339558` compat/rewrite entries.
+  - Start in `src/rewrite/tracev3.rs::combine_activity_id`.
 
-- [x] `b2eadea` - `Added enums for firehose items (#116)`
-  - Main files: `firehose_log`, `message`, `trace`, `oversize`, decoder trait, `message`, `unified_log`, Tahoe tests
-  - Port note: port enum model carefully into rewrite item/message types, not just legacy structures.
-  - Commit message to use: `Added enums for firehose items (#116)`
+- [ ] Decide whether rewrite should intentionally match compat/legacy signpost and backtrace prefixes.
+  - If yes, remove the `rewrite-compat` gating in `src/rewrite/log_entry.rs::apply_parity_prefix`.
+  - Expected impact: about `67481` message entries.
 
-- [x] `fb9bec5` - `Updates to message assembly (#117)`
-  - Main files: `src/message.rs`
-  - Port note: legacy message assembly refactor ported; rewrite formatter updated so plain octal formatting no longer forces alternate `0o` output in compat mode.
-  - Commit message to use: `Updates to message assembly (#117)`
+- [ ] Normalize null pointer formatting.
+  - Decide target behavior: compat/legacy `(null)` or rewrite empty string.
+  - Expected impact: about `24600` message entries.
+  - Search in rewrite item formatting and string/object decoding paths.
 
-- [x] `9c54de4` - `Add message flags to output (#118)`
-  - Main files: firehose parsers and `src/unified_log.rs`
-  - Port note: exposed semantic message flags through legacy `LogData`, rewrite `LogEntry`, and compat `LogData`; rewrite derives the same ordered flags from parsed entry and formatter state.
-  - Commit message to use: `Add message flags to output (#118)`
+- [ ] Fix `%s%.*s` precision/string assembly in rewrite.
+  - Example raw message: `%s%.*s`.
+  - Expected impact: about `267` message entries.
+  - Start in `src/rewrite/format.rs`.
 
-- [x] `cea3d79` - `Dependency Updates (#119)`
-  - Main files: root and example `Cargo.toml`
-  - Port note: apply after code ports so dependency-driven API changes are easier to isolate.
-  - Commit message to use: `Dependency Updates (#119)`
+- [ ] Use compat invalid-offset error text in rewrite when format-string lookup fails.
+  - Expected impact: `60` entries.
+  - Start in `src/rewrite/tracev3.rs::format_string_error_message` and `src/rewrite/log_entry.rs::effective_format_string`.
 
-- [x] `868d56a` - `Prep Changelog for next release (#120)`
-  - Main files: `.changes/v0.6.0.md`, `CHANGELOG.md`
-  - Port note: release bookkeeping only; probably port after functional commits, or skip until this branch is release-ready.
-  - Commit message to use: `Prep Changelog for next release (#120)`
+- [ ] Investigate large-number precision formatting.
+  - Expected impact: `8` entries.
+  - Compare legacy `src/legacy/message.rs` to rewrite `src/rewrite/format.rs`.
 
-- [x] `27ff665` - `Sort all fileproviders outputs (#121)`
-  - Main files: `src/filesystem.rs`, `src/parser.rs`
-  - Port note: port ordering behavior to `src/legacy/filesystem.rs`, `src/legacy/parser.rs`, and any rewrite logarchive/file provider traversal.
-  - Commit message to use: `Sort all fileproviders outputs (#121)`
+- [ ] Decide whether loss entries should have an empty message or rewrite's explicit lost-entry message.
+  - Expected impact: `6` entries.
 
-## Suggested Port Order
+- [ ] Bring compat closer to legacy for low-volume differences after rewrite parity is stable.
+  - mDNS DNS-header comma/newline whitespace.
+  - OpenDirectory decoder truncation.
+  - Statedump empty UUID vs zero UUID representation.
+  - Loss attribution to `/kernel`.
+  - DNS Configuration statedump formatting.
 
-1. Dependencies and low-risk parser compatibility: `bcd444d`, `c43f3f4`, `cea3d79`.
-2. Firehose and message behavior: `2cf2760`, `26644e7`, `359aac4`, `b2eadea`, `fb9bec5`, `9c54de4`.
-3. Public output/API updates: `bf5bb3d`, then re-check compat exports.
-4. File ordering behavior: `27ff665`.
-5. Release notes: `868d56a` only when the functional port is stable.
+## Validation Loop
 
-## Validation Targets
+After each fix:
 
-- `just test_legacy`
-- `just test_rewrite`
-- `just test_compat`
-- `just compare_big_sur`
-- `cd examples && cargo build --release`
+```bash
+just dump_all_and_compare > /tmp/macos-unifiedlogs-dump-compare.out 2>&1
+wc -l dump_legacy.txt dump_compat.txt dump_rewrite.txt
+grep -n "^--- dump_\\|^+++ dump_" /tmp/macos-unifiedlogs-dump-compare.out
+```
+
+Then rerun the structural diff grouping before checking off the corresponding task.
