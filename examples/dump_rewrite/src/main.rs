@@ -3,7 +3,10 @@ mod common;
 
 use chrono::SecondsFormat;
 use common::{DumpEntry, write_entry};
-use macos_unifiedlogs::{log_entry::LogEntry, logarchive::visit_logarchive};
+use macos_unifiedlogs::{
+    log_entry::{EventType, LogEntry},
+    logarchive::visit_logarchive,
+};
 use std::path::PathBuf;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -39,7 +42,11 @@ fn dump_entry(index: usize, entry: &LogEntry<'_, '_>) -> DumpEntry {
         pid: entry.pid,
         euid: entry.euid,
         library: entry.library.unwrap_or("").to_string(),
-        library_uuid: format!("{:X}", entry.library_uuid.simple()),
+        library_uuid: dump_uuid_string(
+            entry.event_type,
+            entry.library_uuid.is_nil(),
+            format!("{:X}", entry.library_uuid.simple()),
+        ),
         activity_id: entry.activity_id,
         parent_activity_id: entry.parent_activity_id,
         timestamp: entry
@@ -48,7 +55,11 @@ fn dump_entry(index: usize, entry: &LogEntry<'_, '_>) -> DumpEntry {
         event_type: format!("{:?}", entry.event_type),
         log_type: format!("{:?}", entry.log_type),
         process: entry.process.unwrap_or("").to_string(),
-        process_uuid: format!("{:X}", entry.process_uuid.simple()),
+        process_uuid: dump_uuid_string(
+            entry.event_type,
+            entry.process_uuid.is_nil(),
+            format!("{:X}", entry.process_uuid.simple()),
+        ),
         message: entry.message().to_string(),
         raw_message: entry.raw_message().to_string(),
         boot_uuid: format!("{:X}", entry.boot_uuid.simple()),
@@ -58,5 +69,13 @@ fn dump_entry(index: usize, entry: &LogEntry<'_, '_>) -> DumpEntry {
             .iter()
             .map(|flag| format!("{flag:?}"))
             .collect(),
+    }
+}
+
+fn dump_uuid_string(event_type: EventType, is_nil: bool, uuid: String) -> String {
+    if event_type == EventType::Statedump && is_nil {
+        String::new()
+    } else {
+        uuid
     }
 }

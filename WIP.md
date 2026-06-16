@@ -18,15 +18,14 @@ All three dumps currently contain `887890` entries, so entry count and ordering 
 
 ### Legacy vs Compat
 
-Total differing entries: `1016`.
+Total differing entries: `536`.
 
-- `526` `message`: mostly formatter/decoder edge cases:
+- `530` `message`: mostly formatter/decoder edge cases:
   - OpenDirectory `ODError...` strings are truncated by one or more trailing characters in compat.
   - Some long object/private strings differ by truncation or masking.
   - One install-phase plist/object string is truncated.
-- `480` `library_uuid`, `process_uuid`: statedump entries use empty UUIDs in legacy and zero UUIDs in compat.
+  - Four DNS Configuration statedump entries still differ in object formatting.
 - `6` `library`, `library_uuid`, `process`, `process_uuid`: loss entries are unattributed in legacy but attributed to `/kernel` in compat.
-- `4` statedump entries combine zero UUID differences with DNS Configuration decoder formatting differences.
 
 ### Compat vs Rewrite
 
@@ -91,9 +90,13 @@ Compat and rewrite now produce identical normalized dumps for all `887890` entri
   - Change was in `src/rewrite/decoders/dns.rs::DnsFlags::fmt`.
   - Result: `legacy vs compat` diff count dropped from `3872` to `1016`; `compat vs rewrite` stayed at `0`.
 
+- [x] Normalize statedump nil UUIDs to legacy empty strings in compat/dump output.
+  - Expected impact: `480` UUID-only entries plus UUID parts of four statedump message entries.
+  - Compat `LogData` can represent this as an empty string; native rewrite still uses typed `Uuid::nil()`.
+  - Result: `legacy vs compat` diff count dropped from `1016` to `536`; `compat vs rewrite` stayed at `0`.
+
 - [ ] Bring compat closer to legacy for low-volume differences after rewrite parity is stable.
   - OpenDirectory decoder truncation.
-  - Statedump empty UUID vs zero UUID representation.
   - Loss attribution to `/kernel`.
   - DNS Configuration statedump formatting.
 

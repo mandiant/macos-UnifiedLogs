@@ -29,8 +29,8 @@ use crate::rewrite::uuidtext::RawUUIDText;
 use super::filesystem::LogarchiveProvider;
 use super::traits::FileProvider;
 use super::unified_log::{
-    CatalogInfo, CountVec, FirehoseItem, FirehoseItemType, HeaderInfo, LogData, OversizeEntry,
-    ParserError, TimesyncBoot, UnifiedLogCatalogData, UnifiedLogData,
+    CatalogInfo, CountVec, EventType, FirehoseItem, FirehoseItemType, HeaderInfo, LogData,
+    OversizeEntry, ParserError, TimesyncBoot, UnifiedLogCatalogData, UnifiedLogData,
 };
 
 // ---------------------------------------------------------------------------
@@ -284,6 +284,8 @@ pub fn build_log(
                 .to_string();
 
             let message_entries = compat_message_entries(&entry);
+            let library_uuid = compat_uuid_string(entry.event_type, entry.library_uuid);
+            let process_uuid = compat_uuid_string(entry.event_type, entry.process_uuid);
 
             logs.push(LogData {
                 subsystem,
@@ -291,7 +293,7 @@ pub fn build_log(
                 pid: entry.pid,
                 euid: entry.euid,
                 library: entry.library.unwrap_or("").to_string(),
-                library_uuid: format!("{:X}", entry.library_uuid.simple()),
+                library_uuid,
                 activity_id: entry.activity_id,
                 parent_activity_id: entry.parent_activity_id.unwrap_or(0),
                 time: entry.time,
@@ -299,7 +301,7 @@ pub fn build_log(
                 event_type: entry.event_type,
                 log_type: entry.log_type,
                 process: entry.process.unwrap_or("").to_string(),
-                process_uuid: format!("{:X}", entry.process_uuid.simple()),
+                process_uuid,
                 message: (*message).clone(),
                 raw_message,
                 boot_uuid: format!("{:X}", entry.boot_uuid.simple()),
@@ -324,6 +326,14 @@ pub fn build_log(
     };
 
     (logs, remaining)
+}
+
+fn compat_uuid_string(event_type: EventType, uuid: Uuid) -> String {
+    if event_type == EventType::Statedump && uuid.is_nil() {
+        String::new()
+    } else {
+        format!("{:X}", uuid.simple())
+    }
 }
 
 fn compat_message_entries(entry: &LogEntry<'_, '_>) -> Vec<FirehoseItemType> {
