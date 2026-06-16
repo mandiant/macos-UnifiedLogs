@@ -18,9 +18,8 @@ All three dumps currently contain `887890` entries, so entry count and ordering 
 
 ### Legacy vs Compat
 
-Total differing entries: `3872`.
+Total differing entries: `1016`.
 
-- `2856` `message`: mDNS DNS-header decoder whitespace. Legacy keeps a space before newline after commas, compat/rewrite do not.
 - `526` `message`: mostly formatter/decoder edge cases:
   - OpenDirectory `ODError...` strings are truncated by one or more trailing characters in compat.
   - Some long object/private strings differ by truncation or masking.
@@ -87,8 +86,12 @@ Compat and rewrite now produce identical normalized dumps for all `887890` entri
   - Result: legacy and compat examples now merge oversize entries before building per-file logs, matching rewrite's archive walker behavior.
   - Final result: `compat vs rewrite` structural diff count is `0`.
 
+- [x] Match legacy mDNS DNS-header comma/newline whitespace in compat/rewrite.
+  - Expected impact: `2856` `message` entries.
+  - Change was in `src/rewrite/decoders/dns.rs::DnsFlags::fmt`.
+  - Result: `legacy vs compat` diff count dropped from `3872` to `1016`; `compat vs rewrite` stayed at `0`.
+
 - [ ] Bring compat closer to legacy for low-volume differences after rewrite parity is stable.
-  - mDNS DNS-header comma/newline whitespace.
   - OpenDirectory decoder truncation.
   - Statedump empty UUID vs zero UUID representation.
   - Loss attribution to `/kernel`.
