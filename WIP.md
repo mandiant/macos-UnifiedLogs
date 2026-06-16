@@ -83,9 +83,10 @@ For each unchecked commit below:
   - Port note: apply after code ports so dependency-driven API changes are easier to isolate.
   - Commit message to use: `Dependency Updates (#119)`
 
-- [ ] `868d56a` - `Prep Changelog for next release (#120)`
+- [x] `868d56a` - `Prep Changelog for next release (#120)`
   - Main files: `.changes/v0.6.0.md`, `CHANGELOG.md`
   - Port note: release bookkeeping only; probably port after functional commits, or skip until this branch is release-ready.
+  - Commit message to use: `Prep Changelog for next release (#120)`
 
 - [ ] `27ff665` - `Sort all fileproviders outputs (#121)`
   - Main files: `src/filesystem.rs`, `src/parser.rs`
