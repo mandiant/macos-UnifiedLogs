@@ -45,12 +45,13 @@ impl FirehoseActivity {
         if firehose_log_type != useraction {
             let (firehose_input, firehose_activity_id) = le_u32(data)?;
             let (firehose_input, firehose_sentinel) = le_u32(firehose_input)?;
+
             activity.activity_id = firehose_activity_id;
             activity.sentinal = firehose_sentinel;
             input = firehose_input;
         }
 
-        let unique_pid: u16 = 0x10; // has_unique_pid flag
+        let unique_pid = 0x10; // has_unique_pid flag
         if (firehose_flags & unique_pid) != 0 {
             debug!("[macos-unifiedlogs] Activity Firehose log chunk has unique_pid flag");
             let (firehose_input, firehose_unique_pid) = le_u64(input)?;
@@ -59,31 +60,35 @@ impl FirehoseActivity {
             input = firehose_input;
         }
 
-        let activity_id_current: u16 = 0x1; // has_current_aid flag
+        let activity_id_current = 0x1; // has_current_aid flag
         if (firehose_flags & activity_id_current) != 0 {
             debug!("[macos-unifiedlogs] Activity Firehose log chunk has has_current_aid flag");
             let (firehose_input, firehose_activity_id) = le_u32(input)?;
             let (firehose_input, firehose_sentinel) = le_u32(firehose_input)?;
+
             activity.activity_id_2 = firehose_activity_id;
             activity.sentinal_2 = firehose_sentinel;
             activity.flags.push(MessageFlags::HasCurrentAid);
+
             input = firehose_input;
         }
 
-        let activity_id_other: u16 = 0x200; // has_other_current_aid flag. In Activity log entries this is another activity id flag
+        let activity_id_other = 0x200; // has_other_current_aid flag. In Activity log entries this is another activity id flag
         if (firehose_flags & activity_id_other) != 0 {
             debug!(
                 "[macos-unifiedlogs] Activity Firehose log chunk has has_other_current_aid flag"
             );
             let (firehose_input, firehose_activity_id) = le_u32(input)?;
             let (firehose_input, firehose_sentinel) = le_u32(firehose_input)?;
+
             activity.activity_id_3 = firehose_activity_id;
             activity.sentinal_3 = firehose_sentinel;
             activity.flags.push(MessageFlags::HasOtherAid);
+
             input = firehose_input;
         }
         let (input, firehose_pc_id) = le_u32(input)?;
-        activity.pc_id = firehose_pc_id; // Unknown (Message string reference)?? PC ID?
+        activity.pc_id = firehose_pc_id; // Message string reference?
 
         // Check for flags related to base string format location (shared string file (dsc) or UUID file)
         let (input, formatters) = FirehoseFormatters::firehose_formatter_flags(

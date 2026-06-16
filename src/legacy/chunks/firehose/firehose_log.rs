@@ -725,7 +725,9 @@ impl FirehosePreamble {
 mod tests {
     use std::{fs::File, io::Read, path::PathBuf};
 
-    use super::{FirehoseItem, FirehoseItemData, FirehoseItemType, FirehosePreamble};
+    use crate::chunks::firehose::firehose_log::{FirehoseItem, FirehoseItemType};
+
+    use super::{FirehoseItemData, FirehosePreamble};
 
     #[test]
     fn test_parse_firehose_preamble() {
@@ -3216,7 +3218,7 @@ mod tests {
             item_info: Vec::new(),
             backtrace_strings: Vec::new(),
         };
-        let firehose_item: FirehoseItemType = FirehoseItemType {
+        let firehose_item = FirehoseItemType {
             message_strings: String::new(),
             item_type: 33,
             item_size: 161,
@@ -3238,7 +3240,7 @@ mod tests {
             item_info: Vec::new(),
             backtrace_strings: Vec::new(),
         };
-        let firehose_item: FirehoseItemType = FirehoseItemType {
+        let firehose_item = FirehoseItemType {
             message_strings: String::new(),
             item_type: 1,
             item_size: 8,

@@ -8,7 +8,6 @@
 use crate::util::extract_string;
 use nom::bytes::complete::take;
 use nom::number::complete::{be_u128, le_u16, le_u32, le_u64};
-
 /*
    Introduced in macOS Monterey (12).  Appears to be a "simpler" version of Statedump?
    So far appears to just contain a single string
@@ -44,7 +43,6 @@ impl SimpleDump {
         let (input, simpledump_chunk_data_size) = le_u64(input)?;
         let (input, simpledump_first_proc_id) = le_u64(input)?;
         let (input, simpledump_second_proc_id) = le_u64(input)?;
-
         let (input, simpledump_continous_time) = le_u64(input)?;
         let (input, simpledump_thread_id) = le_u64(input)?;
         let (input, simpledump_unknown_offset) = le_u32(input)?;

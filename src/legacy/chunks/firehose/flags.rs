@@ -77,7 +77,6 @@ impl FirehoseFormatters {
                     input = firehose_input;
                     flags.push(MessageFlags::HasLargeOffset);
                 }
-
                 let (firehose_input, firehose_large_shared_cache) = le_u16(input)?;
                 formatter_flags.large_shared_cache = firehose_large_shared_cache;
                 flags.push(MessageFlags::LargeSharedCache);
@@ -156,6 +155,7 @@ mod tests {
         let test_data = [8, 0, 17, 166, 251, 2, 128, 255, 0, 0];
         let test_flags = 8;
         let mut flags = Vec::new();
+
         let (_, results) =
             FirehoseFormatters::firehose_formatter_flags(&test_data, test_flags, &mut flags)
                 .unwrap();
@@ -184,6 +184,7 @@ mod tests {
         ];
         let test_flags = 516;
         let mut flags = Vec::new();
+
         let (_, results) =
             FirehoseFormatters::firehose_formatter_flags(&test_data, test_flags, &mut flags)
                 .unwrap();
@@ -203,6 +204,7 @@ mod tests {
         ];
         let test_flags = 8;
         let mut flags = Vec::new();
+
         let (_, results) =
             FirehoseFormatters::firehose_formatter_flags(&test_data, test_flags, &mut flags)
                 .unwrap();
@@ -218,6 +220,7 @@ mod tests {
         ];
         let test_flags = 0xa;
         let mut flags = Vec::new();
+
         let (_, results) =
             FirehoseFormatters::firehose_formatter_flags(&test_data, test_flags, &mut flags)
                 .unwrap();

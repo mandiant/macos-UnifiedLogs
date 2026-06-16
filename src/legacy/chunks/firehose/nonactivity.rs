@@ -38,7 +38,7 @@ impl FirehoseNonActivity {
         let mut non_activity = FirehoseNonActivity::default();
 
         let mut input = data;
-        let activity_id_current: u16 = 0x1; // has_current_aid flag
+        let activity_id_current = 0x1; // has_current_aid flag
 
         if (firehose_flags & activity_id_current) != 0 {
             debug!("[macos-unifiedlogs] Non-Activity Firehose log chunk has has_current_aid flag");
@@ -50,7 +50,7 @@ impl FirehoseNonActivity {
             input = firehose_input;
         }
 
-        let private_string_range: u16 = 0x100; // has_private_data flag
+        let private_string_range = 0x100; // has_private_data flag
         // Entry has private string data. The private data is found after parsing all the public data first
         if (firehose_flags & private_string_range) != 0 {
             debug!("[macos-unifiedlogs] Non-Activity Firehose log chunk has has_private_data flag");
@@ -75,7 +75,7 @@ impl FirehoseNonActivity {
         )?;
         non_activity.firehose_formatters = formatters;
 
-        let subsystem: u16 = 0x200; // has_subsystem flag. In Non-Activity log entries this is the subsystem flag
+        let subsystem = 0x200; // has_subsystem flag. In Non-Activity log entries this is the subsystem flag
         if (firehose_flags & subsystem) != 0 {
             debug!("[macos-unifiedlogs] Non-Activity Firehose log chunk has has_subsystem flag");
             let (firehose_input, firehose_subsystem) = le_u16(input)?;
@@ -84,21 +84,23 @@ impl FirehoseNonActivity {
             non_activity.flags.push(MessageFlags::HasSubsystem);
         }
 
-        let ttl: u16 = 0x400; // has_rules flag
+        let ttl = 0x400; // has_rules flag
         if (firehose_flags & ttl) != 0 {
             debug!("[macos-unifiedlogs] Non-Activity Firehose log chunk has has_rules flag");
             let (firehose_input, firehose_ttl) = le_u8(input)?;
             non_activity.ttl_value = firehose_ttl;
             non_activity.flags.push(MessageFlags::HasRules);
+
             input = firehose_input;
         }
 
-        let data_ref: u16 = 0x800; // has_oversize flag
+        let data_ref = 0x800; // has_oversize flag
         if (firehose_flags & data_ref) != 0 {
             debug!("[macos-unifiedlogs] Non-Activity Firehose log chunk has has_oversize flag");
             let (firehose_input, firehose_data_ref) = le_u32(input)?;
             non_activity.data_ref_value = firehose_data_ref;
             non_activity.flags.push(MessageFlags::HasOversize);
+
             input = firehose_input;
         }
 

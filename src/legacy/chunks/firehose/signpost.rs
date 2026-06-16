@@ -40,7 +40,7 @@ impl FirehoseSignpost {
 
         let mut input = data;
 
-        let activity_id_current: u16 = 0x1; // has_current_aid flag
+        let activity_id_current = 0x1; // has_current_aid flag
         if (firehose_flags & activity_id_current) != 0 {
             debug!("[macos-unifiedlogs] Signpost Firehose has has_current_aid flag");
             let (firehose_input, firehose_activity_id) = le_u32(input)?;
@@ -51,7 +51,7 @@ impl FirehoseSignpost {
             firehose_signpost.flags.push(MessageFlags::HasCurrentAid);
         }
 
-        let private_string_range: u16 = 0x100; // has_private_data flag
+        let private_string_range = 0x100; // has_private_data flag
         // Entry has private string data. The private data is found after parsing all the public data first
         if (firehose_flags & private_string_range) != 0 {
             debug!("[macos-unifiedlogs] Signpost Firehose has has_private_data flag");
@@ -76,7 +76,7 @@ impl FirehoseSignpost {
         )?;
         firehose_signpost.firehose_formatters = formatters;
 
-        let subsystem: u16 = 0x200; // has_subsystem flag. In Signpost log entries this is the subsystem flag
+        let subsystem = 0x200; // has_subsystem flag. In Signpost log entries this is the subsystem flag
         if (firehose_flags & subsystem) != 0 {
             debug!("[macos-unifiedlogs] Signpost Firehose log chunk has has_subsystem flag");
             let (firehose_input, firehose_subsystem) = le_u16(input)?;
@@ -87,7 +87,7 @@ impl FirehoseSignpost {
         let (mut input, firehose_signpost_id) = le_u64(input)?;
         firehose_signpost.signpost_id = firehose_signpost_id;
 
-        let has_rules: u16 = 0x400; // has_rules flag
+        let has_rules = 0x400; // has_rules flag
         if (firehose_flags & has_rules) != 0 {
             debug!("[macos-unifiedlogs] Signpost Firehose log chunk has has_rules flag");
             let (firehose_input, firehose_ttl) = le_u8(input)?;
@@ -96,7 +96,7 @@ impl FirehoseSignpost {
             firehose_signpost.flags.push(MessageFlags::HasRules);
         }
 
-        let data_ref: u16 = 0x800; // has_oversize flag
+        let data_ref = 0x800; // has_oversize flag
         if (firehose_flags & data_ref) != 0 {
             debug!("[macos-unifiedlogs] Signpost Firehose log chunk has has_oversize flag");
             let (firehose_input, firehose_data_ref) = le_u32(input)?;
@@ -112,7 +112,7 @@ impl FirehoseSignpost {
             firehose_signpost.signpost_name = firehose_signpost_name;
             input = firehose_input;
             // If the signpost log has large_shared_cache or shared_cache flag
-            // then add 0x80000000 to signpost name.
+            // Then need to add 0x80000000 to signpost name
             if (firehose_signpost.firehose_formatters.shared_cache
                 && firehose_signpost.firehose_formatters.has_large_offset != 0)
                 || firehose_signpost.firehose_formatters.large_shared_cache != 0

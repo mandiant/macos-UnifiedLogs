@@ -42,10 +42,11 @@ impl Statedump {
         let (input, statedump_chunk_data_size) = le_u64(input)?;
         let (input, statedump_first_proc_id) = le_u64(input)?;
         let (input, statedump_second_proc_id) = le_u32(input)?;
-
         let (input, statedump_ttl) = le_u8(input)?;
-        let unknown_reserved_size: u8 = 3;
-        let (input, unknown_reserved) = take(unknown_reserved_size)(input)?;
+
+        let reserved_size: u8 = 3;
+        let (input, reserved) = take(reserved_size)(input)?;
+
         let (input, statedump_continous_time) = le_u64(input)?;
         let (input, statedump_activity_id) = le_u64(input)?;
         let (input, uuid) = be_u128(input)?;
@@ -85,7 +86,7 @@ impl Statedump {
         statedump_results.first_proc_id = statedump_first_proc_id;
         statedump_results.second_proc_id = statedump_second_proc_id;
         statedump_results.ttl = statedump_ttl;
-        statedump_results.unknown_reserved = unknown_reserved.to_vec();
+        statedump_results.unknown_reserved = reserved.to_vec();
         statedump_results.continuous_time = statedump_continous_time;
         statedump_results.activity_id = statedump_activity_id;
         statedump_results.unknown_data_type = statedump_unknown_data_type;

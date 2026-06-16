@@ -68,6 +68,7 @@ impl HeaderChunk {
         let (input, header_sub_chunk_tag_data_size_2) = le_u32(input)?;
         let (input, header_unknown_2) = le_u32(input)?;
         let (input, header_unknown_3) = le_u32(input)?;
+
         let (input, build_version_string) = take(size_of::<u128>())(input)?;
 
         let hardware_model_size: u8 = 32;

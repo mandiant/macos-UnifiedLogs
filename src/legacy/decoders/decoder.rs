@@ -43,7 +43,7 @@ pub(crate) fn check_objects(
         index += 1;
         if index > message_values.len() {
             return format!(
-                "Index out of bounds for FirehoseItemType Vec. Got adjusted index {}, Vec size is {}. This should not have happened",
+                "Index out of bounds for FirehoseItemInfo Vec. Got adjusted index {}, Vec size is {}. This should not have happened",
                 index,
                 message_values.len()
             );

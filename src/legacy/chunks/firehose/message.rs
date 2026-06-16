@@ -33,7 +33,7 @@ pub(crate) struct MessageParams {
 // Functions to help extract base format string based on flags associated with log entries
 // Ex: "%s start"
 impl MessageData {
-    /// Get the base message for the log.
+    /// Get the base message for the log
     pub(crate) fn get_message<'a>(
         formatters: &FirehoseFormatters,
         provider: &'a mut dyn FileProvider,
@@ -52,17 +52,17 @@ impl MessageData {
                 let large_offset = if valid_large_offsets.contains(&formatters.has_large_offset)
                     && formatters.has_large_offset > formatters.large_shared_cache
                 {
-                    // Large offsets start at 0x80000000.
+                    // Large offsets start at 0x80000000
                     0x80000000 * u64::from(formatters.has_large_offset)
                 } else if formatters.large_shared_cache != 0 {
-                    // Large cache seems to always start at 0x100000000.
-                    // But if large_shared_cache is 1 then the original `params.string_offset` is sufficient.
+                    // Large cache seems to always start at 0x100000000
+                    // But if large_shared_cache is 1 then the original `params.string_offset` is sufficient
                     0x100000000 * u64::from(formatters.large_shared_cache / 2)
                 } else {
-                    // If large offset is not 1 or 2 then it could be invalid.
-                    // However, not always guarantee.
-                    // if has_large_offset is 0xfffe or 0xffff it may be invalid offset.
-                    // Regardless, the starting offset always seems to be 0x100000000.
+                    // If large offset is not 1 or 2 then it could be invalid
+                    // However, not always guarantee
+                    // if has_large_offset is 0xfffe or 0xffff it may be invalid offset
+                    // Regardless, the starting offset always seems to be 0x100000000
                     0x100000000 * u64::from(formatters.has_large_offset)
                 };
                 let real_offset = large_offset + string_offset;

@@ -126,7 +126,7 @@ pub(crate) fn errno_codes(errno: &str) -> String {
         "-7" => "Keep looking",
         "-8" => "Data less",
         _ => {
-            // Unknown error codes are actually common in Unified Logs.
+            // Unknown error codes are actually common in Unified Logs
             // Ex: [0x97f0a6080] failed to do a bootstrap look-up: xpc_error=[159: Unknown error: 159]
             return format!("Unknown errno: {errno}");
         }
