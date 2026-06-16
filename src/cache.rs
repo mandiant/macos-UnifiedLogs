@@ -1,18 +1,39 @@
+use std::borrow::Borrow;
+use std::collections::HashMap;
+use std::hash::{BuildHasher, Hash};
 use std::sync::{Arc, RwLock};
 
-use cached::{Cached, SizedCache};
-
 use crate::dsc::SharedCacheStrings;
-use crate::traits::{FileProvider, StringCache};
+use crate::traits::{Cache, FileProvider, StringCache};
 use crate::uuidtext::UUIDText;
 
 /// A thread-safe cache for [`UUIDText`] and [`SharedCacheStrings`] data shared during log parsing.
 ///
-/// Internally uses `Arc<RwLock<...>>` so that cloning produces a second handle to the same
-/// underlying maps; concurrent reads proceed without blocking each other, while a load that
-/// misses the cache takes an exclusive write lock only for the duration of the insert.
+/// The default implementation (`MemoryStringCache::default()`) uses unbounded `HashMap` maps
+/// wrapped in `Arc<RwLock<...>>`. Cloning produces a second handle to the same underlying
+/// maps — concurrent reads proceed without blocking each other, while a cache miss takes an
+/// exclusive write lock only for the duration of the insert.
 ///
-/// # Multithreaded tracev3 processing
+/// ## Bringing your own cache
+///
+/// The default implementation grows without bound. For long-running processes or large log
+/// collections, use [`MemoryStringCache::new`] to supply eviction-aware backends by implementing
+/// [`Cache`] for any type with interior mutability:
+///
+/// ```rust,ignore
+/// use std::sync::Arc;
+/// use macos_unifiedlogs::{cache::MemoryStringCache, traits::Cache};
+/// use macos_unifiedlogs::{dsc::SharedCacheStrings, uuidtext::UUIDText};
+///
+/// struct BoundedCache(/* e.g. moka::sync::Cache<String, Arc<T>> */);
+///
+/// impl Cache<String, Arc<UUIDText>> for BoundedCache { /* ... */ }
+/// impl Cache<String, Arc<SharedCacheStrings>> for BoundedCache { /* ... */ }
+///
+/// let cache = MemoryStringCache::new(BoundedCache::new(), BoundedCache::new());
+/// ```
+///
+/// ## Multithreaded tracev3 processing
 /// ```rust,no_run
 /// use crate::macos_unifiedlogs::traits::FileProvider;
 /// use macos_unifiedlogs::cache::MemoryStringCache;
@@ -37,42 +58,79 @@ use crate::uuidtext::UUIDText;
 /// ```
 #[derive(Clone, Debug)]
 pub struct MemoryStringCache<
-    U: Cached<String, Arc<UUIDText>>,
-    D: Cached<String, Arc<SharedCacheStrings>>,
+    U: Cache<String, Arc<UUIDText>> + Send + Sync,
+    D: Cache<String, Arc<SharedCacheStrings>> + Send + Sync,
 > {
-    uuidtext: Arc<RwLock<U>>,
-    dsc: Arc<RwLock<D>>,
+    uuidtext: U,
+    dsc: D,
+}
+
+impl<U, D> MemoryStringCache<U, D>
+where
+    U: Cache<String, Arc<UUIDText>> + Send + Sync,
+    D: Cache<String, Arc<SharedCacheStrings>> + Send + Sync,
+{
+    pub fn new(uuidtext: U, dsc: D) -> Self {
+        Self { uuidtext, dsc }
+    }
 }
 
 impl Default
     for MemoryStringCache<
-        SizedCache<String, Arc<UUIDText>>,
-        SizedCache<String, Arc<SharedCacheStrings>>,
+        Arc<RwLock<HashMap<String, Arc<UUIDText>>>>,
+        Arc<RwLock<HashMap<String, Arc<SharedCacheStrings>>>>,
     >
 {
     fn default() -> Self {
-        Self::with_size(100, 100)
+        Self {
+            uuidtext: Arc::new(RwLock::new(HashMap::new())),
+            dsc: Arc::new(RwLock::new(HashMap::new())),
+        }
     }
 }
 
-impl
-    MemoryStringCache<
-        SizedCache<String, Arc<UUIDText>>,
-        SizedCache<String, Arc<SharedCacheStrings>>,
-    >
+impl<K, V, B> Cache<K, V> for RwLock<HashMap<K, V, B>>
+where
+    K: Eq + Hash,
+    V: Clone,
+    B: BuildHasher,
 {
-    fn with_size(uuid_size: usize, shared_size: usize) -> Self {
-        Self {
-            uuidtext: Arc::new(RwLock::new(SizedCache::with_size(uuid_size))),
-            dsc: Arc::new(RwLock::new(SizedCache::with_size(shared_size))),
-        }
+    fn get<Q>(&self, item: &Q) -> Option<V>
+    where
+        K: Borrow<Q>,
+        Q: Eq + Hash + ?Sized,
+    {
+        self.read().ok()?.get(item).cloned()
+    }
+
+    fn insert(&self, key: K, value: V) -> Option<V> {
+        self.write().ok()?.insert(key, value)
+    }
+}
+
+impl<K, V, B> Cache<K, V> for Arc<RwLock<HashMap<K, V, B>>>
+where
+    K: Eq + Hash,
+    V: Clone,
+    B: BuildHasher,
+{
+    fn get<Q>(&self, item: &Q) -> Option<V>
+    where
+        K: Borrow<Q>,
+        Q: Eq + Hash + ?Sized,
+    {
+        self.read().ok()?.get(item).cloned()
+    }
+
+    fn insert(&self, key: K, value: V) -> Option<V> {
+        self.write().ok()?.insert(key, value)
     }
 }
 
 impl<U, D> StringCache for MemoryStringCache<U, D>
 where
-    U: Cached<String, Arc<UUIDText>> + Send + Sync,
-    D: Cached<String, Arc<SharedCacheStrings>> + Send + Sync,
+    U: Cache<String, Arc<UUIDText>> + Send + Sync,
+    D: Cache<String, Arc<SharedCacheStrings>> + Send + Sync,
 {
     /// Returns the cached [`UUIDText`] for `uuid`, loading it via `provider` if absent.
     fn get_or_load_uuidtext(
@@ -81,39 +139,35 @@ where
         provider: &impl FileProvider,
     ) -> Option<Arc<UUIDText>> {
         {
-            let mut map = self.uuidtext.write().unwrap();
-            if let Some(v) = map.cache_get(uuid) {
-                return Some(Arc::clone(v));
+            if let Some(v) = self.uuidtext.get(uuid) {
+                return Some(Arc::clone(&v));
             }
         }
 
         let value = Arc::new(provider.read_uuidtext(uuid).ok()?);
-        let mut map = self.uuidtext.write().unwrap();
-
-        map.cache_set(uuid.to_string(), Arc::clone(&value));
+        self.uuidtext.insert(uuid.to_string(), Arc::clone(&value));
         Some(value)
     }
 
     /// Returns the cached [`SharedCacheStrings`] for `uuid`, loading it via `provider` if absent.
     ///
-    /// DSC files are large (~30 MB–150 MB each); at most [`DSC_CACHE_MAX`] are kept.
-    /// `uuid2` is preserved from eviction alongside `uuid`.
+    /// DSC files are large (~30 MB–150 MB each). The default `HashMap`-backed implementation
+    /// grows without bound; supply a bounded `D` via [`MemoryStringCache::new`] if eviction
+    /// is required.
     fn get_or_load_dsc(
         &self,
         uuid: &str,
         provider: &impl FileProvider,
     ) -> Option<Arc<SharedCacheStrings>> {
         {
-            let mut map = self.dsc.write().unwrap();
-            if let Some(v) = map.cache_get(uuid) {
-                return Some(Arc::clone(v));
+            if let Some(v) = self.dsc.get(uuid) {
+                return Some(Arc::clone(&v));
             }
         }
 
         let value = Arc::new(provider.read_dsc_uuid(uuid).ok()?);
-        let mut map = self.dsc.write().unwrap();
 
-        map.cache_set(uuid.to_string(), Arc::clone(&value));
+        self.dsc.insert(uuid.to_string(), Arc::clone(&value));
         Some(value)
     }
 }

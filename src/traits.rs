@@ -1,4 +1,5 @@
-use std::io::Error;
+use std::borrow::Borrow;
+use std::{hash::Hash, io::Error};
 use std::sync::Arc;
 
 use crate::{dsc::SharedCacheStrings, uuidtext::UUIDText};
@@ -50,6 +51,20 @@ pub trait SourceFile {
     /// The source path of the file on the machine from which it was collected, distinct from any
     /// secondary storage location where, for instance, a file backing the `reader` might exist.
     fn source_path(&self) -> &str;
+}
+
+
+pub trait Cache<K, V>
+where
+    K: Eq + Hash,
+    V: Clone,
+{
+    fn get<Q>(&self, key: &Q) -> Option<V>
+    where
+        K: Borrow<Q>,
+        Q: Eq + Hash + ?Sized;
+
+    fn insert(&self, key: K, value: V) -> Option<V>;
 }
 
 /// Defines a trait for caching string values parsed from the `dsc` or `uuidtext` directories.

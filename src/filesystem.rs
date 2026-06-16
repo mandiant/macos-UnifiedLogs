@@ -109,11 +109,9 @@ impl FileProvider for LiveSystemProvider {
             WalkDir::new(path)
                 .sort_by(|a, b| a.file_name().cmp(b.file_name()))
                 .into_iter()
-                .filter_map(|entry| entry.ok())
+                .filter_map(Result::ok)
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::TraceV3))
-                .filter_map(|entry| {
-                    Some(LocalFile::new(entry.path()).ok()?)
-                }),
+                .filter_map(|entry| LocalFile::new(entry.path()).ok()),
         )
     }
 
@@ -122,11 +120,9 @@ impl FileProvider for LiveSystemProvider {
         sort_files(
             WalkDir::new(path)
                 .into_iter()
-                .filter_map(|entry| entry.ok())
+                .filter_map(Result::ok)
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::UUIDText))
-                .filter_map(|entry| {
-                    Some(LocalFile::new(entry.path()).ok()?)
-                }),
+                .filter_map(|entry| LocalFile::new(entry.path()).ok()),
         )
     }
 
@@ -221,7 +217,7 @@ impl FileProvider for LiveSystemProvider {
             ) {
                 return None;
             }
-            Some(LocalFile::new(entry.ok()?.path()).ok()?)
+            LocalFile::new(entry.ok()?.path()).ok()
         }))
     }
 
@@ -230,11 +226,9 @@ impl FileProvider for LiveSystemProvider {
         sort_files(
             WalkDir::new(path)
                 .into_iter()
-                .filter_map(|entry| entry.ok())
+                .filter_map(Result::ok)
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::Timesync))
-                .filter_map(|entry| {
-                    Some(LocalFile::new(entry.path()).ok()?)
-                }),
+                .filter_map(|entry| LocalFile::new(entry.path()).ok()),
         )
     }
 }
@@ -283,23 +277,19 @@ impl FileProvider for LogarchiveProvider {
             WalkDir::new(&self.base)
                 .sort_by(|a, b| a.file_name().cmp(b.file_name()))
                 .into_iter()
-                .filter_map(|entry| entry.ok())
+                .filter_map(Result::ok)
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::TraceV3))
-                .filter_map(|entry| {
-                    Some(LocalFile::new(entry.path()).ok()?)
-                }),
+                .filter_map(|entry| LocalFile::new(entry.path()).ok()),
         )
     }
 
     fn uuidtext_files(&self) -> impl Iterator<Item = impl SourceFile> {
-        Box::new(
+        sort_files(
             WalkDir::new(&self.base)
                 .into_iter()
-                .filter_map(|entry| entry.ok())
+                .filter_map(Result::ok)
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::UUIDText))
-                .filter_map(|entry| {
-                    Some(LocalFile::new(entry.path()).ok()?)
-                }),
+                .filter_map(|entry| LocalFile::new(entry.path()).ok()),
         )
     }
 
@@ -387,26 +377,22 @@ impl FileProvider for LogarchiveProvider {
     }
 
     fn dsc_files(&self) -> impl Iterator<Item = impl SourceFile> {
-        Box::new(
+        sort_files(
             WalkDir::new(&self.base)
                 .into_iter()
-                .filter_map(|entry| entry.ok())
+                .filter_map(Result::ok)
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::Dsc))
-                .filter_map(|entry| {
-                    Some(LocalFile::new(entry.path()).ok()?)
-                }),
+                .filter_map(|entry| LocalFile::new(entry.path()).ok()),
         )
     }
 
     fn timesync_files(&self) -> impl Iterator<Item = impl SourceFile> {
-        Box::new(
+        sort_files(
             WalkDir::new(&self.base)
                 .into_iter()
-                .filter_map(|entry| entry.ok())
+                .filter_map(Result::ok)
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::Timesync))
-                .filter_map(|entry| {
-                    Some(LocalFile::new(entry.path()).ok()?)
-                }),
+                .filter_map(|entry| LocalFile::new(entry.path()).ok()),
         )
     }
 }
