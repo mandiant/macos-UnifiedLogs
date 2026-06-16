@@ -36,8 +36,8 @@ impl Oversize {
         let (input, oversize_chunk_data_size) = le_u64(input)?;
         let (input, oversize_first_proc_id) = le_u64(input)?;
         let (input, oversize_second_proc_id) = le_u32(input)?;
-
         let (input, oversize_ttl) = le_u8(input)?;
+
         let reserved_size: u8 = 3;
         let (input, reserved) = take(reserved_size)(input)?;
         let (input, oversize_continous_time) = le_u64(input)?;
