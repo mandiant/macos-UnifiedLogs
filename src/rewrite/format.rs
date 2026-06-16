@@ -171,7 +171,6 @@ fn extract_str<'a>(value: &'a RawItemValue<'a>) -> &'a str {
     match value {
         RawItemValue::Str(s) => s,
         RawItemValue::Bytes(b) => utf8_str(b),
-        #[cfg(feature = "rewrite-compat")]
         RawItemValue::Null => "(null)",
         RawItemValue::Private { .. } => "<private>",
         _ => "",
@@ -199,15 +198,13 @@ fn apply_format(output: &mut String, item: &RawFirehoseItem<'_>, spec: &FormatSp
 
     if is_string_conversion(c) {
         // Old pipeline: extract_string_size() returns "(null)" for ALL items with size=0
-        #[cfg(feature = "rewrite-compat")]
         if item.item_size == 0 && matches!(&item.value, RawItemValue::Str(s) if s.is_empty()) {
             apply_string_format(output, "(null)", spec);
             return;
         }
 
-        // Old pipeline base64-encodes Bytes items at parsing stage,
-        // so all format specifiers see base64 strings for byte data.
-        #[cfg(feature = "rewrite-compat")]
+        // Old pipeline base64-encodes Bytes items at parsing stage, so all
+        // format specifiers see base64 strings for byte data.
         if let RawItemValue::Bytes(b) = &item.value {
             let encoded = base64::engine::general_purpose::STANDARD.encode(b);
             apply_string_format(output, &encoded, spec);
@@ -256,7 +253,6 @@ fn apply_format(output: &mut String, item: &RawFirehoseItem<'_>, spec: &FormatSp
     }
 
     // 'n' and 'Z' — just emit the raw value as a string
-    #[cfg(feature = "rewrite-compat")]
     if item.item_size == 0 && matches!(&item.value, RawItemValue::Str(s) if s.is_empty()) {
         output.push_str("(null)");
         return;
@@ -270,14 +266,11 @@ fn apply_format(output: &mut String, item: &RawFirehoseItem<'_>, spec: &FormatSp
 fn apply_string_format(output: &mut String, s: &str, spec: &FormatSpec) {
     // Old pipeline: precision=0 for strings means "show full string" (format_right special case).
     // This happens with %.*s when dynamic precision resolves to 0.
-    #[cfg(feature = "rewrite-compat")]
     let effective_precision = if spec.has_precision && spec.precision == 0 {
         s.len()
     } else {
         spec.precision
     };
-    #[cfg(not(feature = "rewrite-compat"))]
-    let effective_precision = spec.precision;
 
     let displayed = if spec.has_precision && effective_precision < s.len() {
         &s[..effective_precision]
@@ -371,27 +364,13 @@ fn apply_hex_format(output: &mut String, n: i64, spec: &FormatSpec) {
         if spec.zero_pad && !spec.left_justify {
             output.push_str(plus);
             if spec.alternate {
-                #[cfg(feature = "rewrite-compat")]
-                {
-                    // Old pipeline bug: format!("{:0>#width$X}") zero-pads the ENTIRE
-                    // string including the "0x" prefix from the left.
-                    let hex_str_alt = format!("0x{:X}", n);
-                    for _ in 0..spec.width.saturating_sub(plus.len() + hex_str_alt.len()) {
-                        output.push('0');
-                    }
-                    output.push_str(&hex_str_alt);
+                // Old pipeline bug: format!("{:0>#width$X}") zero-pads the entire
+                // string including the "0x" prefix from the left.
+                let hex_str_alt = format!("0x{:X}", n);
+                for _ in 0..spec.width.saturating_sub(plus.len() + hex_str_alt.len()) {
+                    output.push('0');
                 }
-                #[cfg(not(feature = "rewrite-compat"))]
-                {
-                    output.push_str("0x");
-                    for _ in 0..spec
-                        .width
-                        .saturating_sub(plus.len() + 2 + hex_digits_len(n))
-                    {
-                        output.push('0');
-                    }
-                    let _ = write!(output, "{:X}", n);
-                }
+                output.push_str(&hex_str_alt);
             } else {
                 for _ in 0..pad {
                     output.push('0');
@@ -412,11 +391,6 @@ fn apply_hex_format(output: &mut String, n: i64, spec: &FormatSpec) {
     } else {
         output.push_str(&core);
     }
-}
-
-#[cfg(not(feature = "rewrite-compat"))]
-fn hex_digits_len(n: i64) -> usize {
-    format!("{:X}", n).len()
 }
 
 // --- Octal formatting ---
@@ -476,19 +450,12 @@ fn apply_float_format(output: &mut String, f: f64, spec: &FormatSpec) {
     } else {
         // Old pipeline double-converts: format to string, count decimal digits, reformat with that
         // precision. This can round differently than direct formatting.
-        #[cfg(feature = "rewrite-compat")]
-        {
-            let initial = format!("{f}");
-            let decimal_digits = initial
-                .find('.')
-                .map(|pos| initial.len() - pos - 1)
-                .unwrap_or(0);
-            format!("{f:.prec$}", prec = decimal_digits)
-        }
-        #[cfg(not(feature = "rewrite-compat"))]
-        {
-            format!("{f}")
-        }
+        let initial = format!("{f}");
+        let decimal_digits = initial
+            .find('.')
+            .map(|pos| initial.len() - pos - 1)
+            .unwrap_or(0);
+        format!("{f:.prec$}", prec = decimal_digits)
     };
 
     let core = format!("{plus}{formatted}");
@@ -574,13 +541,10 @@ fn parse_specifier(bytes: &[u8]) -> (FormatSpec, usize, bool) {
 
     // 3. Precision
     if pos < len && bytes[pos] == b'.' {
-        // Old pipeline regex: (?:\.(?:\d+|\*))? — requires digit or * after dot.
-        // Bare `%.f` fails to match → treated as literal.
-        #[cfg(feature = "rewrite-compat")]
+        // Old pipeline regex: (?:\.(?:\d+|\*))? requires digit or * after dot.
+        // Bare `%.f` fails to match and is treated as literal.
         let should_consume_dot =
             pos + 1 < len && (bytes[pos + 1].is_ascii_digit() || bytes[pos + 1] == b'*');
-        #[cfg(not(feature = "rewrite-compat"))]
-        let should_consume_dot = true;
 
         if should_consume_dot {
             pos += 1;
@@ -705,7 +669,6 @@ pub fn format_message(format_string: Option<&str>, items: &[RawFirehoseItem<'_>]
                 // only `%{annotation}` with `}` as conversion → treated as literal.
                 // Old pipeline regex after `}`: flags [-+0#], width [\d*], precision \.\d+|\*,
                 // length modifiers [hlwIztq], then conversion. Space and bare `.` (no digits) are NOT valid.
-                #[cfg(feature = "rewrite-compat")]
                 let is_valid_spec_start = pos < len
                     && (matches!(
                         bytes[pos],
@@ -714,8 +677,6 @@ pub fn format_message(format_string: Option<&str>, items: &[RawFirehoseItem<'_>]
                     ) || (bytes[pos] == b'.'
                         && pos + 1 < len
                         && (bytes[pos + 1].is_ascii_digit() || bytes[pos + 1] == b'*')));
-                #[cfg(not(feature = "rewrite-compat"))]
-                let is_valid_spec_start = true;
 
                 if !is_valid_spec_start {
                     // Emit as literal — old pipeline treats this as typeless annotation
@@ -779,12 +740,7 @@ pub fn format_message(format_string: Option<&str>, items: &[RawFirehoseItem<'_>]
         skip_precision_items(items, &mut item_index);
 
         if item_index >= items.len() {
-            {
-                #[cfg(feature = "rewrite-compat")]
-                result.push_str("<Missing message data>");
-                #[cfg(not(feature = "rewrite-compat"))]
-                result.push_str("<decode: missing data>");
-            }
+            result.push_str("<Missing message data>");
             continue;
         }
 
@@ -795,12 +751,7 @@ pub fn format_message(format_string: Option<&str>, items: &[RawFirehoseItem<'_>]
         }
 
         if item_index >= items.len() {
-            {
-                #[cfg(feature = "rewrite-compat")]
-                result.push_str("<Missing message data>");
-                #[cfg(not(feature = "rewrite-compat"))]
-                result.push_str("<decode: missing data>");
-            }
+            result.push_str("<Missing message data>");
             continue;
         }
 
@@ -874,12 +825,7 @@ fn format_annotated_item(
     skip_precision_items(items, item_index);
 
     if *item_index >= items.len() {
-        {
-            #[cfg(feature = "rewrite-compat")]
-            result.push_str("<Missing message data>");
-            #[cfg(not(feature = "rewrite-compat"))]
-            result.push_str("<decode: missing data>");
-        }
+        result.push_str("<Missing message data>");
         return;
     }
 
@@ -941,16 +887,7 @@ fn item_to_string(item: &RawFirehoseItem<'_>) -> String {
         RawItemValue::Bytes(b) => String::from_utf8_lossy(b).into_owned(),
         RawItemValue::Private { .. } => "<private>".to_string(),
         RawItemValue::Empty => String::new(),
-        RawItemValue::Null => {
-            #[cfg(feature = "rewrite-compat")]
-            {
-                String::from("(null)")
-            }
-            #[cfg(not(feature = "rewrite-compat"))]
-            {
-                String::new()
-            }
-        }
+        RawItemValue::Null => String::from("(null)"),
     }
 }
 
@@ -995,6 +932,22 @@ mod tests {
             value: RawItemValue::Private {
                 raw_item_type: 0x01,
             },
+        }
+    }
+
+    fn null_item() -> RawFirehoseItem<'static> {
+        RawFirehoseItem {
+            item_type: RawItemKind::Object,
+            item_size: 0,
+            value: RawItemValue::Null,
+        }
+    }
+
+    fn empty_zero_size_str_item() -> RawFirehoseItem<'static> {
+        RawFirehoseItem {
+            item_type: RawItemKind::String,
+            item_size: 0,
+            value: RawItemValue::Str(""),
         }
     }
 
@@ -1054,7 +1007,13 @@ mod tests {
     #[test_case("%f", 4_614_286_721_111_404_799  ; "no precision natural")]
     #[test_case("%f", -4_484_628_366_119_329_180 ; "negative float natural")]
     fn test_format_float_natural(fmt: &str, bits: i64) {
-        let expected = format!("{}", f64::from_bits(bits as u64));
+        let value = f64::from_bits(bits as u64);
+        let initial = value.to_string();
+        let decimal_digits = initial
+            .find('.')
+            .map(|pos| initial.len() - pos - 1)
+            .unwrap_or(0);
+        let expected = format!("{value:.decimal_digits$}");
         let result = format_message(Some(fmt), &[i64_item(bits)]);
         assert_eq!(result, expected);
     }
@@ -1064,6 +1023,7 @@ mod tests {
     #[test_case("%s start", "hello" => "hello start" ; "basic string")]
     #[test_case("%-10s|", "hi"     => "hi        |" ; "left justify")]
     #[test_case("%.3s", "hello"    => "hel" ; "string precision")]
+    #[test_case("%.0s", "hello"    => "hello" ; "zero string precision")]
     #[test_case("%{public}s", "hi" => "hi" ; "apple public")]
     #[test_case("value: %@", "objc_value" => "value: objc_value" ; "at sign")]
     #[test_case(
@@ -1095,12 +1055,21 @@ mod tests {
     }
 
     #[test]
+    fn test_null_item() {
+        let result = format_message(Some("%@"), &[null_item()]);
+        assert_eq!(result, "(null)");
+    }
+
+    #[test]
+    fn test_zero_size_string_item() {
+        let result = format_message(Some("%s"), &[empty_zero_size_str_item()]);
+        assert_eq!(result, "(null)");
+    }
+
+    #[test]
     fn test_missing_items() {
         let result = format_message(Some("%s %s"), &[str_item("hello")]);
-        #[cfg(feature = "rewrite-compat")]
         assert_eq!(result, "hello <Missing message data>");
-        #[cfg(not(feature = "rewrite-compat"))]
-        assert_eq!(result, "hello <decode: missing data>");
     }
 
     #[test]

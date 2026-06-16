@@ -2,14 +2,14 @@
 
 use super::catalog::RawCatalogChunk;
 use super::chunk::{ChunkSetReader, ChunksReader, TopChunk};
+use super::chunks::ChunkTag;
+use super::chunks::firehose::RawFirehose;
 use super::chunks::firehose::body::{RawActivityBody, RawFirehoseBody, RawFormatterFlags};
 use super::chunks::firehose::entry::FirehoseLogType;
 use super::chunks::firehose::flags::{FirehoseFlags, FormatterType};
-use super::chunks::firehose::RawFirehose;
 use super::chunks::oversize::RawOversize;
 use super::chunks::simpledump::RawSimpleDump;
 use super::chunks::statedump::RawStatedump;
-use super::chunks::ChunkTag;
 use super::dsc::RawSharedCacheStrings;
 use super::error::{NomExt, ParseError};
 use super::header::RawHeaderChunk;
@@ -259,7 +259,6 @@ fn flush_deferred_entries<'a>(
                         signpost_id: 0,
                         signpost_name: 0,
                         resolved_message: RefCell::new(None),
-                        #[cfg(feature = "rewrite-compat")]
                         format_string_error: None,
                     });
                 }
@@ -320,7 +319,6 @@ fn flush_deferred_entries<'a>(
                         signpost_id: 0,
                         signpost_name: 0,
                         resolved_message: RefCell::new(None),
-                        #[cfg(feature = "rewrite-compat")]
                         format_string_error: None,
                     });
                 }
@@ -353,10 +351,9 @@ fn visit_firehose_entries<'a: 'b, 'b>(
     let boot_uuid = header.boot_uuid;
     let timezone_name = extract_timezone_name(header.timezone_path);
 
-    // In compat mode, pre-compute adjusted private data that includes any leftover
-    // (unconsumed) public data bytes. The legacy code prepends these to the private
-    // data region (see legacy firehose_log.rs lines 186-198).
-    #[cfg(feature = "rewrite-compat")]
+    // Pre-compute adjusted private data that includes any leftover (unconsumed)
+    // public data bytes. The legacy code prepends these to the private data region
+    // (see legacy firehose_log.rs lines 186-198).
     let adjusted_private_data = {
         let mut reader = fh.entries();
         while reader.next().is_some() {}
@@ -476,7 +473,6 @@ fn visit_firehose_entries<'a: 'b, 'b>(
                     signpost_id: 0,
                     signpost_name: 0,
                     resolved_message: RefCell::new(None),
-                    #[cfg(feature = "rewrite-compat")]
                     format_string_error: None,
                 });
                 continue;
@@ -507,7 +503,6 @@ fn visit_firehose_entries<'a: 'b, 'b>(
         );
 
         // Generate error string for invalid format string offsets (old pipeline parity)
-        #[cfg(feature = "rewrite-compat")]
         let format_string_error = if resolved.format_string.is_none() {
             let string_offset = u64::from(entry.format_string_location);
             Some(format_string_error_message(
@@ -530,10 +525,7 @@ fn visit_firehose_entries<'a: 'b, 'b>(
                 RawFirehoseBody::Signpost(b) => b.private_strings,
                 _ => None,
             };
-            #[cfg(feature = "rewrite-compat")]
             let pd = adjusted_private_data;
-            #[cfg(not(feature = "rewrite-compat"))]
-            let pd = fh.private_data();
             match (pd, private_strings) {
                 (Some(pd), Some((offset, size))) if size > 0 => Some(PrivateDataContext {
                     private_data: pd,
@@ -611,7 +603,6 @@ fn visit_firehose_entries<'a: 'b, 'b>(
             signpost_id,
             signpost_name,
             resolved_message: RefCell::new(None),
-            #[cfg(feature = "rewrite-compat")]
             format_string_error,
         });
     }
@@ -782,7 +773,6 @@ fn extract_timezone_name(timezone_path: &str) -> &str {
 /// Two levels of error, distinguished by `uuid_found`:
 /// - **Level 1** (`uuid_found = false`): UUID/DSC file not found → "Failed to get…" / "Unknown…"
 /// - **Level 2** (`uuid_found = true`): File found but offset invalid → "Error: Invalid offset…"
-#[cfg(feature = "rewrite-compat")]
 fn format_string_error_message(
     string_offset: u64,
     formatter: &RawFormatterFlags,

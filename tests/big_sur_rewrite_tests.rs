@@ -6,10 +6,10 @@
 //   - uuid::Uuid instead of uppercase hex string
 //   - Lazy message via entry.message()
 //   - format_string: Option<&str> instead of raw_message: String
-//   - Loss entries: "Lost N log entries between X and Y" (non-empty)
-//   - No signpost prefix
+//   - Loss entries: empty message, matching legacy/compat
+//   - Signpost/backtrace prefixes match legacy/compat
 //   - Decoders always active (DNS/uuid_t/OpenDirectory output)
-//   - "<decode: missing data>" instead of "<Missing message data>" for missing items
+//   - "<Missing message data>" for missing items
 
 #![cfg(all(feature = "rewrite", not(feature = "rewrite-compat")))]
 
@@ -410,10 +410,8 @@ fn test_parse_all_logs_private_big_sur() {
 
     assert_eq!(count, 887_890);
     assert_eq!(not_found, 0);
-    // empty_counter differs from compat (596) because:
-    // 1. Signpost entries lack the "Signpost ID:..." prefix, producing more empty messages
-    // 2. Some entries that had error text in compat now show "<missing format string>" (non-empty)
-    assert_eq!(empty_counter, 4383);
+    // Matches compat after signpost, invalid-offset, and loss message parity fixes.
+    assert_eq!(empty_counter, 596);
 }
 
 // ---------------------------------------------------------------------------
@@ -451,9 +449,8 @@ fn test_parse_all_logs_private_with_public_mix_big_sur() {
     assert_eq!(count, 1_287_628);
     // "<not found>" text comes from the OpenDirectory decoder — now active in rewrite.
     assert_eq!(not_found, 5);
-    // Counts now match compat (39, 41, 573) since decoders are always active.
-    // Remaining differences from compat would come from private data boundary handling.
-    assert_eq!(bssid_count, 38);
+    // Counts now match compat since decoders and private data boundaries are aligned.
+    assert_eq!(bssid_count, 39);
     assert_eq!(dns_query_count, 41);
     assert_eq!(bofa_count, 573);
 }
@@ -580,10 +577,8 @@ fn test_big_sur_missing_oversize_strings() {
         &uuidtext_files,
         &mut oversize_cache,
         |entry| {
-            // In rewrite, when items run out (missing oversize data), format_message
-            // inserts "<decode: missing data>" for each unfilled format specifier.
             let message = entry.message();
-            if message.contains("<decode: missing data>") {
+            if message.contains("<Missing message data>") {
                 missing_data_count += 1;
             }
             count += 1;
@@ -592,8 +587,6 @@ fn test_big_sur_missing_oversize_strings() {
     .unwrap();
 
     assert_eq!(count, 101_566);
-    // Compat had 52 entries with "<Missing message data>". Rewrite uses
-    // "<decode: missing data>" for unfilled format specifiers. The count should match.
     assert_eq!(missing_data_count, 52);
 }
 
@@ -646,7 +639,7 @@ fn test_big_sur_oversize_strings_in_another_file() {
         &mut oversize_cache,
         |entry| {
             let message = entry.message();
-            if message.contains("<decode: missing data>") {
+            if message.contains("<Missing message data>") {
                 missing_data_count += 1;
             }
             count += 1;

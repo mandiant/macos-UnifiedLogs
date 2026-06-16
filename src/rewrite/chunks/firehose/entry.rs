@@ -175,28 +175,17 @@ impl<'a> Iterator for RawFirehoseEntryReader<'a> {
             Ok((remaining, entry)) => {
                 let padding = padding_size_8(u64::from(entry.data_size)) as usize;
 
-                // In compat mode, match the legacy's padding behavior: if the calculated
-                // 8-byte alignment padding extends into non-zero bytes, skip only the
-                // leading zeros instead. The legacy code eats zeros via `take_while`,
-                // then falls back when `padding > leading_zeros`.
-                #[cfg(feature = "rewrite-compat")]
-                {
-                    let leading_zeros = remaining.iter().take_while(|&&b| b == 0).count();
-                    let skip = if padding > leading_zeros {
-                        leading_zeros
-                    } else {
-                        padding
-                    };
-                    self.data = &remaining[skip..];
-                }
-                #[cfg(not(feature = "rewrite-compat"))]
-                {
-                    if remaining.len() >= padding {
-                        self.data = &remaining[padding..];
-                    } else {
-                        self.data = &[];
-                    }
-                }
+                // Match the legacy padding behavior: if the calculated 8-byte
+                // alignment padding extends into non-zero bytes, skip only the
+                // leading zeros instead. The legacy code eats zeros via
+                // `take_while`, then falls back when `padding > leading_zeros`.
+                let leading_zeros = remaining.iter().take_while(|&&b| b == 0).count();
+                let skip = if padding > leading_zeros {
+                    leading_zeros
+                } else {
+                    padding
+                };
+                self.data = &remaining[skip..];
                 entry
             }
             Err(_) => return None,

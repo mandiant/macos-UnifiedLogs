@@ -14,9 +14,6 @@ use uuid::Uuid;
 use super::decoders::{config, location};
 
 use super::chunks::firehose::flags::FirehoseFlags;
-#[cfg(not(feature = "rewrite-compat"))]
-use super::chunks::firehose::item::fill_private_data;
-#[cfg(feature = "rewrite-compat")]
 use super::chunks::firehose::item::fill_private_data_compat;
 use super::chunks::firehose::item::{parse_items_data, parse_trace_items};
 use super::format::format_message;
@@ -172,7 +169,6 @@ pub struct LogEntry<'a, 'b> {
 
     /// Error message for invalid format string offsets (old pipeline parity).
     /// When `format_string` is None, this replaces `<missing format string>`.
-    #[cfg(feature = "rewrite-compat")]
     pub(crate) format_string_error: Option<String>,
 }
 
@@ -199,14 +195,12 @@ impl<'a, 'b> LogEntry<'a, 'b> {
         if self.format_string.is_some() {
             return self.format_string;
         }
-        #[cfg(feature = "rewrite-compat")]
-        {
-            self.format_string_error.as_deref()
-        }
-        #[cfg(not(feature = "rewrite-compat"))]
-        {
-            None
-        }
+        self.format_string_error.as_deref()
+    }
+
+    /// Raw format string or old-pipeline fallback text when lookup failed.
+    pub fn raw_message(&self) -> &str {
+        self.effective_format_string().unwrap_or_default()
     }
 
     /// Build the formatted message string from raw items and format string.
@@ -223,15 +217,6 @@ impl<'a, 'b> LogEntry<'a, 'b> {
                     ..
                 } = &self.items
                 {
-                    #[cfg(not(feature = "rewrite-compat"))]
-                    fill_private_data(
-                        &mut items,
-                        ctx.private_data,
-                        ctx.private_strings_offset,
-                        ctx.private_data_virtual_offset,
-                        ctx.collapsed,
-                    );
-                    #[cfg(feature = "rewrite-compat")]
                     fill_private_data_compat(
                         &mut items,
                         ctx.private_data,
@@ -252,18 +237,8 @@ impl<'a, 'b> LogEntry<'a, 'b> {
                 start_time,
                 end_time,
             } => {
-                #[cfg(feature = "rewrite-compat")]
-                {
-                    let _ = (count, start_time, end_time);
-                    String::new()
-                }
-                #[cfg(not(feature = "rewrite-compat"))]
-                {
-                    format!(
-                        "Lost {} log entries between {} and {}",
-                        count, start_time, end_time
-                    )
-                }
+                let _ = (count, start_time, end_time);
+                String::new()
             }
             ItemsData::Simpledump { message, .. } => message.to_string(),
             ItemsData::Statedump {
@@ -385,7 +360,6 @@ fn format_statedump_data(data_type: u32, data: &[u8], title_name: &str) -> Strin
         }
         STATEDUMP_DATA_PROTOBUF => match sunlight::light::extract_protobuf(data) {
             Ok(map) => {
-                #[cfg(feature = "rewrite-compat")]
                 let map: std::collections::BTreeMap<_, _> = map.into_iter().collect();
                 serde_json::to_string(&map)
                     .unwrap_or_else(|_| String::from("Failed to serialize Protobuf HashMap"))

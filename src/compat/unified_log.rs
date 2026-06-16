@@ -89,6 +89,7 @@ pub struct UnifiedLogCatalogData {
 
 /// Transferable oversize entry. Keyed by `(data_ref_index, first_proc_id,
 /// second_proc_id)` so it can be pre-populated into `OversizeCache`.
+#[derive(Clone)]
 pub struct OversizeEntry {
     pub(crate) data_ref_index: u32,
     pub(crate) first_proc_id: u64,

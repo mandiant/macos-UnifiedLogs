@@ -1,8 +1,8 @@
-#[path = "../../dump_common.rs"]
+#[path = "../../dump_common/mod.rs"]
 mod common;
 
 use chrono::SecondsFormat;
-use common::{write_entry, DumpEntry};
+use common::{DumpEntry, write_entry};
 use macos_unifiedlogs::{log_entry::LogEntry, logarchive::visit_logarchive};
 use std::path::PathBuf;
 
@@ -50,7 +50,7 @@ fn dump_entry(index: usize, entry: &LogEntry<'_, '_>) -> DumpEntry {
         process: entry.process.unwrap_or("").to_string(),
         process_uuid: format!("{:X}", entry.process_uuid.simple()),
         message: entry.message().to_string(),
-        raw_message: entry.format_string.unwrap_or("").to_string(),
+        raw_message: entry.raw_message().to_string(),
         boot_uuid: format!("{:X}", entry.boot_uuid.simple()),
         timezone_name: entry.timezone_name.to_string(),
         message_flags: entry

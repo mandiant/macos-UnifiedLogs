@@ -27,11 +27,7 @@ pub(crate) struct DumpEntry {
 
 #[allow(dead_code)]
 pub(crate) fn parent_activity_id(value: u64) -> Option<u64> {
-    if value == 0 {
-        None
-    } else {
-        Some(value)
-    }
+    if value == 0 { None } else { Some(value) }
 }
 
 pub(crate) fn write_entry(entry: &DumpEntry) -> Result<(), Box<dyn std::error::Error>> {

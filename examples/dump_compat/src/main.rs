@@ -1,9 +1,9 @@
-#[path = "../../dump_common.rs"]
+#[path = "../../dump_common/mod.rs"]
 mod common;
 
 use std::path::PathBuf;
 
-use common::{parent_activity_id, write_entry, DumpEntry};
+use common::{DumpEntry, parent_activity_id, write_entry};
 use macos_unifiedlogs::{
     filesystem::LogarchiveProvider,
     parser::{build_log, collect_timesync, parse_log},
@@ -16,10 +16,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut provider = LogarchiveProvider::new(&path);
     let timesync_data = collect_timesync(&provider)?;
     let mut index = 0;
+    let mut parsed_logs = Vec::new();
 
     for mut source in provider.tracev3_files() {
         let evidence = source.source_path().to_string();
-        let parsed = parse_log(source.reader(), &evidence)?;
+        parsed_logs.push(parse_log(source.reader(), &evidence)?);
+    }
+
+    let oversize = parsed_logs
+        .iter()
+        .flat_map(|parsed| parsed.oversize.iter().cloned())
+        .collect::<Vec<_>>();
+
+    for mut parsed in parsed_logs {
+        parsed.oversize = oversize.clone();
         let (entries, _) = build_log(&parsed, &mut provider, &timesync_data, false);
 
         for entry in entries {

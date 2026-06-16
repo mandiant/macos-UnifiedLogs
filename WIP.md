@@ -31,14 +31,9 @@ Total differing entries: `3872`.
 
 ### Compat vs Rewrite
 
-Current differing entries after the signpost/backtrace prefix fix: `25686`.
+Total differing entries: `0`.
 
-- `24600` `message`: compat renders null pointers as `(null)`, rewrite renders an empty string.
-- `267` `message`: rewrite returns empty strings for `%s%.*s` style messages that compat resolves, for example CAML warnings.
-- `60` `message`, `raw_message`: invalid format-string offsets use compat error text, while rewrite emits `<missing format string>`.
-- `7` `message`: very large floating/decimal values lose precision in rewrite output.
-- `6` `message`: loss entries include a rewrite-only "Lost N log entries..." message.
-- `746` `message`: remaining formatter/object rendering differences that need further bucketing.
+Compat and rewrite now produce identical normalized dumps for all `887890` entries in the Big Sur private-enabled fixture.
 
 ## Reduction Plan
 
@@ -52,26 +47,45 @@ Current differing entries after the signpost/backtrace prefix fix: `25686`.
   - Expected impact: about `67481` message entries.
   - Result: signpost and backtrace prefix buckets disappeared; `compat vs rewrite` diff count dropped from `92859` to `25686`.
 
-- [ ] Normalize null pointer formatting.
+- [x] Normalize null pointer formatting.
   - Decide target behavior: compat/legacy `(null)` or rewrite empty string.
   - Expected impact: about `24600` message entries.
   - Search in rewrite item formatting and string/object decoding paths.
+  - Result: null-rendering bucket disappeared; `compat vs rewrite` diff count dropped from `25686` to `863`.
 
-- [ ] Fix `%s%.*s` precision/string assembly in rewrite.
+- [x] Fix `%s%.*s` precision/string assembly in rewrite.
   - Example raw message: `%s%.*s`.
   - Expected impact: about `267` message entries.
   - Start in `src/rewrite/format.rs`.
+  - Result: `%s%.*s` empty-message bucket disappeared; `compat vs rewrite` diff count dropped from `863` to `592`.
 
-- [ ] Use compat invalid-offset error text in rewrite when format-string lookup fails.
+- [x] Use compat invalid-offset error text in rewrite when format-string lookup fails.
   - Expected impact: `60` entries.
   - Start in `src/rewrite/tracev3.rs::format_string_error_message` and `src/rewrite/log_entry.rs::effective_format_string`.
+  - Result: invalid-format bucket disappeared; `raw_message` no longer appears in the structural diff, and `compat vs rewrite` diff count dropped from `592` to `531`.
 
-- [ ] Investigate large-number precision formatting.
-  - Expected impact: `8` entries.
+- [x] Investigate float and large-number precision formatting.
+  - Expected impact at the checkpoint: `525` entries.
   - Compare legacy `src/legacy/message.rs` to rewrite `src/rewrite/format.rs`.
+  - Result: natural float formatting now matches the old pipeline behavior; the original float bucket disappeared.
 
-- [ ] Decide whether loss entries should have an empty message or rewrite's explicit lost-entry message.
+- [x] Decide whether loss entries should have an empty message or rewrite's explicit lost-entry message.
   - Expected impact: `6` entries.
+  - Result: rewrite loss messages now match compat/legacy's empty message behavior.
+
+- [x] Align private-data parsing and firehose entry padding between rewrite and compat.
+  - Result: the object/private string bucket dropped from `458` entries to `181`.
+  - Changes were in private-data fill, adjusted private-data slices, and firehose entry padding.
+
+- [x] Align formatter edge cases between rewrite and compat.
+  - Result: malformed Apple annotations such as `%{public}.s`, missing-item placeholders, base64 byte formatting, and alternate hex padding now use one shared behavior.
+
+- [x] Normalize statedump protobuf map ordering.
+  - Result: protobuf statedump JSON output is stable in both rewrite flavors.
+
+- [x] Make dump examples use archive-level oversize context consistently.
+  - Result: legacy and compat examples now merge oversize entries before building per-file logs, matching rewrite's archive walker behavior.
+  - Final result: `compat vs rewrite` structural diff count is `0`.
 
 - [ ] Bring compat closer to legacy for low-volume differences after rewrite parity is stable.
   - mDNS DNS-header comma/newline whitespace.
