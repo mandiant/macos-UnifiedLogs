@@ -57,7 +57,15 @@ fn big_sur_build_log_benchbress(c: &mut Criterion) {
     let log_data = parse_log(handle, test_path.to_str().unwrap()).unwrap();
 
     c.bench_function("Benching Building One Big Sur Log", |b| {
-        b.iter(|| bench_build_log(&log_data, &provider, &cache, &timesync_data, exclude_missing));
+        b.iter(|| {
+            bench_build_log(
+                &log_data,
+                &provider,
+                &cache,
+                &timesync_data,
+                exclude_missing,
+            )
+        });
     });
 }
 

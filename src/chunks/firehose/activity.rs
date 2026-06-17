@@ -118,7 +118,13 @@ impl FirehoseActivity {
             supports_large_offset: true,
         };
 
-        MessageData::get_message(&firehose.firehose_formatters, provider, cache, &params, catalogs)
+        MessageData::get_message(
+            &firehose.firehose_formatters,
+            provider,
+            cache,
+            &params,
+            catalogs,
+        )
     }
 }
 

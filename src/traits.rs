@@ -1,6 +1,6 @@
 use std::borrow::Borrow;
-use std::{hash::Hash, io::Error};
 use std::sync::Arc;
+use std::{hash::Hash, io::Error};
 
 use crate::{dsc::SharedCacheStrings, uuidtext::UUIDText};
 
@@ -52,7 +52,6 @@ pub trait SourceFile {
     /// secondary storage location where, for instance, a file backing the `reader` might exist.
     fn source_path(&self) -> &str;
 }
-
 
 pub trait Cache<K, V>
 where

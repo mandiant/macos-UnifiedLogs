@@ -64,7 +64,13 @@ fn test_build_log_monterey() {
     let log_data = parse_log(handle, test_path.to_str().unwrap()).unwrap();
 
     let exclude_missing = false;
-    let (results, _) = build_log(&log_data, &provider, &cache, &timesync_data, exclude_missing);
+    let (results, _) = build_log(
+        &log_data,
+        &provider,
+        &cache,
+        &timesync_data,
+        exclude_missing,
+    );
     assert_eq!(results.len(), 322859);
     assert_eq!(results[0].process, "/kernel");
     assert_eq!(results[0].subsystem, "");

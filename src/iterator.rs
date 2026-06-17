@@ -137,7 +137,11 @@ fn nom_bytes<'a>(data: &'a [u8], size: &u64) -> nom::IResult<&'a [u8], &'a [u8]>
 mod tests {
     use super::UnifiedLogIterator;
     use crate::{
-        cache::MemoryStringCache, filesystem::LogarchiveProvider, iterator::nom_bytes, parser::{build_log, collect_timesync}, unified_log::{EventType, LogType}
+        cache::MemoryStringCache,
+        filesystem::LogarchiveProvider,
+        iterator::nom_bytes,
+        parser::{build_log, collect_timesync},
+        unified_log::{EventType, LogType},
     };
     use std::{fs, path::PathBuf};
 
@@ -199,7 +203,13 @@ mod tests {
         let mut total = 0;
         for chunk in log_iterator {
             let exclude_missing = false;
-            let (results, _) = build_log(&chunk, &mut provider, &cache, &timesync_data, exclude_missing);
+            let (results, _) = build_log(
+                &chunk,
+                &mut provider,
+                &cache,
+                &timesync_data,
+                exclude_missing,
+            );
 
             if results[10].time == 1642302327364384800.0 {
                 assert_eq!(results.len(), 3805);

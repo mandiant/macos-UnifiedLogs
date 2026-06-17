@@ -90,7 +90,11 @@ pub struct UnifiedLogCatalogData {
     pub oversize: Vec<Oversize>,
 }
 
-struct LogIterator<'a, P, C> where P: FileProvider, C: StringCache {
+struct LogIterator<'a, P, C>
+where
+    P: FileProvider,
+    C: StringCache,
+{
     unified_log_data: &'a UnifiedLogData,
     provider: &'a P,
     cache: &'a C,
@@ -99,7 +103,11 @@ struct LogIterator<'a, P, C> where P: FileProvider, C: StringCache {
     message_re: Regex,
     catalog_data_iterator_index: usize,
 }
-impl<'a, P, C> LogIterator<'a, P, C> where P: FileProvider, C: StringCache {
+impl<'a, P, C> LogIterator<'a, P, C>
+where
+    P: FileProvider,
+    C: StringCache,
+{
     fn new(
         unified_log_data: &'a UnifiedLogData,
         provider: &'a P,
@@ -153,7 +161,11 @@ impl<'a, P, C> LogIterator<'a, P, C> where P: FileProvider, C: StringCache {
     }
 }
 
-impl <P, C>Iterator for LogIterator<'_, P, C> where P: FileProvider, C: StringCache {
+impl<P, C> Iterator for LogIterator<'_, P, C>
+where
+    P: FileProvider,
+    C: StringCache,
+{
     type Item = (Vec<LogData>, UnifiedLogData);
 
     /// `catalog_data_index` == 0
@@ -809,9 +821,13 @@ impl LogData {
             evidence: unified_log_data.evidence.clone(),
         };
 
-        let Ok(log_iterator) =
-            LogIterator::new(unified_log_data, provider, cache, timesync_data, exclude_missing)
-        else {
+        let Ok(log_iterator) = LogIterator::new(
+            unified_log_data,
+            provider,
+            cache,
+            timesync_data,
+            exclude_missing,
+        ) else {
             return (log_data_vec, missing_unified_log_data_vec);
         };
         for (mut log_data, mut missing_unified_log) in log_iterator {
@@ -1066,8 +1082,13 @@ mod tests {
         let log_data = parse_log(reader, test_path.to_str().unwrap()).unwrap();
 
         let exclude_missing = false;
-        let (results, _) =
-            LogData::build_log(&log_data, &provider, &cache, &timesync_data, exclude_missing);
+        let (results, _) = LogData::build_log(
+            &log_data,
+            &provider,
+            &cache,
+            &timesync_data,
+            exclude_missing,
+        );
 
         assert_eq!(results.len(), 207366);
         assert_eq!(results[0].process, "/usr/libexec/lightsoutmanagementd");

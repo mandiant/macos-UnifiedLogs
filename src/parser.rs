@@ -10,7 +10,7 @@ use log::{error, info};
 use crate::dsc::SharedCacheStrings;
 use crate::error::ParserError;
 use crate::timesync::TimesyncBoot;
-use crate::traits::{FileProvider, StringCache, SourceFile};
+use crate::traits::{FileProvider, SourceFile, StringCache};
 use crate::unified_log::{LogData, UnifiedLogData};
 use crate::uuidtext::UUIDText;
 use std::collections::HashMap;
@@ -98,7 +98,13 @@ pub fn build_log(
     timesync_data: &HashMap<String, TimesyncBoot>,
     exclude_missing: bool,
 ) -> (Vec<LogData>, UnifiedLogData) {
-    LogData::build_log(unified_data, provider, cache, timesync_data, exclude_missing)
+    LogData::build_log(
+        unified_data,
+        provider,
+        cache,
+        timesync_data,
+        exclude_missing,
+    )
 }
 
 /// Parse all UUID files in provided directory. The directory should follow the same layout as the live system (ex: path/to/files/\<two character UUID\>/\<remaining UUID name\>)
@@ -427,7 +433,13 @@ mod tests {
         let timesync_data = collect_timesync(&provider).unwrap();
 
         let exclude_missing = false;
-        let (results, _) = build_log(&log_data, &provider, &cache, &timesync_data, exclude_missing);
+        let (results, _) = build_log(
+            &log_data,
+            &provider,
+            &cache,
+            &timesync_data,
+            exclude_missing,
+        );
         assert_eq!(results.len(), 207366);
         assert_eq!(results[10].process, "/usr/libexec/lightsoutmanagementd");
         assert_eq!(results[10].subsystem, "com.apple.lom");

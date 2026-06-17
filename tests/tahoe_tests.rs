@@ -64,7 +64,13 @@ fn test_build_log_tahoe() {
     let log_data = parse_log(handle, test_path.to_str().unwrap()).unwrap();
 
     let exclude_missing = false;
-    let (results, _) = build_log(&log_data, &provider, &cache, &timesync_data, exclude_missing);
+    let (results, _) = build_log(
+        &log_data,
+        &provider,
+        &cache,
+        &timesync_data,
+        exclude_missing,
+    );
     assert_eq!(results.len(), 305785);
 
     assert_eq!(
@@ -191,7 +197,13 @@ fn test_check_log_tahoe() {
     let log_data = parse_log(handle, test_path.to_str().unwrap()).unwrap();
 
     let exclude_missing = false;
-    let (results, _) = build_log(&log_data, &provider, &cache, &timesync_data, exclude_missing);
+    let (results, _) = build_log(
+        &log_data,
+        &provider,
+        &cache,
+        &timesync_data,
+        exclude_missing,
+    );
 
     let mut invalid_shared_string_offsets = 0;
 

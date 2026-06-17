@@ -134,7 +134,13 @@ fn test_build_log_big_sur() {
     let log_data = parse_log(handle, test_path.to_str().unwrap()).unwrap();
 
     let exclude_missing = false;
-    let (results, _) = build_log(&log_data, &provider, &cache, &timesync_data, exclude_missing);
+    let (results, _) = build_log(
+        &log_data,
+        &provider,
+        &cache,
+        &timesync_data,
+        exclude_missing,
+    );
     assert_eq!(results.len(), 110953);
     assert_eq!(results[0].process, "/usr/libexec/opendirectoryd");
     assert_eq!(results[0].subsystem, "com.apple.opendirectoryd");
@@ -521,7 +527,13 @@ fn test_parse_all_logs_private_with_public_mix_big_sur_single_file() {
     let log_data = parse_log(handle, test_path.to_str().unwrap()).unwrap();
 
     let exclude_missing = false;
-    let (results, _) = build_log(&log_data, &provider, &cache, &timesync_data, exclude_missing);
+    let (results, _) = build_log(
+        &log_data,
+        &provider,
+        &cache,
+        &timesync_data,
+        exclude_missing,
+    );
     assert_eq!(results.len(), 91567);
 
     let mut hex_count = 0;
@@ -567,7 +579,13 @@ fn test_parse_all_logs_private_with_public_mix_big_sur_special_file() {
     let log_data = parse_log(handle, test_path.to_str().unwrap()).unwrap();
 
     let exclude_missing = false;
-    let (results, _) = build_log(&log_data, &provider, &cache, &timesync_data, exclude_missing);
+    let (results, _) = build_log(
+        &log_data,
+        &provider,
+        &cache,
+        &timesync_data,
+        exclude_missing,
+    );
     assert_eq!(results.len(), 2238);
 
     let mut statedump = 0;
@@ -615,7 +633,13 @@ fn test_big_sur_missing_oversize_strings() {
     test_path.pop();
 
     let exclude_missing = false;
-    let (data, _) = build_log(&log_data, &provider, &cache, &timesync_data, exclude_missing);
+    let (data, _) = build_log(
+        &log_data,
+        &provider,
+        &cache,
+        &timesync_data,
+        exclude_missing,
+    );
     assert_eq!(data.len(), 101566);
 
     let mut missing_strings = 0;

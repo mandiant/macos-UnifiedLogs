@@ -63,7 +63,13 @@ fn test_build_log_high_sierra() {
     let log_data = parse_log(handle, test_path.to_str().unwrap()).unwrap();
 
     let exclude_missing = false;
-    let (results, _) = build_log(&log_data, &provider, &cache, &timesync_data, exclude_missing);
+    let (results, _) = build_log(
+        &log_data,
+        &provider,
+        &cache,
+        &timesync_data,
+        exclude_missing,
+    );
     assert_eq!(results.len(), 162402);
     assert_eq!(results[0].process, "/usr/libexec/opendirectoryd");
     assert_eq!(results[0].subsystem, "com.apple.opendirectoryd");
@@ -105,7 +111,13 @@ fn test_build_log_complex_format_high_sierra() {
     let log_data = parse_log(handle, test_path.to_str().unwrap()).unwrap();
 
     let exclude_missing = false;
-    let (results, _) = build_log(&log_data, &provider, &cache, &timesync_data, exclude_missing);
+    let (results, _) = build_log(
+        &log_data,
+        &provider,
+        &cache,
+        &timesync_data,
+        exclude_missing,
+    );
     assert_eq!(results.len(), 162402);
 
     for result in &results {
@@ -165,7 +177,13 @@ fn test_build_log_negative_number_high_sierra() {
     let log_data = parse_log(handle, test_path.to_str().unwrap()).unwrap();
 
     let exclude_missing = false;
-    let (results, _) = build_log(&log_data, &provider, &cache, &timesync_data, exclude_missing);
+    let (results, _) = build_log(
+        &log_data,
+        &provider,
+        &cache,
+        &timesync_data,
+        exclude_missing,
+    );
     assert_eq!(results.len(), 12058);
 
     for result in &results {

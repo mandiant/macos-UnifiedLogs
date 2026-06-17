@@ -331,10 +331,7 @@ impl MessageData {
 
         // If most significant bit is set, the string offset is "dynamic" (the formatter is "%s")
         if original_offset & 0x80000000 != 0
-            && let Some(data) = cache.get_or_load_uuidtext(
-                &message_data.process_uuid,
-                provider,
-            )
+            && let Some(data) = cache.get_or_load_uuidtext(&message_data.process_uuid, provider)
         {
             // Footer data is a collection of strings that ends with the image path/library associated with strings
             let strings = &data.footer_data;
@@ -350,10 +347,7 @@ impl MessageData {
         }
 
         // Get the collection of parsed UUIDText files until matching UUID file is found
-        if let Some(data) = cache.get_or_load_uuidtext(
-            &message_data.process_uuid,
-            provider,
-        ) {
+        if let Some(data) = cache.get_or_load_uuidtext(&message_data.process_uuid, provider) {
             let mut string_start = 0;
             for entry in &data.entry_descriptors {
                 // Identify start of string formatter offset
@@ -394,10 +388,7 @@ impl MessageData {
 
         // There is a chance the log entry does not have a valid offset
         // Apple labels as "error: ~~> Invalid bounds 4334340 for E502E11E-518F-38A7-9F0B-E129168338E7"
-        if let Some(data) = cache.get_or_load_uuidtext(
-            &message_data.process_uuid,
-            provider,
-        ) {
+        if let Some(data) = cache.get_or_load_uuidtext(&message_data.process_uuid, provider) {
             // Footer data is a collection of strings that ends with the image process associated with the strings
             let strings = &data.footer_data;
             let footer_data: &[u8] = strings;
@@ -495,10 +486,7 @@ impl MessageData {
             return Ok((&[], message_data));
         }
 
-        if let Some(data) = cache.get_or_load_uuidtext(
-            &message_data.library_uuid,
-            provider,
-        ) {
+        if let Some(data) = cache.get_or_load_uuidtext(&message_data.library_uuid, provider) {
             let mut string_start = 0;
             for entry in &data.entry_descriptors {
                 // Identify start of string formatter offset
@@ -560,10 +548,7 @@ impl MessageData {
 
         // There is a chance the log entry does not have a valid offset
         // Apple labels as "error: ~~> Invalid bounds 4334340 for E502E11E-518F-38A7-9F0B-E129168338E7"
-        if let Some(data) = cache.get_or_load_uuidtext(
-            &message_data.library_uuid,
-            provider,
-        ) {
+        if let Some(data) = cache.get_or_load_uuidtext(&message_data.library_uuid, provider) {
             // Footer data is a collection of strings that ends with the image process associated with the strings
             let strings = &data.footer_data;
             let footer_data: &[u8] = strings;
@@ -622,8 +607,7 @@ impl MessageData {
 
         // If most significant bit is set, the string offset is "dynamic" (the formatter is "%s")
         if original_offset & 0x80000000 != 0
-            && let Some(data) =
-                cache.get_or_load_uuidtext(uuid, provider)
+            && let Some(data) = cache.get_or_load_uuidtext(uuid, provider)
         {
             // Footer data is a collection of strings that ends with the image path/library associated with strings
             let strings = &data.footer_data;
