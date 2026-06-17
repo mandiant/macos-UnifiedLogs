@@ -18,131 +18,131 @@ use nom::{
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, PartialEq, Eq, strum::Display)]
 pub enum OdError {
-    #[strum(to_string = "ODErrorCredentialsAccountDisable")]
+    #[strum(to_string = "ODErrorCredentialsAccountDisabled")]
     CredentialsAccountDisabled,
-    #[strum(to_string = "ODErrorCredentialsAccountExpire")]
+    #[strum(to_string = "ODErrorCredentialsAccountExpired")]
     CredentialsAccountExpired,
-    #[strum(to_string = "ODErrorCredentialsAccountInactiv")]
+    #[strum(to_string = "ODErrorCredentialsAccountInactive")]
     CredentialsAccountInactive,
-    #[strum(to_string = "ODErrorCredentialsAccountNotFoun")]
+    #[strum(to_string = "ODErrorCredentialsAccountNotFound")]
     CredentialsAccountNotFound,
-    #[strum(to_string = "ODErrorCredentialsInvali")]
+    #[strum(to_string = "ODErrorCredentialsInvalid")]
     CredentialsInvalid,
-    #[strum(to_string = "ODErrorCredentialsInvalidCompute")]
+    #[strum(to_string = "ODErrorCredentialsInvalidComputer")]
     CredentialsInvalidComputer,
-    #[strum(to_string = "ODErrorCredentialsInvalidLogonHour")]
+    #[strum(to_string = "ODErrorCredentialsInvalidLogonHours")]
     CredentialsInvalidLogonHours,
-    #[strum(to_string = "ODErrorCredentialsMethodNotSupporte")]
+    #[strum(to_string = "ODErrorCredentialsMethodNotSupported")]
     CredentialsMethodNotSupported,
-    #[strum(to_string = "ODErrorCredentialsNotAuthorize")]
+    #[strum(to_string = "ODErrorCredentialsNotAuthorized")]
     CredentialsNotAuthorized,
-    #[strum(to_string = "ODErrorCredentialsOperationFaile")]
+    #[strum(to_string = "ODErrorCredentialsOperationFailed")]
     CredentialsOperationFailed,
-    #[strum(to_string = "ODErrorCredentialsParameterErro")]
+    #[strum(to_string = "ODErrorCredentialsParameterError")]
     CredentialsParameterError,
-    #[strum(to_string = "ODErrorCredentialsPasswordChangeRequire")]
+    #[strum(to_string = "ODErrorCredentialsPasswordChangeRequired")]
     CredentialsPasswordChangeRequired,
-    #[strum(to_string = "ODErrorCredentialsPasswordChangeTooSoo")]
+    #[strum(to_string = "ODErrorCredentialsPasswordChangeTooSoon")]
     CredentialsPasswordChangeTooSoon,
-    #[strum(to_string = "ODErrorCredentialsPasswordExpire")]
+    #[strum(to_string = "ODErrorCredentialsPasswordExpired")]
     CredentialsPasswordExpired,
-    #[strum(to_string = "ODErrorCredentialsPasswordNeedsDigi")]
+    #[strum(to_string = "ODErrorCredentialsPasswordNeedsDigit")]
     CredentialsPasswordNeedsDigit,
-    #[strum(to_string = "ODErrorCredentialsPasswordNeedsLette")]
+    #[strum(to_string = "ODErrorCredentialsPasswordNeedsLetter")]
     CredentialsPasswordNeedsLetter,
-    #[strum(to_string = "ODErrorCredentialsPasswordQualityFaile")]
+    #[strum(to_string = "ODErrorCredentialsPasswordQualityFailed")]
     CredentialsPasswordQualityFailed,
-    #[strum(to_string = "ODErrorCredentialsPasswordTooShor")]
+    #[strum(to_string = "ODErrorCredentialsPasswordTooShort")]
     CredentialsPasswordTooShort,
-    #[strum(to_string = "ODErrorCredentialsPasswordTooLon")]
+    #[strum(to_string = "ODErrorCredentialsPasswordTooLong")]
     CredentialsPasswordTooLong,
-    #[strum(to_string = "ODErrorCredentialsPasswordUnrecoverabl")]
+    #[strum(to_string = "ODErrorCredentialsPasswordUnrecoverable")]
     CredentialsPasswordUnrecoverable,
-    #[strum(to_string = "ODErrorCredentialsServerCommunicationErro")]
+    #[strum(to_string = "ODErrorCredentialsServerCommunicationError")]
     CredentialsServerCommunicationError,
-    #[strum(to_string = "ODErrorCredentialsServerErro")]
+    #[strum(to_string = "ODErrorCredentialsServerError")]
     CredentialsServerError,
-    #[strum(to_string = "ODErrorCredentialsServerNotFoun")]
+    #[strum(to_string = "ODErrorCredentialsServerNotFound")]
     CredentialsServerNotFound,
-    #[strum(to_string = "ODErrorCredentialsServerTimeou")]
+    #[strum(to_string = "ODErrorCredentialsServerTimeout")]
     CredentialsServerTimeout,
-    #[strum(to_string = "ODErrorCredentialsServerUnreachabl")]
+    #[strum(to_string = "ODErrorCredentialsServerUnreachable")]
     CredentialsServerUnreachable,
-    #[strum(to_string = "ODErrorDaemonErro")]
+    #[strum(to_string = "ODErrorDaemonError")]
     DaemonError,
-    #[strum(to_string = "ODErrorNodeConnectionFaile")]
+    #[strum(to_string = "ODErrorNodeConnectionFailed")]
     NodeConnectionFailed,
-    #[strum(to_string = "ODErrorNodeDisable")]
+    #[strum(to_string = "ODErrorNodeDisabled")]
     NodeDisabled,
-    #[strum(to_string = "ODErrorNodeUnknownHos")]
+    #[strum(to_string = "ODErrorNodeUnknownHost")]
     NodeUnknownHost,
-    #[strum(to_string = "ODErrorNodeUnknownNam")]
+    #[strum(to_string = "ODErrorNodeUnknownName")]
     NodeUnknownName,
-    #[strum(to_string = "ODErrorNodeUnknownTyp")]
+    #[strum(to_string = "ODErrorNodeUnknownType")]
     NodeUnknownType,
-    #[strum(to_string = "ODErrorPluginErro")]
+    #[strum(to_string = "ODErrorPluginError")]
     PluginError,
-    #[strum(to_string = "ODErrorPluginOperationNotSupporte")]
+    #[strum(to_string = "ODErrorPluginOperationNotSupported")]
     PluginOperationNotSupported,
-    #[strum(to_string = "ODErrorPluginOperationTimeou")]
+    #[strum(to_string = "ODErrorPluginOperationTimeout")]
     PluginOperationTimeout,
-    #[strum(to_string = "ODErrorPolicyOutOfRang")]
+    #[strum(to_string = "ODErrorPolicyOutOfRange")]
     PolicyOutOfRange,
-    #[strum(to_string = "ODErrorPolicyUnsupporte")]
+    #[strum(to_string = "ODErrorPolicyUnsupported")]
     PolicyUnsupported,
-    #[strum(to_string = "ODErrorQueryInvalidMatchTyp")]
+    #[strum(to_string = "ODErrorQueryInvalidMatchType")]
     QueryInvalidMatchType,
-    #[strum(to_string = "ODErrorQuerySynchroniz")]
+    #[strum(to_string = "ODErrorQuerySynchronize")]
     QuerySynchronize,
-    #[strum(to_string = "ODErrorQueryTimeou")]
+    #[strum(to_string = "ODErrorQueryTimeout")]
     QueryTimeout,
-    #[strum(to_string = "ODErrorQueryUnsupportedMatchTyp")]
+    #[strum(to_string = "ODErrorQueryUnsupportedMatchType")]
     QueryUnsupportedMatchType,
-    #[strum(to_string = "ODErrorRecordAlreadyExist")]
+    #[strum(to_string = "ODErrorRecordAlreadyExists")]
     RecordAlreadyExists,
-    #[strum(to_string = "ODErrorRecordAttributeNotFoun")]
+    #[strum(to_string = "ODErrorRecordAttributeNotFound")]
     RecordAttributeNotFound,
-    #[strum(to_string = "ODErrorRecordAttributeUnknownTyp")]
+    #[strum(to_string = "ODErrorRecordAttributeUnknownType")]
     RecordAttributeUnknownType,
-    #[strum(to_string = "ODErrorRecordAttributeValueNotFoun")]
+    #[strum(to_string = "ODErrorRecordAttributeValueNotFound")]
     RecordAttributeValueNotFound,
-    #[strum(to_string = "ODErrorRecordAttributeValueSchemaErro")]
+    #[strum(to_string = "ODErrorRecordAttributeValueSchemaError")]
     RecordAttributeValueSchemaError,
-    #[strum(to_string = "ODErrorRecordInvalidTyp")]
+    #[strum(to_string = "ODErrorRecordInvalidType")]
     RecordInvalidType,
-    #[strum(to_string = "ODErrorRecordNoLongerExist")]
+    #[strum(to_string = "ODErrorRecordNoLongerExists")]
     RecordNoLongerExists,
-    #[strum(to_string = "ODErrorRecordParameterErro")]
+    #[strum(to_string = "ODErrorRecordParameterError")]
     RecordParameterError,
-    #[strum(to_string = "ODErrorRecordPermissionErro")]
+    #[strum(to_string = "ODErrorRecordPermissionError")]
     RecordPermissionError,
-    #[strum(to_string = "ODErrorRecordReadOnlyNod")]
+    #[strum(to_string = "ODErrorRecordReadOnlyNode")]
     RecordReadOnlyNode,
-    #[strum(to_string = "ODErrorRecordTypeDisable")]
+    #[strum(to_string = "ODErrorRecordTypeDisabled")]
     RecordTypeDisabled,
-    #[strum(to_string = "ODErrorSessionDaemonNotRunnin")]
+    #[strum(to_string = "ODErrorSessionDaemonNotRunning")]
     SessionDaemonNotRunning,
-    #[strum(to_string = "ODErrorSessionDaemonRefuse")]
+    #[strum(to_string = "ODErrorSessionDaemonRefused")]
     SessionDaemonRefused,
-    #[strum(to_string = "ODErrorSessionLocalOnlyDaemonInUs")]
+    #[strum(to_string = "ODErrorSessionLocalOnlyDaemonInUse")]
     SessionLocalOnlyDaemonInUse,
-    #[strum(to_string = "ODErrorSessionNormalDaemonInUs")]
+    #[strum(to_string = "ODErrorSessionNormalDaemonInUse")]
     SessionNormalDaemonInUse,
-    #[strum(to_string = "ODErrorSessionProxyCommunicationErro")]
+    #[strum(to_string = "ODErrorSessionProxyCommunicationError")]
     SessionProxyCommunicationError,
-    #[strum(to_string = "ODErrorSessionProxyIPUnreachabl")]
+    #[strum(to_string = "ODErrorSessionProxyIPUnreachable")]
     SessionProxyIPUnreachable,
-    #[strum(to_string = "ODErrorSessionProxyUnknownHos")]
+    #[strum(to_string = "ODErrorSessionProxyUnknownHost")]
     SessionProxyUnknownHost,
-    #[strum(to_string = "ODErrorSessionProxyVersionMismatc")]
+    #[strum(to_string = "ODErrorSessionProxyVersionMismatch")]
     SessionProxyVersionMismatch,
-    #[strum(to_string = "ODErrorSucces")]
+    #[strum(to_string = "ODErrorSuccess")]
     Success,
-    #[strum(to_string = "ODErrorCredentialsAccountLocke")]
+    #[strum(to_string = "ODErrorCredentialsAccountLocked")]
     CredentialsAccountLocked,
-    #[strum(to_string = "ODErrorCredentialsAccountTemporarilyLocke")]
+    #[strum(to_string = "ODErrorCredentialsAccountTemporarilyLocked")]
     CredentialsAccountTemporarilyLocked,
-    #[strum(to_string = "ODErrorCredentialsContactPrimar")]
+    #[strum(to_string = "ODErrorCredentialsContactPrimary")]
     CredentialsContactPrimary,
     /// Not Found
     #[strum(to_string = "Not Found")]

@@ -332,6 +332,45 @@ fn flush_deferred_entries<'a>(
     deferred_readers.clear();
 }
 
+fn legacy_private_data_start<'a>(fh: &RawFirehose<'a>) -> Option<&'a [u8]> {
+    const NO_PRIVATE_DATA: u16 = 0x1000;
+    const PRIVATE_OFFSET_BASE: usize = 0x1000;
+    const PUBLIC_DATA_SIZE_OFFSET: usize = 16;
+
+    if fh.private_data_virtual_offset == NO_PRIVATE_DATA {
+        return None;
+    }
+
+    let log_data = fh.firehose_data;
+    let public_data_len = fh.public_data_len();
+    if public_data_len > log_data.len() {
+        return None;
+    }
+
+    let mut reader = fh.entries();
+    while reader.next().is_some() {}
+    let remaining_public_len = reader.remaining().len();
+    let input_after_public = &log_data[public_data_len..];
+    let private_data_offset =
+        PRIVATE_OFFSET_BASE.saturating_sub(usize::from(fh.private_data_virtual_offset));
+
+    let start = if input_after_public.len() > private_data_offset && remaining_public_len == 0 {
+        public_data_len + (input_after_public.len() - private_data_offset)
+    } else if log_data.len() == public_data_len {
+        usize::from(fh.private_data_virtual_offset)
+            .wrapping_sub(PUBLIC_DATA_SIZE_OFFSET)
+            .wrapping_sub(remaining_public_len)
+    } else {
+        public_data_len.saturating_sub(remaining_public_len)
+    };
+
+    if start > log_data.len() {
+        return None;
+    }
+
+    Some(&log_data[start..])
+}
+
 // ---------------------------------------------------------------------------
 // Per-entry processing
 // ---------------------------------------------------------------------------
@@ -351,20 +390,7 @@ fn visit_firehose_entries<'a: 'b, 'b>(
     let boot_uuid = header.boot_uuid;
     let timezone_name = extract_timezone_name(header.timezone_path);
 
-    // Pre-compute adjusted private data that includes any leftover (unconsumed)
-    // public data bytes. The legacy code prepends these to the private data region
-    // (see legacy firehose_log.rs lines 186-198).
-    let adjusted_private_data = {
-        let mut reader = fh.entries();
-        while reader.next().is_some() {}
-        let leftover = reader.remaining();
-        if !leftover.is_empty() && fh.private_data_virtual_offset != 0x1000 {
-            let start = fh.public_data_len() - leftover.len();
-            Some(&fh.firehose_data[start..])
-        } else {
-            fh.private_data()
-        }
-    };
+    let adjusted_private_data = legacy_private_data_start(fh);
 
     for entry in fh.entries() {
         let body = match entry.parse_body() {

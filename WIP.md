@@ -18,13 +18,13 @@ All three dumps currently contain `887890` entries, so entry count and ordering 
 
 ### Legacy vs Compat
 
-Total differing entries: `530`.
+Total differing entries: `307`.
 
-- `530` `message`: mostly formatter/decoder edge cases:
-  - OpenDirectory `ODError...` strings are truncated by one or more trailing characters in compat.
-  - Some long object/private strings differ by truncation or masking.
+- `307` `message`: mostly formatter/private-data edge cases:
+  - `284` signpost messages differ because private payloads are revealed in compat/rewrite where legacy still prints `<private>`.
+  - `21` log messages differ because private payloads are either not filled, truncated, or formatted differently.
+  - `2` statedump protobuf messages differ only by JSON object key order from legacy `HashMap` serialization.
   - One install-phase plist/object string is truncated.
-  - Four DNS Configuration statedump entries still differ in object formatting.
 
 ### Compat vs Rewrite
 
@@ -99,9 +99,29 @@ Compat and rewrite now produce identical normalized dumps for all `887890` entri
   - Native rewrite still keeps resolved `/kernel` metadata for loss entries.
   - Result: `legacy vs compat` diff count dropped from `536` to `530`; `compat vs rewrite` stayed at `0`.
 
-- [ ] Bring compat closer to legacy for low-volume differences after rewrite parity is stable.
-  - OpenDirectory decoder truncation.
-  - DNS Configuration statedump formatting.
+- [x] Fix OpenDirectory decoder display strings in rewrite.
+  - Expected impact: the OpenDirectory `ODError...` buckets where rewrite dropped trailing characters.
+  - Change was in `src/rewrite/decoders/opendirectory.rs`.
+  - Result: `legacy vs compat` diff count dropped from `530` to `402`; `compat vs rewrite` stayed at `0`.
+
+- [x] Match legacy empty `network:sockaddr` rendering.
+  - Expected impact: `93` message entries.
+  - Change was in `src/rewrite/decoders/network.rs`.
+  - Result: empty sockaddr values now render as `<NULL>`; `legacy vs compat` diff count dropped from `402` to `308`; `compat vs rewrite` stayed at `0`.
+
+- [x] Match legacy DNS Configuration statedump formatting.
+  - Expected impact: two DNS Configuration statedump rows.
+  - Change was in `src/rewrite/decoders/config.rs`.
+  - Result: DNS Configuration rows now match legacy's duplicated scoped-query formatting; `legacy vs compat` diff count dropped from `308` to `307`; `compat vs rewrite` stayed at `0`.
+
+- [x] Mirror legacy private-data start branch selection in rewrite.
+  - Change was in `src/rewrite/tracev3.rs::legacy_private_data_start`.
+  - Result: no count change on the current fixture, but the code now documents and applies the legacy branch structure before private-data fill.
+
+- [ ] Inspect private-data item metadata for the remaining log/signpost buckets.
+  - Main over-fill buckets: `Parent=%#llx App=%@ RequestKind=%#05x`, `Reason = %@`, `%@`, `Identifier = %@, Parent = %@, Name = %@`, `name=%{signpost.description:attribute}s`.
+  - Main under-fill/truncation buckets: `Submitted Activity: %{public}@ at priority %{public}@ %@`, `%s`, `Reporting events to Powerlog %@`, and APS topic-list messages.
+  - Next step: compare legacy `message_entries` with compat `message_entries` for representative indices before changing privacy rules globally.
 
 ## Validation Loop
 

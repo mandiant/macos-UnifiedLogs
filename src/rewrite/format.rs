@@ -27,9 +27,8 @@ fn decode_annotation(annotation: &str, item: &RawFirehoseItem<'_>) -> Option<Str
         RawItemValue::Str(s) => s.to_string(),
         RawItemValue::Bytes(b) => base64::engine::general_purpose::STANDARD.encode(b),
         RawItemValue::Private { .. } => return None,
-        // Old pipeline calls decoders with empty string for size-0 items (e.g. sockaddr("") →
-        // "Unknown sockaddr family: 0"). Most decoders will fail on empty input and we'll
-        // return None below, matching the fallthrough behavior.
+        // Old pipeline calls decoders with empty string for size-0 items. Most decoders will fail
+        // on empty input and we'll return None below, matching the fallthrough behavior.
         RawItemValue::Empty | RawItemValue::Null => String::new(),
     };
 

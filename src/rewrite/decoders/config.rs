@@ -59,18 +59,23 @@ where
     S: Display + AsRef<str>,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "DNS Configuration\n")?;
-        for (key, entry) in self.resolvers.iter().enumerate() {
-            write!(f, "resolver #{key}\n")?;
-            write!(f, "{}", entry)?;
-        }
-        write!(f, "DNS configuration (for scoped queries)\n")?;
-        for (key, entry) in self.scopes.iter().enumerate() {
-            write!(f, "scope #{key}\n")?;
-            write!(f, "{}", entry)?;
-        }
-        Ok(())
+        let mut message = String::from("DNS Configuration\n");
+        message += &assemble_dns_message(&message, &self.resolvers);
+        message += "DNS configuration (for scoped queries)\n\n";
+        message += &assemble_dns_message(&message, &self.scopes);
+        write!(f, "{message}")
     }
+}
+
+fn assemble_dns_message<S>(log_message: &str, configs: &[DnsConfig<S>]) -> String
+where
+    S: Display + AsRef<str>,
+{
+    let mut message = log_message.to_string();
+    for (key, entry) in configs.iter().enumerate() {
+        message += &format!("resolver #{key}\n{entry}");
+    }
+    message
 }
 
 /// Parse the DNS config data and assemble message

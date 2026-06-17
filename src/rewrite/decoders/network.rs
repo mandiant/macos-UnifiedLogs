@@ -54,7 +54,7 @@ pub(crate) fn ipv_four(input: &str) -> Result<Ipv4Addr, DecoderError<'_>> {
 /// Parse a sockaddr structure
 pub(crate) fn sockaddr(input: &str) -> Result<SockaddrData, DecoderError<'_>> {
     if input.is_empty() {
-        return Ok(SockaddrData::Unknown { family: 0 });
+        return Ok(SockaddrData::Null);
     }
 
     let decoded_data = decode_standard(input).map_err(|_| DecoderError::Parse {
@@ -74,6 +74,7 @@ pub(crate) fn sockaddr(input: &str) -> Result<SockaddrData, DecoderError<'_>> {
 
 #[allow(non_camel_case_types)]
 pub enum SockaddrData {
+    Null,
     AF_INET {
         _family: u8,
         ip_addr: Ipv4Addr,
@@ -94,6 +95,7 @@ pub enum SockaddrData {
 impl Display for SockaddrData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            SockaddrData::Null => write!(f, "<NULL>"),
             SockaddrData::AF_INET { ip_addr, port, .. } => {
                 if *port == 0 {
                     write!(f, "{ip_addr}")
