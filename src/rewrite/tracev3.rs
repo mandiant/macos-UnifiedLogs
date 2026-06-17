@@ -548,7 +548,6 @@ fn visit_firehose_entries<'a: 'b, 'b>(
         let private_data_context = {
             let private_strings = match &body {
                 RawFirehoseBody::NonActivity(b) => b.private_strings,
-                RawFirehoseBody::Signpost(b) => b.private_strings,
                 _ => None,
             };
             let pd = adjusted_private_data;

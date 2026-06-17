@@ -208,10 +208,11 @@ impl<'a, 'b> LogEntry<'a, 'b> {
         let fmt_str = self.effective_format_string();
         match &self.items {
             ItemsData::Regular { data, flags, .. } => {
-                let (mut items, backtrace) = match parse_items_data(data, *flags) {
-                    Ok((_, d)) => (d.items, d.backtrace_data),
-                    Err(_) => (Vec::new(), None),
-                };
+                let (mut items, backtrace, remaining_private_data) =
+                    match parse_items_data(data, *flags) {
+                        Ok((remaining, d)) => (d.items, d.backtrace_data, remaining),
+                        Err(_) => (Vec::new(), None, &[][..]),
+                    };
                 if let ItemsData::Regular {
                     private_data_context: Some(ctx),
                     ..
@@ -224,6 +225,8 @@ impl<'a, 'b> LogEntry<'a, 'b> {
                         ctx.private_data_virtual_offset,
                         ctx.collapsed,
                     );
+                } else if !remaining_private_data.is_empty() {
+                    fill_private_data_compat(&mut items, remaining_private_data, 0, 0, 1);
                 }
                 let msg = format_message(fmt_str, &items);
                 self.apply_parity_prefix(msg, backtrace)

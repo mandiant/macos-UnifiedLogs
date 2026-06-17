@@ -444,17 +444,10 @@ fn apply_octal_format(output: &mut String, n: i64, spec: &FormatSpec) {
 fn apply_float_format(output: &mut String, f: f64, spec: &FormatSpec) {
     let plus = if spec.show_sign && f >= 0.0 { "+" } else { "" };
 
-    let formatted = if spec.has_precision {
+    let formatted = if spec.has_precision && spec.precision != 0 {
         format!("{f:.prec$}", prec = spec.precision)
     } else {
-        // Old pipeline double-converts: format to string, count decimal digits, reformat with that
-        // precision. This can round differently than direct formatting.
-        let initial = format!("{f}");
-        let decimal_digits = initial
-            .find('.')
-            .map(|pos| initial.len() - pos - 1)
-            .unwrap_or(0);
-        format!("{f:.prec$}", prec = decimal_digits)
+        legacy_natural_float(f)
     };
 
     let core = format!("{plus}{formatted}");
@@ -492,6 +485,17 @@ fn apply_float_format(output: &mut String, f: f64, spec: &FormatSpec) {
     } else {
         output.push_str(&core);
     }
+}
+
+fn legacy_natural_float(f: f64) -> String {
+    // Old pipeline double-converts: format to string, count decimal digits, reformat with that
+    // precision. This can round differently than direct formatting.
+    let initial = format!("{f}");
+    let decimal_digits = initial
+        .find('.')
+        .map(|pos| initial.len() - pos - 1)
+        .unwrap_or(0);
+    format!("{f:.prec$}", prec = decimal_digits)
 }
 
 // ---------------------------------------------------------------------------
@@ -993,6 +997,7 @@ mod tests {
 
     #[test_case("%f", 4_614_253_070_214_989_087      => "3.14" ; "basic float")]
     #[test_case("%.2f", 4_614_253_070_214_989_087    => "3.14" ; "float precision")]
+    #[test_case("%.0f", 4_645_604_456_808_463_729    => "392.04" ; "zero precision natural")]
     #[test_case("%f", -4_611_686_018_427_387_904     => "-2" ; "negative float")]
     #[test_case("%+09.4f", 4_570_111_009_880_014_848 => "+000.0035" ; "plus zero pad")]
     #[test_case("%9.4f", 4_570_111_009_880_014_848   => "   0.0035" ; "space pad")]
