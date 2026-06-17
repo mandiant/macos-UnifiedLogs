@@ -12,25 +12,23 @@ Fixture:
 tests/test_data/system_logs_big_sur_private_enabled.logarchive
 ```
 
-All three dumps currently contain `887890` entries, so entry count and ordering are aligned. The remaining work is field/value parity.
+Compatibility intent: the `rewrite-compat` layer exists to expose the client-facing legacy API over the parser implementations. It should not hide parser output differences in dump examples; parity fixes belong in the parser/formatter paths unless the field is an API-shape conversion.
+
+All three dumps currently contain `887890` entries. Entry count, ordering, and field values are aligned.
 
 ## Difference Summary
 
 ### Legacy vs Compat
 
-Total differing entries: `307`.
+Total differing entries: `0`.
 
-- `307` `message`: mostly formatter/private-data edge cases:
-  - `284` signpost messages differ because private payloads are revealed in compat/rewrite where legacy still prints `<private>`.
-  - `21` log messages differ because private payloads are either not filled, truncated, or formatted differently.
-  - `2` statedump protobuf messages differ only by JSON object key order from legacy `HashMap` serialization.
-  - One install-phase plist/object string is truncated.
+Legacy and compat now produce identical dumps for all `887890` entries in the Big Sur private-enabled fixture.
 
 ### Compat vs Rewrite
 
 Total differing entries: `0`.
 
-Compat and rewrite now produce identical normalized dumps for all `887890` entries in the Big Sur private-enabled fixture.
+Compat and rewrite now produce identical dumps for all `887890` entries in the Big Sur private-enabled fixture.
 
 ## Reduction Plan
 
@@ -118,10 +116,23 @@ Compat and rewrite now produce identical normalized dumps for all `887890` entri
   - Change was in `src/rewrite/tracev3.rs::legacy_private_data_start`.
   - Result: no count change on the current fixture, but the code now documents and applies the legacy branch structure before private-data fill.
 
-- [ ] Inspect private-data item metadata for the remaining log/signpost buckets.
+- [x] Inspect and fix private-data item metadata for the remaining log/signpost buckets.
   - Main over-fill buckets: `Parent=%#llx App=%@ RequestKind=%#05x`, `Reason = %@`, `%@`, `Identifier = %@, Parent = %@, Name = %@`, `name=%{signpost.description:attribute}s`.
   - Main under-fill/truncation buckets: `Submitted Activity: %{public}@ at priority %{public}@ %@`, `%s`, `Reporting events to Powerlog %@`, and APS topic-list messages.
-  - Next step: compare legacy `message_entries` with compat `message_entries` for representative indices before changing privacy rules globally.
+  - Result: signpost private data is no longer filled, matching legacy's non-activity-only private-data path; oversize private data is filled from the remaining oversize payload; `legacy vs compat` diff count dropped from `307` to `10`.
+
+- [x] Match legacy `extract_string_size` NUL handling.
+  - Legacy preserves interior NULs and trims only trailing NULs.
+  - Result: long APS/topic-list and install-phase strings now match; `legacy vs compat` diff count dropped from `10` to `3`.
+
+- [x] Match legacy zero-precision float formatting.
+  - Legacy treats `%.0f` like natural float precision in the observed formatter path.
+  - Result: the final log-message diff disappeared; `legacy vs compat` diff count dropped from `3` to `2`.
+
+- [x] Make statedump protobuf JSON deterministic in parser output.
+  - Legacy serializes a `HashMap`, so key order is not stable between runs.
+  - Legacy now sorts protobuf maps before serializing, matching rewrite output without dump-side normalization.
+  - Final result: `legacy vs compat` and `compat vs rewrite` structural diff counts are both `0`.
 
 ## Validation Loop
 
