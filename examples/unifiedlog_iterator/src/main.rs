@@ -6,7 +6,6 @@
 // See the License for the specific language governing permissions and limitations under the License.
 
 use chrono::{SecondsFormat, TimeZone, Utc};
-use crossbeam_channel::bounded;
 use log::{debug, error, info, warn, LevelFilter};
 use macos_unifiedlogs::filesystem::{LiveSystemProvider, LogarchiveProvider};
 use macos_unifiedlogs::iterator::UnifiedLogIterator;
@@ -14,7 +13,6 @@ use macos_unifiedlogs::parser::{build_log, collect_timesync, parse_log};
 use macos_unifiedlogs::timesync::TimesyncBoot;
 use macos_unifiedlogs::traits::FileProvider;
 use macos_unifiedlogs::unified_log::{LogData, UnifiedLogData};
-use rayon::prelude::*;
 use simplelog::{ColorChoice, Config, TermLogger, TerminalMode};
 use std::collections::HashMap;
 use std::error::Error;
@@ -23,6 +21,7 @@ use std::fs;
 use std::io::{BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::sync_channel;
 use std::sync::{Arc, Mutex};
 
 use clap::{builder, Parser, ValueEnum};
@@ -451,7 +450,13 @@ fn parse_log_archive(
     }
 
     // Bounded channel: workers → writer thread
-    let (result_tx, result_rx) = bounded::<WorkerMessage>(64);
+    let (result_tx, result_rx) = sync_channel::<WorkerMessage>(64);
+
+    // Shared work queue: workers pop file paths until empty
+    let work_queue = Arc::new(Mutex::new(tracev3_paths));
+    let num_workers = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
 
     // Use thread::scope so the writer thread can borrow `writer`
     let scope_result = std::thread::scope(|scope| {
@@ -471,11 +476,10 @@ fn parse_log_archive(
             };
             let mut broken_pipe = false;
 
-            for msg in &result_rx {
+            for msg in result_rx {
                 match msg {
                     WorkerMessage::LogBatch(bytes) => {
                         if !broken_pipe {
-                            // Count newlines to track log entries
                             let entry_count = bytes.iter().filter(|&&b| b == b'\n').count();
                             log_count += entry_count;
 
@@ -540,102 +544,114 @@ fn parse_log_archive(
             (log_count, skipped_count, broken_pipe)
         });
 
-        // Worker pool: process files in parallel, serialize results, stream to writer
-        tracev3_paths.par_iter().for_each(|file_path| {
-            if SIGINT_RECEIVED.load(Ordering::SeqCst) {
-                return;
-            }
+        // Spawn worker threads that pull files from the shared work queue
+        for _ in 0..num_workers {
+            let tx = result_tx.clone();
+            let queue = Arc::clone(&work_queue);
+            let timesync = Arc::clone(&timesync_arc);
+            let archive = archive_path.clone();
+            let bm = Arc::clone(&bookmark);
 
-            info!("Parsing: {path}", path = file_path);
-
-            let mut thread_provider = LogarchiveProvider::new(&archive_path);
-
-            let mut buf = Vec::new();
-            let Ok(mut file) = fs::File::open(file_path) else {
-                error!("Failed to open tracev3 file: {path}", path = file_path);
-                return;
-            };
-            if let Err(err) = file.read_to_end(&mut buf) {
-                error!("Failed to read tracev3 file {path}: {err:?}", path = file_path);
-                return;
-            }
-
-            let log_iterator = UnifiedLogIterator {
-                data: buf,
-                header: Vec::new(),
-                evidence: file_path.clone(),
-            };
-
-            let exclude_missing = true;
-            let mut file_oversize = UnifiedLogData {
-                header: Vec::new(),
-                catalog_data: Vec::new(),
-                oversize: Vec::new(),
-                evidence: String::new(),
-            };
-
-            // Accumulate serialized output for this file
-            let mut serialized_batch = Vec::new();
-
-            for mut chunk in log_iterator {
-                if SIGINT_RECEIVED.load(Ordering::SeqCst) {
-                    break;
-                }
-
-                chunk.oversize.append(&mut file_oversize.oversize);
-
-                let (results, missing_logs) =
-                    build_log(&chunk, &mut thread_provider, &timesync_arc, exclude_missing);
-
-                file_oversize.oversize = chunk.oversize;
-
-                // Filter by bookmark and serialize
-                let (filtered_results, _new_skipped) = filter_and_update_bookmark(
-                    results,
-                    &bookmark,
-                    resume,
-                    resume_timestamp,
-                );
-
-                // Serialize each record to JSONL bytes
-                for record in &filtered_results {
-                    if let Ok(json) = serde_json::to_string(record) {
-                        serialized_batch.extend_from_slice(json.as_bytes());
-                        serialized_batch.push(b'\n');
-                    }
-                }
-
-                // Flush batch if it's getting large (limit memory per worker)
-                if serialized_batch.len() > 4 * 1024 * 1024 {
-                    let batch = std::mem::take(&mut serialized_batch);
-                    if result_tx.send(WorkerMessage::LogBatch(batch)).is_err() {
+            scope.spawn(move || {
+                loop {
+                    if SIGINT_RECEIVED.load(Ordering::SeqCst) {
                         break;
                     }
-                }
 
-                // Track missing data
-                if !missing_logs.catalog_data.is_empty()
-                    || !missing_logs.header.is_empty()
-                    || !missing_logs.oversize.is_empty()
-                {
-                    if result_tx.send(WorkerMessage::MissingData(missing_logs)).is_err() {
-                        break;
+                    // Pop next file from work queue
+                    let file_path = {
+                        let mut q = queue.lock().unwrap();
+                        q.pop()
+                    };
+                    let Some(file_path) = file_path else {
+                        break; // No more work
+                    };
+
+                    info!("Parsing: {path}", path = file_path);
+
+                    let mut thread_provider = LogarchiveProvider::new(&archive);
+
+                    let mut buf = Vec::new();
+                    let Ok(mut file) = fs::File::open(&file_path) else {
+                        error!("Failed to open tracev3 file: {path}", path = file_path);
+                        continue;
+                    };
+                    if let Err(err) = file.read_to_end(&mut buf) {
+                        error!("Failed to read tracev3 file {path}: {err:?}", path = file_path);
+                        continue;
+                    }
+
+                    let log_iterator = UnifiedLogIterator {
+                        data: buf,
+                        header: Vec::new(),
+                        evidence: file_path.clone(),
+                    };
+
+                    let exclude_missing = true;
+                    let mut file_oversize = UnifiedLogData {
+                        header: Vec::new(),
+                        catalog_data: Vec::new(),
+                        oversize: Vec::new(),
+                        evidence: String::new(),
+                    };
+
+                    let mut serialized_batch = Vec::new();
+
+                    for mut chunk in log_iterator {
+                        if SIGINT_RECEIVED.load(Ordering::SeqCst) {
+                            break;
+                        }
+
+                        chunk.oversize.append(&mut file_oversize.oversize);
+
+                        let (results, missing_logs) =
+                            build_log(&chunk, &mut thread_provider, &timesync, exclude_missing);
+
+                        file_oversize.oversize = chunk.oversize;
+
+                        let (filtered_results, _new_skipped) = filter_and_update_bookmark(
+                            results,
+                            &bm,
+                            resume,
+                            resume_timestamp,
+                        );
+
+                        for record in &filtered_results {
+                            if let Ok(json) = serde_json::to_string(record) {
+                                serialized_batch.extend_from_slice(json.as_bytes());
+                                serialized_batch.push(b'\n');
+                            }
+                        }
+
+                        if serialized_batch.len() > 4 * 1024 * 1024 {
+                            let batch = std::mem::take(&mut serialized_batch);
+                            if tx.send(WorkerMessage::LogBatch(batch)).is_err() {
+                                return;
+                            }
+                        }
+
+                        if !missing_logs.catalog_data.is_empty()
+                            || !missing_logs.header.is_empty()
+                            || !missing_logs.oversize.is_empty()
+                        {
+                            if tx.send(WorkerMessage::MissingData(missing_logs)).is_err() {
+                                return;
+                            }
+                        }
+                    }
+
+                    if !serialized_batch.is_empty() {
+                        let _ = tx.send(WorkerMessage::LogBatch(serialized_batch));
+                    }
+
+                    if !file_oversize.oversize.is_empty() {
+                        let _ = tx.send(WorkerMessage::OversizeEntries(file_oversize));
                     }
                 }
-            }
+            });
+        }
 
-            // Send remaining serialized data for this file
-            if !serialized_batch.is_empty() {
-                let _ = result_tx.send(WorkerMessage::LogBatch(serialized_batch));
-            }
-
-            // Send accumulated oversize entries for cross-file resolution
-            if !file_oversize.oversize.is_empty() {
-                let _ = result_tx.send(WorkerMessage::OversizeEntries(file_oversize));
-            }
-        });
-
-        // Signal writer that all results are done
+        // Drop the original sender so the writer thread sees EOF when all workers finish
         drop(result_tx);
 
         // Wait for writer to finish
