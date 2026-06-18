@@ -18,7 +18,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::Display;
 use std::fs;
-use std::io::{Read, Write};
+use std::io::{BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -243,15 +243,15 @@ fn main() {
     }
 
     let handle: Box<dyn Write> = if let Some(path) = args.output {
-        Box::new(
+        Box::new(BufWriter::new(
             fs::OpenOptions::new()
                 .append(true)
                 .create(true)
                 .open(path)
                 .unwrap(),
-        )
+        ))
     } else {
-        Box::new(std::io::stdout())
+        Box::new(BufWriter::new(std::io::stdout()))
     };
 
     let mut writer = OutputWriter::new(Box::new(handle), output_format.into()).unwrap();
