@@ -18,9 +18,10 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::Display;
 use std::fs;
-use std::io::{Read, Write};
+use std::io::{BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::sync_channel;
 use std::sync::{Arc, Mutex};
 
 use clap::{builder, Parser, ValueEnum};
@@ -242,19 +243,19 @@ fn main() {
         bookmark = Bookmark::new(source_id.clone());
     }
 
-    let handle: Box<dyn Write> = if let Some(path) = args.output {
-        Box::new(
+    let handle: Box<dyn Write + Send> = if let Some(path) = args.output {
+        Box::new(BufWriter::new(
             fs::OpenOptions::new()
                 .append(true)
                 .create(true)
                 .open(path)
                 .unwrap(),
-        )
+        ))
     } else {
-        Box::new(std::io::stdout())
+        Box::new(BufWriter::new(std::io::stdout()))
     };
 
-    let mut writer = OutputWriter::new(Box::new(handle), output_format.into()).unwrap();
+    let mut writer = OutputWriter::new(handle, output_format.into()).unwrap();
 
     // Wrap bookmark in Arc<Mutex<>> for shared access
     let bookmark = Arc::new(Mutex::new(bookmark));
@@ -408,23 +409,268 @@ fn parse_log_archive(
     bookmark: Arc<Mutex<Bookmark>>,
     resume: bool,
 ) -> Result<(), Box<dyn Error>> {
-    let mut provider = LogarchiveProvider::new(path);
+    let provider = LogarchiveProvider::new(path);
 
     // Parse all timesync files
     let timesync_data = collect_timesync(&provider).unwrap();
+    let timesync_arc = Arc::new(timesync_data);
+    let archive_path = path.to_path_buf();
 
-    // Keep UUID, UUID cache, timesync files in memory while we parse all tracev3 files
-    // Allows for faster lookups
-    match parse_trace_file(&timesync_data, &mut provider, writer, bookmark, resume) {
-        Ok(()) => {
-            info!("Finished parsing Unified Log data.");
-            Ok(())
-        }
-        Err(BrokenPipeError) => {
-            info!("Stopped early due to broken pipe (output closed)");
-            Ok(())
-        }
+    // Snapshot resume timestamp before parallel processing
+    let resume_timestamp = if resume {
+        bookmark.lock().map(|b| b.last_timestamp).unwrap_or(0.0)
+    } else {
+        0.0
+    };
+
+    // Collect all tracev3 file paths upfront for parallel processing
+    let tracev3_paths: Vec<String> = provider
+        .tracev3_files()
+        .map(|source| source.source_path().to_string())
+        .filter(|p| {
+            !Path::new(p)
+                .file_name()
+                .is_some_and(|f| f.to_str().unwrap().starts_with("._"))
+        })
+        .collect();
+
+    info!(
+        "Found {count} tracev3 files to process",
+        count = tracev3_paths.len()
+    );
+
+    // Messages sent from workers to the writer thread
+    enum WorkerMessage {
+        /// Pre-serialized JSONL lines for a batch of log entries
+        LogBatch(Vec<u8>),
+        /// Missing data that needs oversize resolution in a second pass
+        MissingData(UnifiedLogData),
+        /// Oversize entries collected from a file (for second pass resolution)
+        OversizeEntries(UnifiedLogData),
     }
+
+    // Bounded channel: workers → writer thread
+    let (result_tx, result_rx) = sync_channel::<WorkerMessage>(64);
+
+    // Shared work queue: workers pop file paths until empty
+    let work_queue = Arc::new(Mutex::new(tracev3_paths));
+    let num_workers = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
+
+    // Use thread::scope so the writer thread can borrow `writer`
+    let scope_result = std::thread::scope(|scope| {
+        // Writer thread: receives pre-serialized bytes and writes them out
+        let writer_bookmark = Arc::clone(&bookmark);
+        let writer_timesync = Arc::clone(&timesync_arc);
+        let writer_archive_path = archive_path.clone();
+        let writer_handle = scope.spawn(move || {
+            let mut log_count = 0usize;
+            let mut skipped_count = 0usize;
+            let mut all_missing_data: Vec<UnifiedLogData> = Vec::new();
+            let mut all_oversize = UnifiedLogData {
+                header: Vec::new(),
+                catalog_data: Vec::new(),
+                oversize: Vec::new(),
+                evidence: String::new(),
+            };
+            let mut broken_pipe = false;
+
+            for msg in result_rx {
+                match msg {
+                    WorkerMessage::LogBatch(bytes) => {
+                        if !broken_pipe {
+                            let entry_count = bytes.iter().filter(|&&b| b == b'\n').count();
+                            log_count += entry_count;
+
+                            if let Err(err) = writer.write_raw_bytes(&bytes) {
+                                if err
+                                    .downcast_ref::<std::io::Error>()
+                                    .is_some_and(|e| e.kind() == std::io::ErrorKind::BrokenPipe)
+                                {
+                                    broken_pipe = true;
+                                } else {
+                                    log::error!("Failed to write log data: {err:?}");
+                                }
+                            }
+                        }
+                    }
+                    WorkerMessage::MissingData(missing) => {
+                        all_missing_data.push(missing);
+                    }
+                    WorkerMessage::OversizeEntries(mut oversize_data) => {
+                        all_oversize.oversize.append(&mut oversize_data.oversize);
+                    }
+                }
+            }
+
+            // Second pass: resolve missing oversize entries
+            if !broken_pipe && !all_missing_data.is_empty() {
+                debug!(
+                    "Logs with missing Oversize strings: {count}",
+                    count = all_missing_data.len()
+                );
+
+                let mut provider = LogarchiveProvider::new(&writer_archive_path);
+
+                for mut leftover_data in all_missing_data {
+                    leftover_data.oversize = all_oversize.oversize.clone();
+
+                    let (results, _) =
+                        build_log(&leftover_data, &mut provider, &writer_timesync, false);
+
+                    let (filtered_results, new_skipped) = filter_and_update_bookmark(
+                        results,
+                        &writer_bookmark,
+                        resume,
+                        resume_timestamp,
+                    );
+                    log_count += filtered_results.len();
+                    skipped_count += new_skipped;
+
+                    if let Err(err) = output(&filtered_results, writer) {
+                        if err
+                            .downcast_ref::<std::io::Error>()
+                            .is_some_and(|e| e.kind() == std::io::ErrorKind::BrokenPipe)
+                        {
+                            broken_pipe = true;
+                            break;
+                        }
+                        log::error!("Failed to output remaining log data: {err:?}");
+                    }
+                }
+            }
+
+            (log_count, skipped_count, broken_pipe)
+        });
+
+        // Spawn worker threads that pull files from the shared work queue
+        for _ in 0..num_workers {
+            let tx = result_tx.clone();
+            let queue = Arc::clone(&work_queue);
+            let timesync = Arc::clone(&timesync_arc);
+            let archive = archive_path.clone();
+            let bm = Arc::clone(&bookmark);
+
+            scope.spawn(move || {
+                loop {
+                    if SIGINT_RECEIVED.load(Ordering::SeqCst) {
+                        break;
+                    }
+
+                    // Pop next file from work queue
+                    let file_path = {
+                        let mut q = queue.lock().unwrap();
+                        q.pop()
+                    };
+                    let Some(file_path) = file_path else {
+                        break; // No more work
+                    };
+
+                    info!("Parsing: {path}", path = file_path);
+
+                    let mut thread_provider = LogarchiveProvider::new(&archive);
+
+                    let mut buf = Vec::new();
+                    let Ok(mut file) = fs::File::open(&file_path) else {
+                        error!("Failed to open tracev3 file: {path}", path = file_path);
+                        continue;
+                    };
+                    if let Err(err) = file.read_to_end(&mut buf) {
+                        error!("Failed to read tracev3 file {path}: {err:?}", path = file_path);
+                        continue;
+                    }
+
+                    let log_iterator = UnifiedLogIterator {
+                        data: buf,
+                        header: Vec::new(),
+                        evidence: file_path.clone(),
+                    };
+
+                    let exclude_missing = true;
+                    let mut file_oversize = UnifiedLogData {
+                        header: Vec::new(),
+                        catalog_data: Vec::new(),
+                        oversize: Vec::new(),
+                        evidence: String::new(),
+                    };
+
+                    let mut serialized_batch = Vec::new();
+
+                    for mut chunk in log_iterator {
+                        if SIGINT_RECEIVED.load(Ordering::SeqCst) {
+                            break;
+                        }
+
+                        chunk.oversize.append(&mut file_oversize.oversize);
+
+                        let (results, missing_logs) =
+                            build_log(&chunk, &mut thread_provider, &timesync, exclude_missing);
+
+                        file_oversize.oversize = chunk.oversize;
+
+                        let (filtered_results, _new_skipped) = filter_and_update_bookmark(
+                            results,
+                            &bm,
+                            resume,
+                            resume_timestamp,
+                        );
+
+                        for record in &filtered_results {
+                            if let Ok(json) = serde_json::to_string(record) {
+                                serialized_batch.extend_from_slice(json.as_bytes());
+                                serialized_batch.push(b'\n');
+                            }
+                        }
+
+                        if serialized_batch.len() > 4 * 1024 * 1024 {
+                            let batch = std::mem::take(&mut serialized_batch);
+                            if tx.send(WorkerMessage::LogBatch(batch)).is_err() {
+                                return;
+                            }
+                        }
+
+                        if !missing_logs.catalog_data.is_empty()
+                            || !missing_logs.header.is_empty()
+                            || !missing_logs.oversize.is_empty()
+                        {
+                            if tx.send(WorkerMessage::MissingData(missing_logs)).is_err() {
+                                return;
+                            }
+                        }
+                    }
+
+                    if !serialized_batch.is_empty() {
+                        let _ = tx.send(WorkerMessage::LogBatch(serialized_batch));
+                    }
+
+                    if !file_oversize.oversize.is_empty() {
+                        let _ = tx.send(WorkerMessage::OversizeEntries(file_oversize));
+                    }
+                }
+            });
+        }
+
+        // Drop the original sender so the writer thread sees EOF when all workers finish
+        drop(result_tx);
+
+        // Wait for writer to finish
+        writer_handle.join().expect("Writer thread panicked")
+    });
+
+    let (log_count, skipped_count, broken_pipe) = scope_result;
+
+    if broken_pipe {
+        info!("Stopped early due to broken pipe (output closed)");
+    } else {
+        info!(
+            "Parsed {count} log entries (skipped {skipped} older entries)",
+            count = log_count,
+            skipped = skipped_count
+        );
+    }
+
+    Ok(())
 }
 
 // Parse a live macOS system
@@ -652,12 +898,12 @@ pub struct OutputWriter {
 }
 
 enum OutputWriterEnum {
-    Csv(Box<Writer<Box<dyn Write>>>),
-    Json(Box<dyn Write>),
+    Csv(Box<Writer<Box<dyn Write + Send>>>),
+    Json(Box<dyn Write + Send>),
 }
 
 impl OutputWriter {
-    pub fn new(writer: Box<dyn Write>, output_format: &str) -> Result<Self, Box<dyn Error>> {
+    pub fn new(writer: Box<dyn Write + Send>, output_format: &str) -> Result<Self, Box<dyn Error>> {
         let writer_enum = match output_format {
             "csv" => {
                 let mut csv_writer = Writer::from_writer(writer);
@@ -735,6 +981,20 @@ impl OutputWriter {
             OutputWriterEnum::Json(json_writer) => json_writer.flush()?,
         }
         Ok(())
+    }
+
+    /// Write pre-serialized bytes directly (for parallel pipeline, JSONL mode only)
+    pub fn write_raw_bytes(&mut self, bytes: &[u8]) -> Result<(), Box<dyn Error>> {
+        match &mut self.writer {
+            OutputWriterEnum::Json(json_writer) => {
+                json_writer.write_all(bytes)?;
+                Ok(())
+            }
+            OutputWriterEnum::Csv(_) => {
+                // CSV mode doesn't use raw bytes path
+                Err("write_raw_bytes not supported for CSV mode".into())
+            }
+        }
     }
 }
 
