@@ -276,10 +276,7 @@ fn test_parse_all_logs_tahoe() {
             brew += 1;
         }
     }
-    #[cfg(not(feature = "rewrite-compat"))]
     assert_eq!(log_data_vec.len(), 4288584);
-    #[cfg(feature = "rewrite-compat")]
-    assert_eq!(log_data_vec.len(), 4288583);
     assert_eq!(unknown_strings, 2); // Can validate with log raw-dump -A system_logs_tahoe.logarchive | grep "~~> Invalid image "
     assert_eq!(invalid_offsets, 268); // Can validate with log raw-dump -A system_logs_tahoe.logarchive | grep "~~> Invalid bounds " | wc -l
     assert_eq!(invalid_shared_string_offsets, 647); // Can validate with log raw-dump -A system_logs_tahoe.logarchive | grep "~~> <Invalid shared cache " | wc -l

@@ -113,17 +113,12 @@ fn resolve_shared_cache<'a>(
     let source_found = dsc.is_some();
     let process = uuidtext_files.get(&main_uuid).and_then(|u| u.image_path());
 
-    // Dynamic offset: format string is "%s", items data carries the actual string.
-    // Legacy requires the DSC/UUIDText source before returning "%s"; when the
-    // source isn't found it falls through to the error path.
-    let is_dynamic = is_dynamic && source_found;
-
     if is_dynamic {
         let (library, library_uuid) = dsc
             .and_then(|d| d.fallback_library_info())
             .map_or((None, Uuid::nil()), |(l, u)| (Some(l), u));
         return ResolvedStrings {
-            format_string: Some(PERCENT_S),
+            format_string: dynamic_format_string(source_found),
             library,
             process,
             library_uuid,
@@ -177,11 +172,8 @@ fn resolve_main_exe<'a>(
     let image_path = uuidtext.and_then(|u| u.image_path());
     let is_dynamic = original_offset & DYNAMIC_OFFSET_FLAG != 0;
 
-    // Legacy requires UUIDText cached before returning "%s" for dynamic offsets.
-    let is_dynamic = is_dynamic && source_found;
-
     let format_string = if is_dynamic {
-        Some(PERCENT_S)
+        dynamic_format_string(source_found)
     } else {
         uuidtext.and_then(|u| u.format_string(string_offset))
     };
@@ -234,11 +226,8 @@ fn resolve_absolute<'a>(
     let library = library_uuidtext.and_then(|u| u.image_path());
     let process = uuidtext_files.get(&main_uuid).and_then(|u| u.image_path());
 
-    // Legacy requires UUIDText cached before returning "%s" for dynamic offsets.
-    let is_dynamic = is_dynamic && source_found;
-
     let format_string = if is_dynamic {
-        Some(PERCENT_S)
+        dynamic_format_string(source_found)
     } else {
         library_uuidtext.and_then(|u| u.format_string(string_offset))
     };
@@ -275,11 +264,8 @@ fn resolve_uuid_relative<'a>(
     let library = library_uuidtext.and_then(|u| u.image_path());
     let process = uuidtext_files.get(&main_uuid).and_then(|u| u.image_path());
 
-    // Legacy requires UUIDText cached before returning "%s" for dynamic offsets.
-    let is_dynamic = is_dynamic && source_found;
-
     let format_string = if is_dynamic {
-        Some(PERCENT_S)
+        dynamic_format_string(source_found)
     } else {
         library_uuidtext.and_then(|u| u.format_string(string_offset))
     };
@@ -319,6 +305,10 @@ fn compute_shared_cache_offset(string_offset: u64, formatter: &RawFormatterFlags
         LARGE_OFFSET_BASE * u64::from(formatter.has_large_offset)
     };
     large_offset + string_offset
+}
+
+fn dynamic_format_string(source_found: bool) -> Option<&'static str> {
+    source_found.then_some(PERCENT_S)
 }
 
 #[cfg(test)]
@@ -379,9 +369,6 @@ mod tests {
             &uuidtext_files,
         );
 
-        #[cfg(not(feature = "rewrite-compat"))]
-        assert_eq!(result.format_string, Some("%s"));
-        #[cfg(feature = "rewrite-compat")]
         assert_eq!(result.format_string, None); // source file missing → no "%s"
         assert_eq!(result.process_uuid, Uuid::nil());
     }
@@ -441,9 +428,6 @@ mod tests {
             &uuidtext_files,
         );
 
-        #[cfg(not(feature = "rewrite-compat"))]
-        assert_eq!(result.format_string, Some("%s"));
-        #[cfg(feature = "rewrite-compat")]
         assert_eq!(result.format_string, None); // DSC not loaded → no "%s"
     }
 
@@ -470,9 +454,6 @@ mod tests {
             &uuidtext_files,
         );
 
-        #[cfg(not(feature = "rewrite-compat"))]
-        assert_eq!(result.format_string, Some("%s"));
-        #[cfg(feature = "rewrite-compat")]
         assert_eq!(result.format_string, None); // UUIDText not loaded → no "%s"
         assert_eq!(
             result.library_uuid,
@@ -504,9 +485,6 @@ mod tests {
             &dsc_files,
             &uuidtext_files,
         );
-        #[cfg(not(feature = "rewrite-compat"))]
-        assert_eq!(result.format_string, Some("%s"));
-        #[cfg(feature = "rewrite-compat")]
         assert_eq!(result.format_string, None); // UUIDText not loaded → no "%s"
     }
 
@@ -535,9 +513,6 @@ mod tests {
             &uuidtext_files,
         );
         // Should take shared_cache path → dynamic → "%s"
-        #[cfg(not(feature = "rewrite-compat"))]
-        assert_eq!(result.format_string, Some("%s"));
-        #[cfg(feature = "rewrite-compat")]
         assert_eq!(result.format_string, None); // DSC not loaded → no "%s"
     }
 }
