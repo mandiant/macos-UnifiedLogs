@@ -5,8 +5,6 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-#![cfg(any(not(feature = "rewrite"), feature = "rewrite-compat"))]
-
 use macos_unifiedlogs::{
     filesystem::LogarchiveProvider,
     parser::{build_log, collect_timesync, parse_log},
@@ -305,7 +303,7 @@ fn test_parse_all_logs_big_sur() {
     assert_eq!(sock_count, 2);
     assert_eq!(location_harvest_count, 11);
     assert_eq!(parent_activity, 5);
-    assert_eq!(no_such_file_or_directory, 1728);
+    assert_eq!(no_such_file_or_directory, 1728)
 }
 
 #[test]

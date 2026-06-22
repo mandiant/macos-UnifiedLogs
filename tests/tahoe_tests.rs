@@ -5,8 +5,6 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-#![cfg(any(not(feature = "rewrite"), feature = "rewrite-compat"))]
-
 use std::{fs::File, path::PathBuf};
 
 use macos_unifiedlogs::{
@@ -135,7 +133,6 @@ fn test_build_log_tahoe() {
         results[45].raw_message,
         "dlsym cannot find symbol %{public}@ in %{public}@: %s"
     );
-    #[cfg(not(feature = "rewrite"))]
     assert_eq!(
         results[45].message_entries[0].message_strings,
         "odm_RecordRemoveValue"
@@ -169,14 +166,8 @@ fn test_build_log_tahoe() {
             }
         }
     }
-    #[cfg(not(feature = "rewrite-compat"))]
     assert_eq!(string_count, 369927);
-    #[cfg(feature = "rewrite-compat")]
-    assert_eq!(string_count, 370565);
-    #[cfg(not(feature = "rewrite-compat"))]
     assert_eq!(number_count, 382427);
-    #[cfg(feature = "rewrite-compat")]
-    assert_eq!(number_count, 382513);
     assert_eq!(precision_count, 13077);
     assert_eq!(private_number_count, 711);
 
@@ -226,6 +217,8 @@ fn test_parse_all_logs_tahoe() {
         let (mut data, _) = build_log(logs, &mut provider, &timesync_data, exclude_missing);
         log_data_vec.append(&mut data);
     }
+    assert_eq!(log_data_vec.len(), 4288584);
+
     let mut unknown_strings = 0;
     let mut invalid_offsets = 0;
     let mut invalid_shared_string_offsets = 0;
@@ -242,10 +235,7 @@ fn test_parse_all_logs_tahoe() {
             unknown_strings += 1;
 
             if !logs.evidence.ends_with("4.tracev3") && !logs.evidence.ends_with("5.tracev3") {
-                panic!(
-                    "Got unspected missing strings for {}: {}",
-                    logs.evidence, logs.message
-                );
+                panic!("Got unspected missing strings for: {logs:?}");
             }
         }
 
@@ -276,7 +266,6 @@ fn test_parse_all_logs_tahoe() {
             brew += 1;
         }
     }
-    assert_eq!(log_data_vec.len(), 4288584);
     assert_eq!(unknown_strings, 2); // Can validate with log raw-dump -A system_logs_tahoe.logarchive | grep "~~> Invalid image "
     assert_eq!(invalid_offsets, 268); // Can validate with log raw-dump -A system_logs_tahoe.logarchive | grep "~~> Invalid bounds " | wc -l
     assert_eq!(invalid_shared_string_offsets, 647); // Can validate with log raw-dump -A system_logs_tahoe.logarchive | grep "~~> <Invalid shared cache " | wc -l
