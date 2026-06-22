@@ -2,14 +2,15 @@
 name = "macos-unifiedlogs"
 version = "0.6.0"
 edition = "2024"
+autotests = false
 license = "Apache-2.0"
 repository = "https://github.com/mandiant/macos-unifiedlogs"
 description = "A library to help parse macOS UnifiedLogs"
 keywords = ["forensics", "macOS", "unifiedlog"]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [features]
-default = []
+default = ["legacy"]
+legacy = []
 rewrite = []
 rewrite-compat = ["rewrite"]
 
@@ -49,3 +50,23 @@ harness = false
 [[bench]]
 name = "monterey_benchmark"
 harness = false
+
+[[test]]
+name = "big_sur_tests"
+path = "tests/big_sur_tests.rs"
+required-features = ["legacy"]
+
+[[test]]
+name = "high_sierra_tests"
+path = "tests/high_sierra_tests.rs"
+required-features = ["legacy"]
+
+[[test]]
+name = "monterey_tests"
+path = "tests/monterey_tests.rs"
+required-features = ["legacy"]
+
+[[test]]
+name = "tahoe_tests"
+path = "tests/tahoe_tests.rs"
+required-features = ["legacy"]

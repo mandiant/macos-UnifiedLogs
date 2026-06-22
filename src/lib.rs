@@ -22,13 +22,13 @@
     clippy::unnecessary_cast
 )]
 
-#[cfg(not(feature = "rewrite"))]
+#[cfg(feature = "legacy")]
 pub mod legacy;
-#[cfg(not(feature = "rewrite"))]
+#[cfg(feature = "legacy")]
 mod old_prelude {
     pub use super::legacy::*;
 }
-#[cfg(not(feature = "rewrite"))]
+#[cfg(feature = "legacy")]
 pub use old_prelude::*;
 
 #[cfg(feature = "rewrite")]
