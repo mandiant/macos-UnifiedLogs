@@ -165,7 +165,7 @@ pub struct LogEntry<'a, 'b> {
 
     /// Error message for invalid format string offsets (old pipeline parity).
     /// When `format_string` is None, this replaces `<missing format string>`.
-    pub(crate) format_string_error: Option<String>,
+    pub format_string_error: Option<String>,
 }
 
 impl<'a, 'b> LogEntry<'a, 'b> {
