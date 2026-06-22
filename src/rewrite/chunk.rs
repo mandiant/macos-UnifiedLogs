@@ -97,7 +97,6 @@ impl<'a> ChunkSetReader<'a> {
             }
         };
 
-        #[cfg(feature = "rewrite-compat")]
         let data_and_tail = remaining;
 
         let (remaining, chunk_data) =
@@ -114,7 +113,6 @@ impl<'a> ChunkSetReader<'a> {
         Some(Ok(RawChunk {
             preamble,
             data: chunk_data,
-            #[cfg(feature = "rewrite-compat")]
             data_and_tail,
         }))
     }

@@ -84,11 +84,6 @@ pub struct PrivateDataContext<'b> {
     pub private_strings_offset: u16,
     pub private_data_virtual_offset: u16,
     pub collapsed: u8,
-    /// Extended private data region for compat mode — extends to end of chunkset buffer.
-    /// The old pipeline had access to subsequent chunks' data when parsing private items,
-    /// producing different results (e.g., "Could not find path string") for oversized items.
-    #[cfg(feature = "rewrite-compat")]
-    pub extended_private_data: Option<&'b [u8]>,
 }
 
 /// Raw data needed to format a message on demand.

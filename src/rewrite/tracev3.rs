@@ -145,17 +145,6 @@ pub fn visit_tracev3<'a>(
                                 continue;
                             };
 
-                            #[cfg(feature = "rewrite-compat")]
-                            let extended_private_data = {
-                                const FIREHOSE_HEADER_SIZE: usize = 32;
-                                let offset = FIREHOSE_HEADER_SIZE + fh.public_data_len();
-                                if offset < inner.data_and_tail.len() {
-                                    Some(&inner.data_and_tail[offset..])
-                                } else {
-                                    None
-                                }
-                            };
-
                             visit_firehose_entries(
                                 &fh,
                                 header,
@@ -164,8 +153,6 @@ pub fn visit_tracev3<'a>(
                                 dsc_files,
                                 uuidtext_files,
                                 oversize_cache,
-                                #[cfg(feature = "rewrite-compat")]
-                                extended_private_data,
                                 &mut callback,
                             );
                         }
@@ -384,7 +371,6 @@ fn visit_firehose_entries<'a: 'b, 'b>(
     dsc_files: &'a HashMap<Uuid, RawSharedCacheStrings<'a>>,
     uuidtext_files: &'a HashMap<Uuid, RawUUIDText<'a>>,
     oversize_cache: &'b OversizeCache,
-    #[cfg(feature = "rewrite-compat")] extended_private_data: Option<&'b [u8]>,
     callback: &mut impl FnMut(LogEntry<'a, 'b>),
 ) {
     let boot_uuid = header.boot_uuid;
@@ -604,8 +590,6 @@ fn visit_firehose_entries<'a: 'b, 'b>(
                     private_strings_offset: offset,
                     private_data_virtual_offset: fh.private_data_virtual_offset,
                     collapsed: fh.collapsed,
-                    #[cfg(feature = "rewrite-compat")]
-                    extended_private_data,
                 }),
                 _ => None,
             }
