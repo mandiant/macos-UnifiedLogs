@@ -53,7 +53,7 @@ impl LogarchiveProvider {
 
 impl FileProvider for LogarchiveProvider {
     fn tracev3_files(&self) -> Box<dyn Iterator<Item = Box<dyn SourceFile>>> {
-        Box::new(
+        sort_files(
             WalkDir::new(&self.base)
                 .sort_by(|a, b| a.file_name().cmp(b.file_name()))
                 .into_iter()
@@ -72,6 +72,14 @@ impl FileProvider for LogarchiveProvider {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
+}
+
+fn sort_files(
+    files: impl Iterator<Item = Box<dyn SourceFile>>,
+) -> Box<dyn Iterator<Item = Box<dyn SourceFile>>> {
+    let mut files = files.collect::<Vec<_>>();
+    files.sort_by(|a, b| a.source_path().cmp(b.source_path()));
+    Box::new(files.into_iter())
 }
 
 // ---------------------------------------------------------------------------

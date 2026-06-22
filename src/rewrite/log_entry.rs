@@ -103,6 +103,7 @@ pub enum ItemsData<'b> {
     Regular {
         data: &'b [u8],
         flags: FirehoseFlags,
+        is_oversize: bool,
         private_data_context: Option<PrivateDataContext<'b>>,
     },
     /// Trace: raw item bytes (parsed differently — reversed big-endian).
@@ -200,6 +201,9 @@ impl<'a, 'b> LogEntry<'a, 'b> {
 
     /// Raw format string or old-pipeline fallback text when lookup failed.
     pub fn raw_message(&self) -> &str {
+        if self.event_type == EventType::Trace {
+            return "";
+        }
         self.effective_format_string().unwrap_or_default()
     }
 
@@ -207,7 +211,12 @@ impl<'a, 'b> LogEntry<'a, 'b> {
     fn format_message_inner(&self) -> String {
         let fmt_str = self.effective_format_string();
         match &self.items {
-            ItemsData::Regular { data, flags, .. } => {
+            ItemsData::Regular {
+                data,
+                flags,
+                is_oversize,
+                ..
+            } => {
                 let (mut items, backtrace, remaining_private_data) =
                     match parse_items_data(data, *flags) {
                         Ok((remaining, d)) => (d.items, d.backtrace_data, remaining),
@@ -229,7 +238,7 @@ impl<'a, 'b> LogEntry<'a, 'b> {
                     fill_private_data_compat(&mut items, remaining_private_data, 0, 0, 1);
                 }
                 let msg = format_message(fmt_str, &items);
-                self.apply_parity_prefix(msg, backtrace)
+                self.apply_parity_prefix(msg, if *is_oversize { None } else { backtrace })
             }
             ItemsData::Trace { data } => {
                 let items = parse_trace_items(data);

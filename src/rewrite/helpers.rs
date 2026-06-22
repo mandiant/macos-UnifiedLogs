@@ -50,6 +50,12 @@ pub(crate) fn utf8_str(data: &[u8]) -> &str {
         .unwrap_or(INVALID_UTF8)
 }
 
+pub(crate) fn utf8_str_sized(data: &[u8]) -> &str {
+    std::str::from_utf8(data)
+        .inspect_err(|err| log::warn!("{err}"))
+        .unwrap_or(INVALID_UTF8)
+}
+
 /// Extract an UTF8 string from a byte array, stops at `NULL_BYTE` or END OF STRING
 /// Consumes the end byte
 /// Fails if the string is empty

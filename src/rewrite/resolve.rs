@@ -114,9 +114,8 @@ fn resolve_shared_cache<'a>(
     let process = uuidtext_files.get(&main_uuid).and_then(|u| u.image_path());
 
     // Dynamic offset: format string is "%s", items data carries the actual string.
-    // Legacy requires the DSC to be cached before returning "%s"; when the DSC isn't
-    // found it falls through to the error path. In compat mode, match that behavior.
-    #[cfg(feature = "rewrite-compat")]
+    // Legacy requires the DSC/UUIDText source before returning "%s"; when the
+    // source isn't found it falls through to the error path.
     let is_dynamic = is_dynamic && source_found;
 
     if is_dynamic {
@@ -179,7 +178,6 @@ fn resolve_main_exe<'a>(
     let is_dynamic = original_offset & DYNAMIC_OFFSET_FLAG != 0;
 
     // Legacy requires UUIDText cached before returning "%s" for dynamic offsets.
-    #[cfg(feature = "rewrite-compat")]
     let is_dynamic = is_dynamic && source_found;
 
     let format_string = if is_dynamic {
@@ -237,7 +235,6 @@ fn resolve_absolute<'a>(
     let process = uuidtext_files.get(&main_uuid).and_then(|u| u.image_path());
 
     // Legacy requires UUIDText cached before returning "%s" for dynamic offsets.
-    #[cfg(feature = "rewrite-compat")]
     let is_dynamic = is_dynamic && source_found;
 
     let format_string = if is_dynamic {
@@ -279,7 +276,6 @@ fn resolve_uuid_relative<'a>(
     let process = uuidtext_files.get(&main_uuid).and_then(|u| u.image_path());
 
     // Legacy requires UUIDText cached before returning "%s" for dynamic offsets.
-    #[cfg(feature = "rewrite-compat")]
     let is_dynamic = is_dynamic && source_found;
 
     let format_string = if is_dynamic {

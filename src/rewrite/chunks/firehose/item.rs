@@ -5,7 +5,7 @@ use nom::{
     },
 };
 
-use super::super::super::helpers::{padding_size, utf8_str};
+use super::super::super::helpers::{padding_size, utf8_str_sized};
 use super::flags::FirehoseFlags;
 
 /// Classification of the `item_type` byte into parsing categories.
@@ -246,7 +246,9 @@ pub fn parse_items_data<'a>(
         input = rest;
 
         let value = match kind {
-            RawItemKind::String | RawItemKind::Object => RawItemValue::Str(utf8_str(raw_bytes)),
+            RawItemKind::String | RawItemKind::Object => {
+                RawItemValue::Str(utf8_str_sized(raw_bytes))
+            }
             RawItemKind::Arbitrary | RawItemKind::BaseRaw => RawItemValue::Bytes(raw_bytes),
             _ => RawItemValue::Empty,
         };
@@ -478,7 +480,7 @@ pub fn fill_private_data<'a>(
                 }
                 let (bytes, rest) = cursor.split_at(actual_size);
                 cursor = rest;
-                item.value = RawItemValue::Str(utf8_str(bytes));
+                item.value = RawItemValue::Str(utf8_str_sized(bytes));
             }
         } else if raw_type == PRIVATE_NUMBER_TYPE {
             if item.item_size == PRIVATE_NUMBER_SIZE {

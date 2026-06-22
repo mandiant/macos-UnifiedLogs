@@ -72,7 +72,9 @@ pub fn parse_log(mut reader: impl Read, evidence: &str) -> Result<UnifiedLogData
         };
 
         match top_chunk {
-            TopChunk::Header(_) => headers += 1,
+            TopChunk::Header(_) => {
+                headers += 1;
+            }
             TopChunk::Catalog(c) => {
                 // Flush the previous catalog's counts
                 if has_catalog {
@@ -246,10 +248,10 @@ pub fn build_log(
     // 4. Pre-populate OversizeCache from cross-file merged oversize entries
     let mut oversize_cache = OversizeCache::new();
     for ov in &unified_data.oversize {
-        oversize_cache.entries.insert(
-            (ov.data_ref_index, ov.first_proc_id, ov.second_proc_id),
-            ov.data.clone(),
-        );
+        oversize_cache
+            .entries
+            .entry((ov.data_ref_index, ov.first_proc_id, ov.second_proc_id))
+            .or_insert_with(|| ov.data.clone());
     }
 
     // 5. Process tracev3 data via the rewrite pipeline
@@ -269,12 +271,7 @@ pub fn build_log(
                 return;
             }
 
-            // raw_message: format string or error fallback
-            let raw_message = entry
-                .format_string
-                .map(|s| s.to_string())
-                .or_else(|| entry.format_string_error.clone())
-                .unwrap_or_default();
+            let raw_message = entry.raw_message().to_string();
 
             let subsystem = entry.subsystem.unwrap_or("").to_string();
 
@@ -352,6 +349,7 @@ fn compat_message_entries(entry: &LogEntry<'_, '_>) -> Vec<FirehoseItemType> {
             data,
             flags,
             private_data_context,
+            ..
         } => {
             let Ok((_, parsed)) = parse_items_data(data, *flags) else {
                 return Vec::new();

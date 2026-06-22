@@ -42,14 +42,13 @@ impl OversizeCache {
     }
 
     fn insert(&mut self, oversize: &RawOversize<'_>) {
-        self.entries.insert(
-            (
+        self.entries
+            .entry((
                 oversize.data_ref_index,
                 oversize.first_proc_id,
                 oversize.second_proc_id,
-            ),
-            oversize.oversize_data.to_vec(),
-        );
+            ))
+            .or_insert_with(|| oversize.oversize_data.to_vec());
     }
 
     fn get(&self, data_ref: u32, first_proc_id: u64, second_proc_id: u32) -> Option<&[u8]> {
@@ -541,6 +540,11 @@ fn visit_firehose_entries<'a: 'b, 'b>(
         } else {
             None
         };
+        let process = if format_string_error.is_some() && !resolved.source_found {
+            None
+        } else {
+            resolved.process
+        };
 
         // Build deferred items data — message formatted on demand via LogEntry::message()
         // All variants borrow raw bytes zero-copy from the chunk data or oversize cache.
@@ -569,6 +573,7 @@ fn visit_firehose_entries<'a: 'b, 'b>(
                 Some(d) => ItemsData::Regular {
                     data: d,
                     flags: entry.flags,
+                    is_oversize: true,
                     private_data_context,
                 },
                 None => {
@@ -587,6 +592,7 @@ fn visit_firehose_entries<'a: 'b, 'b>(
                     Some(d) => ItemsData::Regular {
                         data: d,
                         flags: entry.flags,
+                        is_oversize: false,
                         private_data_context,
                     },
                     None => ItemsData::None,
@@ -618,7 +624,7 @@ fn visit_firehose_entries<'a: 'b, 'b>(
             time,
             event_type,
             log_type,
-            process: resolved.process,
+            process,
             process_uuid: resolved.process_uuid,
             format_string: resolved.format_string,
             boot_uuid,

@@ -26,13 +26,13 @@ dump_all_and_compare path="tests/test_data/system_logs_big_sur_private_enabled.l
 
     status=0; diff -u dump_legacy.txt dump_compat.txt || status=$?; diff -u dump_compat.txt dump_rewrite.txt || status=$?; exit $status
 
-dump_all_and_compare_roundhouse: \
-    (dump_all_and_compare "tests/test_data/system_logs_big_sur_public_private_data_mix.logarchive")
-    (dump_all_and_compare "tests/test_data/system_logs_big_sur.logarchive")
-    (dump_all_and_compare "tests/test_data/system_logs_high_sierra.logarchive")
-    (dump_all_and_compare "tests/test_data/system_logs_monterey.logarchive")
-    (dump_all_and_compare "tests/test_data/system_logs_tahoe.logarchive")
-    (dump_all_and_compare "tests/test_data/system_logs_big_sur_private_enabled.logarchive")
+dump_all_and_compare_roundhouse:
+    just dump_all_and_compare "tests/test_data/system_logs_big_sur_public_private_data_mix.logarchive"
+    just dump_all_and_compare "tests/test_data/system_logs_big_sur.logarchive"
+    just dump_all_and_compare "tests/test_data/system_logs_high_sierra.logarchive"
+    just dump_all_and_compare "tests/test_data/system_logs_monterey.logarchive"
+    just dump_all_and_compare "tests/test_data/system_logs_tahoe.logarchive"
+    just dump_all_and_compare "tests/test_data/system_logs_big_sur_private_enabled.logarchive"
 
 perfs_compare path="tests/test_data/system_logs_big_sur_private_enabled.logarchive":
     #!/bin/bash

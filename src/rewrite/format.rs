@@ -40,6 +40,7 @@ fn decode_annotation(annotation: &str, item: &RawFirehoseItem<'_>) -> Option<Str
 
     match crate::rewrite::decoders::decoder::to_decoded_value(annotation, &value_str) {
         Ok(Some(decoded)) => Some(decoded.to_string()),
+        Err(err) => Some(err.to_string()),
         _ => None,
     }
 }
@@ -442,7 +443,11 @@ fn apply_octal_format(output: &mut String, n: i64, spec: &FormatSpec) {
 // --- Float formatting ---
 
 fn apply_float_format(output: &mut String, f: f64, spec: &FormatSpec) {
-    let plus = if spec.show_sign && f >= 0.0 { "+" } else { "" };
+    let plus = if spec.show_sign && (f >= 0.0 || f.is_nan()) {
+        "+"
+    } else {
+        ""
+    };
 
     let formatted = if spec.has_precision && spec.precision != 0 {
         format!("{f:.prec$}", prec = spec.precision)
@@ -661,8 +666,27 @@ pub fn format_message(format_string: Option<&str>, items: &[RawFirehoseItem<'_>]
 
         // %{...} → Apple-annotated specifier
         if bytes[pos] == b'{' {
-            let (consumed, annotation) = parse_apple_annotation(bytes, pos);
+            let (consumed, annotation, closed) = parse_apple_annotation(bytes, pos);
             pos += consumed;
+
+            if !closed {
+                skip_precision_items(items, &mut item_index);
+                if item_index >= items.len() {
+                    result.push_str("<Missing message data>");
+                } else {
+                    let mut spec = FormatSpec::new(
+                        annotation
+                            .as_bytes()
+                            .last()
+                            .copied()
+                            .map(char::from)
+                            .unwrap_or('\0'),
+                    );
+                    spec.has_width = false;
+                    format_annotated_item(&mut result, &annotation, &spec, items, &mut item_index);
+                }
+                continue;
+            }
 
             // If '}' is last char (no conversion type after it) → emit literal
             if pos >= len || !is_conversion_char(bytes[pos] as char) {
@@ -778,7 +802,7 @@ pub fn format_message(format_string: Option<&str>, items: &[RawFirehoseItem<'_>]
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn parse_apple_annotation(bytes: &[u8], start: usize) -> (usize, String) {
+fn parse_apple_annotation(bytes: &[u8], start: usize) -> (usize, String, bool) {
     // start points at '{', scan to '}'
     let mut pos = start + 1; // skip '{'
     let mut annotation = String::new();
@@ -788,8 +812,9 @@ fn parse_apple_annotation(bytes: &[u8], start: usize) -> (usize, String) {
     }
     if pos < bytes.len() {
         pos += 1; // skip '}'
+        return (pos - start, annotation, true);
     }
-    (pos - start, annotation)
+    (pos - start, annotation, false)
 }
 
 fn skip_precision_items(items: &[RawFirehoseItem<'_>], item_index: &mut usize) {
@@ -869,15 +894,9 @@ fn extract_signpost_metadata(annotation: &str) -> String {
     if annotation.starts_with("signpost") || annotation.starts_with("sign") {
         // signpost is the first element
         parts[0].trim().to_string()
+    } else if let Some(part) = parts.get(1) {
+        part.trim().to_string()
     } else {
-        // signpost is after a comma (e.g. "public,signpost.description:attr")
-        for part in &parts[1..] {
-            let trimmed = part.trim();
-            if trimmed.contains("signpost") {
-                return trimmed.to_string();
-            }
-        }
-        // Fallback
         annotation.to_string()
     }
 }
