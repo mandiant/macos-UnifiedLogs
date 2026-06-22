@@ -328,7 +328,10 @@ pub fn build_log(
 }
 
 fn compat_uuid_string(event_type: EventType, uuid: Uuid) -> String {
-    if (event_type == EventType::Statedump && uuid.is_nil()) || event_type == EventType::Loss {
+    if (event_type == EventType::Statedump && uuid.is_nil())
+        || event_type == EventType::Loss
+        || event_type == EventType::Unknown
+    {
         String::new()
     } else {
         format!("{:X}", uuid.simple())
@@ -336,7 +339,7 @@ fn compat_uuid_string(event_type: EventType, uuid: Uuid) -> String {
 }
 
 fn compat_attribution_string(event_type: EventType, value: Option<&str>) -> String {
-    if event_type == EventType::Loss {
+    if event_type == EventType::Loss || event_type == EventType::Unknown {
         String::new()
     } else {
         value.unwrap_or("").to_string()

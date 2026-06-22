@@ -502,7 +502,43 @@ fn visit_firehose_entries<'a: 'b, 'b>(
                 });
                 continue;
             }
-            RawFirehoseBody::Unknown(_) => continue,
+            RawFirehoseBody::Unknown(_) => {
+                let abs_ct = entry.absolute_continuous_time(fh.base_continuous_time);
+                let time = resolver.resolve(&boot_uuid, abs_ct, fh.base_continuous_time);
+                let pid = catalog
+                    .get_pid(fh.first_proc_id, fh.second_proc_id)
+                    .unwrap_or(0);
+                let euid = catalog
+                    .get_euid(fh.first_proc_id, fh.second_proc_id)
+                    .unwrap_or(0);
+
+                callback(LogEntry {
+                    subsystem: None,
+                    category: None,
+                    thread_id: entry.thread_id,
+                    pid,
+                    euid,
+                    library: None,
+                    library_uuid: Uuid::nil(),
+                    activity_id: 0,
+                    parent_activity_id: None,
+                    time,
+                    event_type: EventType::Unknown,
+                    log_type: LogType::Default,
+                    process: None,
+                    process_uuid: Uuid::nil(),
+                    format_string: None,
+                    boot_uuid,
+                    timezone_name,
+                    message_flags: Vec::new(),
+                    items: ItemsData::None,
+                    signpost_id: 0,
+                    signpost_name: 0,
+                    resolved_message: RefCell::new(None),
+                    format_string_error: None,
+                });
+                continue;
+            }
         };
 
         // Signpost-specific fields

@@ -34,7 +34,7 @@ dump_all_and_compare_roundhouse:
     just dump_all_and_compare "tests/test_data/system_logs_tahoe.logarchive"
     just dump_all_and_compare "tests/test_data/system_logs_big_sur_private_enabled.logarchive"
 
-perfs_compare path="tests/test_data/system_logs_big_sur_private_enabled.logarchive":
+perfs_compare path="tests/test_data/system_logs_big_sur_private_enabled.logarchive" $NO_OUTPUT="1":
     #!/bin/bash
     set -euo pipefail
     # build first
@@ -42,8 +42,16 @@ perfs_compare path="tests/test_data/system_logs_big_sur_private_enabled.logarchi
     cargo build --release --manifest-path examples/dump_compat/Cargo.toml
     cargo build --release --manifest-path examples/dump_rewrite/Cargo.toml
     echo "=== Legacy ==="
-    time NO_OUTPUT=1 cargo run --release --manifest-path examples/dump_legacy/Cargo.toml -- "{{path}}" 2>/dev/null
+    time cargo run --release --manifest-path examples/dump_legacy/Cargo.toml -- "{{path}}" 2>/dev/null
     echo "=== Compat ==="
-    time NO_OUTPUT=1 cargo run --release --manifest-path examples/dump_compat/Cargo.toml -- "{{path}}" 2>/dev/null
+    time cargo run --release --manifest-path examples/dump_compat/Cargo.toml -- "{{path}}" 2>/dev/null
     echo "=== Rewrite ==="
-    time NO_OUTPUT=1 cargo run --release --manifest-path examples/dump_rewrite/Cargo.toml -- "{{path}}" 2>/dev/null
+    time cargo run --release --manifest-path examples/dump_rewrite/Cargo.toml -- "{{path}}" 2>/dev/null
+
+perfs_compare_roundhouse:
+    just perfs_compare "tests/test_data/system_logs_big_sur_public_private_data_mix.logarchive"
+    just perfs_compare "tests/test_data/system_logs_big_sur.logarchive"
+    just perfs_compare "tests/test_data/system_logs_high_sierra.logarchive"
+    just perfs_compare "tests/test_data/system_logs_monterey.logarchive"
+    just perfs_compare "tests/test_data/system_logs_tahoe.logarchive"
+    just perfs_compare "tests/test_data/system_logs_big_sur_private_enabled.logarchive"

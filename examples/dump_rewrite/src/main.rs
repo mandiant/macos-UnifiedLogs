@@ -76,7 +76,10 @@ fn dump_entry(index: usize, entry: &LogEntry<'_, '_>) -> DumpEntry {
 }
 
 fn dump_uuid_string(event_type: EventType, is_nil: bool, uuid: String) -> String {
-    if (event_type == EventType::Statedump && is_nil) || event_type == EventType::Loss {
+    if (event_type == EventType::Statedump && is_nil)
+        || event_type == EventType::Loss
+        || event_type == EventType::Unknown
+    {
         String::new()
     } else {
         uuid
@@ -84,7 +87,7 @@ fn dump_uuid_string(event_type: EventType, is_nil: bool, uuid: String) -> String
 }
 
 fn dump_attribution_string(event_type: EventType, value: Option<&str>) -> String {
-    if event_type == EventType::Loss {
+    if event_type == EventType::Loss || event_type == EventType::Unknown {
         String::new()
     } else {
         value.unwrap_or("").to_string()
