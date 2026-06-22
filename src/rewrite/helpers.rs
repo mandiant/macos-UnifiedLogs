@@ -40,6 +40,10 @@ pub(crate) fn u64_to_usize(n: u64) -> Option<usize> {
     usize::try_from(n).ok()
 }
 
+/// Decode UTF-8 bytes that represent a C-style string.
+///
+/// The first NUL byte terminates the string, so any bytes after it are ignored.
+/// Example: `b"a\0b\0"` decodes as `"a"`.
 pub(crate) fn utf8_str(data: &[u8]) -> &str {
     std::str::from_utf8(data)
         .inspect_err(|err| log::warn!("{err}"))
@@ -50,9 +54,15 @@ pub(crate) fn utf8_str(data: &[u8]) -> &str {
         .unwrap_or(INVALID_UTF8)
 }
 
+/// Decode UTF-8 bytes that represent a sized string field.
+///
+/// The full declared field is decoded, embedded NUL bytes are preserved, and
+/// only trailing NUL terminators/padding are removed.
+/// Example: `b"a\0b\0"` decodes as `"a\0b"`.
 pub(crate) fn utf8_str_sized(data: &[u8]) -> &str {
     std::str::from_utf8(data)
         .inspect_err(|err| log::warn!("{err}"))
+        .map(|s| s.trim_end_matches('\0'))
         .unwrap_or(INVALID_UTF8)
 }
 

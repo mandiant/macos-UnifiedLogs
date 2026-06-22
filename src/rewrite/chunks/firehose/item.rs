@@ -688,6 +688,22 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_sized_string_trims_only_trailing_nulls() -> anyhow::Result<()> {
+        let items_data: &[u8] = &[
+            0, 1, // unknown_item=0, number_items=1
+            32, 4, 0, 0, 6, 0, // item 0: type=0x20(String), size=4, offset=0, str_size=6
+            b'a', 0, b'b', 0, 0, 0, // string data: embedded NUL, then trailing NULs
+        ];
+
+        let (remaining, result) = parse_items_data(items_data, FirehoseFlags::empty()).unwrap();
+
+        assert_eq!(result.items.len(), 1);
+        assert_eq!(result.items[0].value, RawItemValue::Str("a\0b"));
+        assert!(remaining.is_empty());
+        Ok(())
+    }
+
+    #[test]
     fn test_parse_activity_items_empty() -> anyhow::Result<()> {
         // Activity entries from the test data have empty items_data.
         let items_data: &[u8] = &[];
