@@ -3,7 +3,7 @@ mod common;
 
 use std::path::PathBuf;
 
-use common::{DumpEntry, parent_activity_id, write_entry};
+use common::{DumpEntry, no_output_enabled, parent_activity_id, write_entry};
 use macos_unifiedlogs::{
     filesystem::LogarchiveProvider,
     parser::{build_log, collect_timesync, parse_log},
@@ -13,6 +13,7 @@ use macos_unifiedlogs::{
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let path = argument_path()?;
+    let no_output = no_output_enabled();
     let mut provider = LogarchiveProvider::new(&path);
     let timesync_data = collect_timesync(&provider)?;
     let mut index = 0;
@@ -33,7 +34,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let (entries, _) = build_log(&parsed, &mut provider, &timesync_data, false);
 
         for entry in entries {
-            write_entry(&dump_entry(index, entry))?;
+            if !no_output {
+                write_entry(&dump_entry(index, entry))?;
+            }
             index += 1;
         }
     }

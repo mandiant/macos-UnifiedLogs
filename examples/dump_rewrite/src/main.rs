@@ -2,7 +2,7 @@
 mod common;
 
 use chrono::SecondsFormat;
-use common::{DumpEntry, write_entry};
+use common::{DumpEntry, no_output_enabled, write_entry};
 use macos_unifiedlogs::{
     log_entry::{EventType, LogEntry},
     logarchive::visit_logarchive,
@@ -11,6 +11,7 @@ use std::path::PathBuf;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let path = argument_path()?;
+    let no_output = no_output_enabled();
     let mut result: Result<(), Box<dyn std::error::Error>> = Ok(());
     let mut index = 0;
 
@@ -19,7 +20,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             return;
         }
 
-        result = write_entry(&dump_entry(index, &entry));
+        if !no_output {
+            result = write_entry(&dump_entry(index, &entry));
+        }
         index += 1;
     })?;
 

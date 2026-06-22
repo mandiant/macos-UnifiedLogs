@@ -42,8 +42,8 @@ perfs_compare path="tests/test_data/system_logs_big_sur_private_enabled.logarchi
     cargo build --release --manifest-path examples/dump_compat/Cargo.toml
     cargo build --release --manifest-path examples/dump_rewrite/Cargo.toml
     echo "=== Legacy ==="
-    time cargo run --release --manifest-path examples/dump_legacy/Cargo.toml -- "{{path}}" > /dev/null 2>/dev/null
+    time NO_OUTPUT=1 cargo run --release --manifest-path examples/dump_legacy/Cargo.toml -- "{{path}}" 2>/dev/null
     echo "=== Compat ==="
-    time cargo run --release --manifest-path examples/dump_compat/Cargo.toml -- "{{path}}" > /dev/null 2>/dev/null
+    time NO_OUTPUT=1 cargo run --release --manifest-path examples/dump_compat/Cargo.toml -- "{{path}}" 2>/dev/null
     echo "=== Rewrite ==="
-    time cargo run --release --manifest-path examples/dump_rewrite/Cargo.toml -- "{{path}}" > /dev/null 2>/dev/null
+    time NO_OUTPUT=1 cargo run --release --manifest-path examples/dump_rewrite/Cargo.toml -- "{{path}}" 2>/dev/null

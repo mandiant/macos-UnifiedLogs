@@ -30,6 +30,12 @@ pub(crate) fn parent_activity_id(value: u64) -> Option<u64> {
     if value == 0 { None } else { Some(value) }
 }
 
+pub(crate) fn no_output_enabled() -> bool {
+    std::env::var("NO_OUTPUT")
+        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(false)
+}
+
 pub(crate) fn write_entry(entry: &DumpEntry) -> Result<(), Box<dyn std::error::Error>> {
     let stdout = io::stdout();
     let mut stdout = stdout.lock();
