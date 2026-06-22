@@ -20,6 +20,7 @@ use super::uuidtext::RawUUIDText;
 use log::warn;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 use uuid::Uuid;
 
 // ---------------------------------------------------------------------------
@@ -390,6 +391,7 @@ fn visit_firehose_entries<'a: 'b, 'b>(
     let timezone_name = extract_timezone_name(header.timezone_path);
 
     let adjusted_private_data = legacy_private_data_start(fh);
+    let mut emitted_unknown_markers = Vec::new();
 
     for entry in fh.entries() {
         let body = match entry.parse_body() {
@@ -503,6 +505,11 @@ fn visit_firehose_entries<'a: 'b, 'b>(
                 continue;
             }
             RawFirehoseBody::Unknown(_) => {
+                emitted_unknown_markers.push((
+                    entry.thread_id,
+                    entry.continuous_time_delta,
+                    entry.continuous_time_delta_upper,
+                ));
                 let abs_ct = entry.absolute_continuous_time(fh.base_continuous_time);
                 let time = resolver.resolve(&boot_uuid, abs_ct, fh.base_continuous_time);
                 let pid = catalog
@@ -534,7 +541,7 @@ fn visit_firehose_entries<'a: 'b, 'b>(
                     items: ItemsData::None,
                     signpost_id: 0,
                     signpost_name: 0,
-                    resolved_message: RefCell::new(None),
+                    resolved_message: RefCell::new(Some(Rc::new(String::new()))),
                     format_string_error: None,
                 });
                 continue;
@@ -673,11 +680,102 @@ fn visit_firehose_entries<'a: 'b, 'b>(
             format_string_error,
         });
     }
+
+    emit_embedded_unknown_markers(
+        fh,
+        resolver,
+        catalog,
+        boot_uuid,
+        timezone_name,
+        &emitted_unknown_markers,
+        callback,
+    );
 }
 
 // ---------------------------------------------------------------------------
 // Mapping helpers
 // ---------------------------------------------------------------------------
+
+fn emit_embedded_unknown_markers<'a: 'b, 'b>(
+    fh: &RawFirehose<'b>,
+    resolver: &TimestampResolver,
+    catalog: &RawCatalogChunk<'a>,
+    boot_uuid: Uuid,
+    timezone_name: &'a str,
+    emitted_unknown_markers: &[(u64, u32, u16)],
+    callback: &mut impl FnMut(LogEntry<'a, 'b>),
+) {
+    const HEADER_SIZE: usize = 24;
+
+    let public_data = fh.public_data();
+    for (pos, marker) in public_data.windows(HEADER_SIZE).enumerate() {
+        if pos + HEADER_SIZE != public_data.len() {
+            continue;
+        }
+
+        if marker[0] != 0x96
+            || marker[1] != 0x9b
+            || marker[2..8] != [0; 6]
+            || marker[22..24] != [0; 2]
+        {
+            continue;
+        }
+
+        let thread_id = u64::from_le_bytes(marker[8..16].try_into().expect("slice length checked"));
+        let continuous_time_delta =
+            u32::from_le_bytes(marker[16..20].try_into().expect("slice length checked"));
+        let continuous_time_delta_upper =
+            u16::from_le_bytes(marker[20..22].try_into().expect("slice length checked"));
+
+        if emitted_unknown_markers.iter().any(|seen| {
+            *seen
+                == (
+                    thread_id,
+                    continuous_time_delta,
+                    continuous_time_delta_upper,
+                )
+        }) {
+            continue;
+        }
+
+        let abs_ct = fh.base_continuous_time
+            + (u64::from(continuous_time_delta_upper) << 32)
+            + u64::from(continuous_time_delta);
+        let time = resolver.resolve(&boot_uuid, abs_ct, fh.base_continuous_time);
+        let pid = catalog
+            .get_pid(fh.first_proc_id, fh.second_proc_id)
+            .unwrap_or(0);
+        let euid = catalog
+            .get_euid(fh.first_proc_id, fh.second_proc_id)
+            .unwrap_or(0);
+
+        callback(LogEntry {
+            subsystem: None,
+            category: None,
+            thread_id,
+            pid,
+            euid,
+            library: None,
+            library_uuid: Uuid::nil(),
+            activity_id: 0,
+            parent_activity_id: None,
+            time,
+            event_type: EventType::Unknown,
+            log_type: LogType::Default,
+            process: None,
+            process_uuid: Uuid::nil(),
+            format_string: None,
+            boot_uuid,
+            timezone_name,
+            message_flags: Vec::new(),
+            items: ItemsData::None,
+            signpost_id: 0,
+            signpost_name: 0,
+            resolved_message: RefCell::new(Some(Rc::new(String::new()))),
+            format_string_error: None,
+        });
+    }
+}
 
 fn message_flags_for_body(
     body: &RawFirehoseBody<'_>,

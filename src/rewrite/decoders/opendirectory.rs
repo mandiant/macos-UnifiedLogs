@@ -338,7 +338,7 @@ impl std::fmt::Display for MemberType {
             Self::UserName(name) => write!(f, "user: {name}"),
             Self::GroupId(id) => write!(f, "group: {id}"),
             Self::GroupName(name) => write!(f, "group: {name}"),
-            Self::Unknown(type_id) => write!(f, "Unknown Member type: {type_id} @"),
+            Self::Unknown(type_id) => write!(f, "Unknown Member type {type_id}: @"),
         }
     }
 }
