@@ -1,6 +1,12 @@
 default:
     just --list
 
+alias c:= check
+check:
+    cargo c --no-default-features --features rewrite --lib --bins --tests --examples
+    cargo c --no-default-features --features rewrite-compat --lib --bins --tests --examples
+    cargo c --no-default-features --features legacy --lib --bins --tests --examples
+
 alias t:= test
 test: test_legacy test_rewrite test_compat
 

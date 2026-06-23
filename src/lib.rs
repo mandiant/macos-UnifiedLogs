@@ -22,34 +22,39 @@
     clippy::unnecessary_cast
 )]
 
-#[cfg(feature = "legacy")]
+#[cfg(all(feature = "legacy", feature = "rewrite"))]
+compile_error!(
+    "features `legacy` and `rewrite` are mutually exclusive; use `default-features = false` when enabling `rewrite` or `rewrite-compat`"
+);
+
+#[cfg(all(feature = "legacy", not(feature = "rewrite")))]
 pub mod legacy;
-#[cfg(feature = "legacy")]
+#[cfg(all(feature = "legacy", not(feature = "rewrite")))]
 mod old_prelude {
     pub use super::legacy::*;
 }
-#[cfg(feature = "legacy")]
+#[cfg(all(feature = "legacy", not(feature = "rewrite")))]
 pub use old_prelude::*;
 
-#[cfg(feature = "rewrite")]
+#[cfg(all(feature = "rewrite", not(feature = "legacy")))]
 mod rewrite;
-#[cfg(feature = "rewrite")]
+#[cfg(all(feature = "rewrite", not(feature = "legacy")))]
 mod rewrite_prelude {
     pub use super::rewrite::*;
 }
-#[cfg(feature = "rewrite")]
+#[cfg(all(feature = "rewrite", not(feature = "legacy")))]
 pub use rewrite_prelude::*;
 
-#[cfg(feature = "rewrite-compat")]
+#[cfg(all(feature = "rewrite-compat", not(feature = "legacy")))]
 pub mod compat;
-#[cfg(feature = "rewrite-compat")]
+#[cfg(all(feature = "rewrite-compat", not(feature = "legacy")))]
 mod compat_prelude {
     pub use super::compat::*;
 }
-#[cfg(feature = "rewrite-compat")]
+#[cfg(all(feature = "rewrite-compat", not(feature = "legacy")))]
 pub use compat_prelude::*;
 
-#[cfg(feature = "rewrite-compat")]
+#[cfg(all(feature = "rewrite-compat", not(feature = "legacy")))]
 pub mod timesync {
     pub use crate::compat::unified_log::TimesyncBoot;
     pub use crate::rewrite::timesync::*;
