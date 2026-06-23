@@ -43,11 +43,21 @@ jobs:
         run: cargo fmt -- --check
       
       - name: Run clippy action to produce annotations
-        run: cargo clippy
+        run: |
+          cargo clippy --no-default-features --features rewrite
+          cargo clippy --no-default-features --features rewrite-compat
+          cargo clippy --no-default-features --features legacy
 
       - name: Download test files
         run: cd tests && wget -O ./test_data.zip https://github.com/mandiant/macos-UnifiedLogs/releases/download/v1.0.0/test_data.zip && unzip test_data.zip
       - name: Build tests
-        run: cargo test --no-run --release
+        run: |
+          cargo test --no-run --release --no-default-features --features rewrite
+          cargo test --no-run --release --no-default-features --features rewrite-compat
+          cargo test --no-run --release --no-default-features --features legacy
+
       - name: Run tests
-        run: cargo test --release
+        run: |
+          cargo test --release --no-default-features --features rewrite
+          cargo test --release --no-default-features --features rewrite-compat
+          cargo test --release --no-default-features --features legacy
