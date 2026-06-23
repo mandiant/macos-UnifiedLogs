@@ -227,7 +227,7 @@ pub(crate) fn errors(oderror: &str) -> OdError {
     }
 }
 
-#[allow(non_camel_case_types)]
+#[allow(non_camel_case_types, clippy::upper_case_acronyms)]
 #[derive(Debug, Clone, PartialEq, Eq, strum::Display)]
 pub enum MemberIdType {
     #[strum(to_string = "UID")]

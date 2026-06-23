@@ -66,7 +66,7 @@ impl<'a> RawCatalogChunk<'a> {
         let (input, catalog_uuids) = many_m_n(
             number_catalog_uuids,
             number_catalog_uuids,
-            map(be_u128, |x| Uuid::from_u128(x)),
+            map(be_u128, Uuid::from_u128),
         )
         .parse(input)?;
 
@@ -664,7 +664,7 @@ mod tests {
     fn test_get_process_info() -> anyhow::Result<()> {
         let input = std::fs::read(test_data_path().join("Catalog Tests/big_sur_catalog.raw"))?;
         let (input, _preamble) = ChunkPreamble::parse(&input).unwrap();
-        let (_, catalog) = RawCatalogChunk::parse(&input).unwrap();
+        let (_, catalog) = RawCatalogChunk::parse(input).unwrap();
 
         let entry = catalog.get_process_info(165, 406).unwrap();
         assert_eq!(entry.first_number_proc_id, 165);
@@ -678,7 +678,7 @@ mod tests {
     fn test_get_process_info_missing() -> anyhow::Result<()> {
         let input = std::fs::read(test_data_path().join("Catalog Tests/big_sur_catalog.raw"))?;
         let (input, _preamble) = ChunkPreamble::parse(&input).unwrap();
-        let (_, catalog) = RawCatalogChunk::parse(&input).unwrap();
+        let (_, catalog) = RawCatalogChunk::parse(input).unwrap();
 
         assert!(catalog.get_process_info(999, 999).is_none());
         Ok(())
@@ -693,7 +693,7 @@ mod tests {
         let input = std::fs::read(test_data_path().join("Catalog Tests/big_sur_catalog.raw"))?;
 
         let (input, _preamble) = ChunkPreamble::parse(&input).unwrap();
-        let (_, catalog) = RawCatalogChunk::parse(&input).unwrap();
+        let (_, catalog) = RawCatalogChunk::parse(input).unwrap();
 
         let results = catalog
             .get_subsystem(subsystem_value, first_proc_id, second_proc_id)

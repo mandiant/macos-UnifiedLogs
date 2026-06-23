@@ -36,8 +36,6 @@ use crate::rewrite::helpers::format_uuid;
 use uuid::Uuid;
 
 pub enum Decoded {
-    Error(String),
-    Masked(String),
     UpBool(bool),
     LoBool(bool),
     Uuid(Uuid),
@@ -76,7 +74,6 @@ pub enum Decoded {
 impl fmt::Display for Decoded {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Error(value) | Self::Masked(value) => f.write_str(value),
             Self::UpBool(value) => f.write_str(if *value { "NO" } else { "YES" }),
             Self::LoBool(value) => f.write_str(if *value { "false" } else { "true" }),
             Self::Uuid(value) => f.write_str(&format_uuid(*value)),
@@ -124,73 +121,73 @@ pub(crate) fn to_decoded_value<'a>(
     } else if format_string.contains("bool") {
         Decoded::LoBool(message_strings == "0")
     } else if format_string.contains("uuid_t") {
-        Decoded::Uuid(parse_uuid(&message_strings)?)
+        Decoded::Uuid(parse_uuid(message_strings)?)
     } else if format_string.contains("darwin.errno") {
-        Decoded::Errno(errno_codes(&message_strings))
+        Decoded::Errno(errno_codes(message_strings))
     } else if format_string.contains("mach.errno") {
-        Decoded::MachErrno(mach_codes(&message_strings))
+        Decoded::MachErrno(mach_codes(message_strings))
     } else if format_string == "errno" || format_string.contains("%{errno") {
-        Decoded::Errno(errno_codes(&message_strings))
+        Decoded::Errno(errno_codes(message_strings))
     } else if format_string.contains("darwin.mode") {
-        permission(&message_strings)
+        permission(message_strings)
     } else if format_string.contains("odtypes:ODError") {
-        Decoded::OdError(errors(&message_strings))
+        Decoded::OdError(errors(message_strings))
     } else if format_string.contains("odtypes:mbridtype") {
-        Decoded::MemberIdType(member_id_type(&message_strings))
+        Decoded::MemberIdType(member_id_type(message_strings))
     } else if format_string.contains("odtypes:mbr_details") {
-        Decoded::MemberDetails(member_details(&message_strings)?)
+        Decoded::MemberDetails(member_details(message_strings)?)
     } else if format_string.contains("odtypes:nt_sid_t") {
-        Decoded::SidDetails(sid_details(&message_strings)?)
+        Decoded::SidDetails(sid_details(message_strings)?)
     } else if format_string.contains("location:CLClientAuthorizationStatus") {
-        Decoded::ClientAuthorizationStatus(client_authorization_status(&message_strings)?)
+        Decoded::ClientAuthorizationStatus(client_authorization_status(message_strings)?)
     } else if format_string.contains("location:CLDaemonStatus_Type::Reachability") {
-        Decoded::DaemonStatusType(daemon_status_type(&message_strings)?)
+        Decoded::DaemonStatusType(daemon_status_type(message_strings)?)
     } else if format_string.contains("location:CLSubHarvesterIdentifier") {
-        Decoded::SubharvesterIdentifier(subharvester_identifier(&message_strings)?)
+        Decoded::SubharvesterIdentifier(subharvester_identifier(message_strings)?)
     } else if format_string.contains("location:SqliteResult") {
-        Decoded::SqliteError(sqlite_location(&message_strings)?)
+        Decoded::SqliteError(sqlite_location(message_strings)?)
     } else if format_string.contains("location:_CLClientManagerStateTrackerState") {
-        Decoded::LocationStateTrackerData(client_manager_state_tracker_state(&message_strings)?)
+        Decoded::LocationStateTrackerData(client_manager_state_tracker_state(message_strings)?)
     } else if format_string.contains("location:_CLLocationManagerStateTrackerState") {
-        Decoded::LocationTrackerState(location_manager_state_tracker_state(&message_strings)?)
+        Decoded::LocationTrackerState(location_manager_state_tracker_state(message_strings)?)
     } else if format_string.contains("network:in6_addr") {
-        Decoded::IpAddr(ipv_six(&message_strings)?.into())
+        Decoded::IpAddr(ipv_six(message_strings)?.into())
     } else if format_string.contains("network:in_addr") {
-        Decoded::IpAddr(ipv_four(&message_strings)?.into())
+        Decoded::IpAddr(ipv_four(message_strings)?.into())
     } else if format_string.contains("network:sockaddr") {
-        Decoded::SockaddrData(sockaddr(&message_strings)?)
+        Decoded::SockaddrData(sockaddr(message_strings)?)
     } else if format_string.contains("time_t") {
-        Decoded::LocalDateTime(parse_time(&message_strings)?)
+        Decoded::LocalDateTime(parse_time(message_strings)?)
     } else if format_string.contains("mdns:dns.idflags") {
-        Decoded::DnsIdFlags(dns_idflags(&message_strings)?)
+        Decoded::DnsIdFlags(dns_idflags(message_strings)?)
     } else if format_string.contains("mdns:dnshdr") {
-        Decoded::DnsHeader(parse_dns_header(&message_strings)?)
+        Decoded::DnsHeader(parse_dns_header(message_strings)?)
     } else if format_string.contains("mdns:rrtype") {
-        Decoded::DnsRecordType(dns_records(&message_strings)?)
+        Decoded::DnsRecordType(dns_records(message_strings)?)
     } else if format_string.contains("mdns:nreason") {
-        Decoded::DnsReason(dns_reason(&message_strings)?)
+        Decoded::DnsReason(dns_reason(message_strings)?)
     } else if format_string.contains("mdns:protocol") {
-        Decoded::DnsProtocol(dns_protocol(&message_strings)?)
+        Decoded::DnsProtocol(dns_protocol(message_strings)?)
     } else if format_string.contains("mdns:dns.counts") {
-        Decoded::DnsCounts(dns_counts(&message_strings)?)
+        Decoded::DnsCounts(dns_counts(message_strings)?)
     } else if format_string.contains("mdns:addrmv") {
-        Decoded::DnsAddRmv(dns_addrmv(&message_strings))
+        Decoded::DnsAddRmv(dns_addrmv(message_strings))
     } else if format_string.contains("mdns:yesno") {
-        Decoded::DnsYesNo(dns_yes_no(&message_strings))
+        Decoded::DnsYesNo(dns_yes_no(message_strings))
     } else if format_string.contains("mdns:acceptable") {
-        Decoded::DnsAcceptable(dns_acceptable(&message_strings))
+        Decoded::DnsAcceptable(dns_acceptable(message_strings))
     } else if format_string.contains("location:IOMessage") {
-        Decoded::IoMessage(io_message(&message_strings)?)
+        Decoded::IoMessage(io_message(message_strings)?)
     } else if format_string.contains("mdns:gaiopts") {
-        Decoded::DnsGetAddrInfoOpts(dns_getaddrinfo_opts(&message_strings)?)
+        Decoded::DnsGetAddrInfoOpts(dns_getaddrinfo_opts(message_strings)?)
     } else if format_string.contains("mdnsresponder:domain_name") {
-        Decoded::DnsDomainName(get_domain_name(&message_strings)?)
+        Decoded::DnsDomainName(get_domain_name(message_strings)?)
     } else if format_string.contains("mdnsresponder:mac_addr") {
-        Decoded::DnsMacAddr(get_dns_mac_addr(&message_strings)?)
+        Decoded::DnsMacAddr(get_dns_mac_addr(message_strings)?)
     } else if format_string.contains("mdnsresponder:ip_addr") {
-        Decoded::IpAddr(dns_ip_addr(&message_strings)?)
+        Decoded::IpAddr(dns_ip_addr(message_strings)?)
     } else if format_string.contains("mdns:rd.svcb") {
-        Decoded::DnsSvcbRecord(get_service_binding(&message_strings)?)
+        Decoded::DnsSvcbRecord(get_service_binding(message_strings)?)
     } else {
         return Ok(None);
     };

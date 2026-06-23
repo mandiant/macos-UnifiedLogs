@@ -109,12 +109,12 @@ pub enum ItemsData<'b> {
         start_time: u64,
         end_time: u64,
     },
-    /// SimpleDump: message is pre-formatted in the chunk data.
+    /// `SimpleDump`: message is pre-formatted in the chunk data.
     Simpledump {
         subsystem: &'b str,
         message: &'b str,
     },
-    /// StateDump: raw data to be decoded based on data_type.
+    /// `StateDump`: raw data to be decoded based on `data_type`.
     Statedump {
         title_name: &'b str,
         decoder_library: &'b str,
@@ -293,9 +293,9 @@ impl<'a, 'b> LogEntry<'a, 'b> {
 
 /// Format raw backtrace bytes into the old pipeline's string format.
 ///
-/// Layout: 3 unknown bytes, uuid_count (u8), offset_count (u16 LE),
-/// UUIDs (uuid_count × 16, big-endian u128), offsets (offset_count × 4, LE u32),
-/// indexes (offset_count × 1).
+/// Layout: 3 unknown bytes, `uuid_count` (u8), `offset_count` (u16 LE),
+/// UUIDs (`uuid_count` x 16, big-endian u128), offsets (`offset_count` x 4, LE u32),
+/// indexes (`offset_count` x 1).
 ///
 /// Output: one line per offset: `"UUID_HEX" +0xOFFSET_DECIMAL` joined by newlines.
 /// Matches old pipeline's `FirehosePreamble::get_backtrace_data()`.
@@ -383,7 +383,7 @@ fn format_statedump_data(data_type: u32, data: &[u8], title_name: &str) -> Strin
     }
 }
 
-/// Decode a statedump custom object (data_type=3) using the appropriate decoder.
+/// Decode a statedump custom object (`data_type=3`) using the appropriate decoder.
 fn format_statedump_object(data: &[u8], title_name: &str) -> String {
     let result = match title_name {
         "CLDaemonStatusStateTracker" => {

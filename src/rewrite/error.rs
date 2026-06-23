@@ -42,7 +42,7 @@ pub trait NomExt {
     fn to_parse_error(self) -> ParseError;
 }
 
-impl<'a> NomExt for nom::Err<nom::error::Error<&'a [u8]>> {
+impl NomExt for nom::Err<nom::error::Error<&[u8]>> {
     fn to_parse_error(self) -> ParseError {
         match self {
             nom::Err::Incomplete(needed) => ParseError::UnexpectedEof {

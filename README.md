@@ -4,9 +4,12 @@ A high-performance Rust library for parsing macOS Unified Log files (tracev3 for
 
 Unified Logs were introduced in macOS 10.12 (Sierra, 2016) as part of Apple's unified logging system across macOS, iOS, watchOS, and tvOS. This library parses the binary tracev3 files and emits structured log entries.
 
-## Design
+## Rewrite Design
 
-The core type is `LogEntry<'a, 'b>` — a zero-copy log entry that borrows directly from the parsed file buffers. Messages are formatted lazily on demand via `.message()`, avoiding heap allocation until explicitly needed.
+The rewrite parser is available with the `rewrite` feature. Its core type is
+`LogEntry<'a, 'b>` — a zero-copy log entry that borrows directly from the parsed
+file buffers. Messages are formatted lazily on demand via `.message()`, avoiding
+heap allocation until explicitly needed.
 
 Extracted fields:
 
@@ -20,6 +23,15 @@ Extracted fields:
 
 ## Usage
 
+The default feature is still `legacy` so existing users can upgrade without API
+breakage. New integrations should use the rewrite parser by disabling default
+features and enabling `rewrite`:
+
+```toml
+[dependencies]
+macos-unifiedlogs = { version = "0.6", default-features = false, features = ["rewrite"] }
+```
+
 ### Parsing a logarchive directory
 
 ```rust
@@ -27,7 +39,11 @@ use macos_unifiedlogs::logarchive::visit_logarchive;
 use std::path::Path;
 
 visit_logarchive(Path::new("system_logs.logarchive"), |entry| {
-    println!("{} [{}] {}", entry.timestamp(), entry.process.unwrap_or("?"), entry.message());
+    let timestamp = entry.timestamp().to_rfc3339();
+    let process = entry.process.unwrap_or("");
+    let message = entry.message();
+
+    println!("{timestamp} [{process}] {message}");
 }).unwrap();
 ```
 
@@ -35,24 +51,25 @@ visit_logarchive(Path::new("system_logs.logarchive"), |entry| {
 
 ```rust
 use macos_unifiedlogs::{
+    dsc::RawSharedCacheStrings,
     logarchive::{load_timesync_data, load_file_buffers_by_uuid, load_uuidtext_buffers},
     timesync::TimestampResolver,
     tracev3::{visit_tracev3, OversizeCache},
-    dsc::RawSharedCacheStrings,
     uuidtext::RawUUIDText,
 };
+use std::collections::HashMap;
 
 // Load context from the logarchive directory
 let base = std::path::Path::new("system_logs.logarchive");
 let resolver = TimestampResolver::new(load_timesync_data(&base.join("timesync")).unwrap());
 
 let dsc_buffers = load_file_buffers_by_uuid(&base.join("dsc"));
-let dsc_files = dsc_buffers.iter()
+let dsc_files: HashMap<_, RawSharedCacheStrings<'_>> = dsc_buffers.iter()
     .filter_map(|(uuid, buf)| Some((*uuid, RawSharedCacheStrings::parse(buf).ok()?.1)))
     .collect();
 
 let uuidtext_buffers = load_uuidtext_buffers(base);
-let uuidtext_files = uuidtext_buffers.iter()
+let uuidtext_files: HashMap<_, RawUUIDText<'_>> = uuidtext_buffers.iter()
     .filter_map(|(uuid, buf)| Some((*uuid, RawUUIDText::parse(buf).ok()?.1)))
     .collect();
 
@@ -60,7 +77,8 @@ let uuidtext_files = uuidtext_buffers.iter()
 let data = std::fs::read(base.join("Persist/0000000000000004.tracev3")).unwrap();
 let mut oversize_cache = OversizeCache::new();
 visit_tracev3(&data, &resolver, &dsc_files, &uuidtext_files, &mut oversize_cache, |entry| {
-    println!("{:?} {:?} {}", entry.event_type, entry.log_type, entry.message());
+    let message = entry.message();
+    println!("{:?} {:?} {}", entry.event_type, entry.log_type, message);
 }).unwrap();
 ```
 
@@ -182,7 +200,9 @@ Apple extends standard printf with privacy annotations and custom type decoders:
 
 ```bash
 cargo build --release
+cargo build --release --no-default-features --features rewrite
 cargo test --release        # release mode recommended — debug is very slow
+cargo test --release --no-default-features --features rewrite --lib
 cargo clippy
 ```
 
@@ -199,11 +219,26 @@ unzip test_data.zip
 
 | Feature | Default | Effect |
 |---------|---------|--------|
-| `rewrite` | **yes** | Zero-copy parsing pipeline (`LogEntry<'a,'b>`, lazy messages) |
-| `rewrite-compat` | no | Adds backward-compatible API shim (`LogData`, `parse_log`, `build_log`) |
-| (none) | — | Legacy implementation (owned types, eager allocation) |
+| `legacy` | **yes** | Existing owned-data parser and public API (`LogData`, `parse_log`, `build_log`). Kept as the default to avoid breaking existing users. |
+| `rewrite` | no | Recommended parser for new code. Provides the zero-copy rewrite API (`LogEntry<'a, 'b>`, lazy messages, `visit_logarchive`, `visit_tracev3`). Use with `--no-default-features`. |
+| `rewrite-compat` | no | Rewrite parser behind the legacy-compatible API surface. Enables `rewrite` and exposes compatibility wrappers for callers that still need `LogData`-style output. |
 
-Only one of `legacy` or `rewrite` is compiled — they are mutually exclusive.
+Recommended commands:
+
+```bash
+# Current default legacy API
+cargo test --release --no-default-features --features legacy
+
+# Native rewrite API
+cargo test --release --no-default-features --features rewrite --lib
+
+# Rewrite engine through compatibility API
+cargo test --release --no-default-features --features rewrite-compat
+```
+
+Do not enable `legacy` and `rewrite` together. Both parsers contain modules with
+the same historical names, so the supported modes compile one API surface at a
+time.
 
 ## Limitations
 

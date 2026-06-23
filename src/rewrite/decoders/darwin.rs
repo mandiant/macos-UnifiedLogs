@@ -8,6 +8,7 @@
 use log::warn;
 
 #[derive(Debug, Clone, PartialEq, Eq, strum::Display)]
+#[allow(clippy::enum_variant_names)]
 pub enum Errno {
     #[strum(to_string = "Success")]
     Success,
@@ -433,9 +434,9 @@ pub(crate) fn permission(permissions: &str) -> super::decoder::Decoded {
     };
 
     let mut chars = permissions.chars();
-    let user = chars.next().map(|c| v(c)).unwrap_or(0);
-    let owner = chars.next().map(|c| v(c)).unwrap_or(0);
-    let group = chars.next().map(|c| v(c)).unwrap_or(0);
+    let user = chars.next().map(&v).unwrap_or(0);
+    let owner = chars.next().map(&v).unwrap_or(0);
+    let group = chars.next().map(&v).unwrap_or(0);
     super::decoder::Decoded::Permission(user, owner, group)
 }
 

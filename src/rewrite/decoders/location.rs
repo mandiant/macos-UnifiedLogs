@@ -81,6 +81,7 @@ pub(crate) fn client_authorization_status(
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, strum::Display)]
+#[allow(clippy::enum_variant_names)]
 pub enum DaemonStatusType {
     #[strum(to_string = "Reachability Unavailable")]
     ReachabilityUnavailable,
@@ -643,7 +644,7 @@ impl Display for DaemonTrackerData {
     }
 }
 
-/// Values found in dyldcache logd_location
+/// Values found in dyldcache `logd_location`.
 #[derive(Debug, Clone, PartialEq, Eq, strum::Display)]
 pub enum ReachabilityStatus {
     #[strum(to_string = "kReachabilityUnavailable")]

@@ -462,6 +462,7 @@ pub(crate) fn dns_addrmv(data: &str) -> DnsAddRmv {
 }
 
 #[derive(Debug, PartialEq, strum::Display)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum DnsRecordType {
     #[strum(to_string = "A")]
     A,
@@ -660,6 +661,7 @@ pub(crate) fn dns_reason(data: &str) -> Result<DnsReason, DecoderError<'_>> {
 }
 
 #[derive(Debug, PartialEq, strum::Display)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum DnsProtocol {
     #[strum(to_string = "UDP")]
     UDP,

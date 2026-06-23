@@ -69,6 +69,7 @@ impl<'a> ChunkSetReader<'a> {
         self.current_offset = 0;
     }
 
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Option<Result<RawChunk<'_>, ParseError>> {
         let data = self.payload.as_bytes();
 
@@ -148,7 +149,7 @@ impl<'a> Iterator for ChunksReader<'a> {
 }
 
 impl ChunksReader<'_> {
-    pub fn visit(&mut self, mut f: impl FnMut(Chunk<'_>) -> ()) -> Result<(), ParseError> {
+    pub fn visit(&mut self, mut f: impl FnMut(Chunk<'_>)) -> Result<(), ParseError> {
         for chunk in self {
             let chunk = chunk?;
             match chunk {
@@ -256,7 +257,6 @@ mod tests {
             }
         })?;
         assert_eq!(count, 4082);
-        // dbg!(&count_by_type);
         assert_eq!(count_by_type.get(&ChunkTag::Catalog), Some(&36));
         assert_eq!(count_by_type.get(&ChunkTag::Firehose), Some(&4017));
         assert_eq!(count_by_type.get(&ChunkTag::Simpledump), None);
@@ -335,8 +335,6 @@ mod tests {
                 > 0,
             "should have NonActivity entries"
         );
-
-        eprintln!("Body type distribution: {counts:?}");
 
         Ok(())
     }

@@ -152,42 +152,42 @@ where
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for (index, value) in self.search_domains.iter().enumerate() {
-            write!(f, "  search domain[{index}] : {value}\n")?;
+            writeln!(f, "  search domain[{index}] : {value}")?;
         }
         for (index, value) in self.nameservers.iter().enumerate() {
-            write!(f, "  nameserver[{index}] : {value}\n")?;
+            writeln!(f, "  nameserver[{index}] : {value}")?;
         }
 
         if self.if_index != 0 && !self.if_index_value.as_ref().is_empty() {
-            write!(
+            writeln!(
                 f,
-                "  if_index : {} ({})\n",
+                "  if_index : {} ({})",
                 self.if_index, self.if_index_value
             )?;
         }
 
         if !self.domain.as_ref().is_empty() {
-            write!(f, "  domain   : {}\n", self.domain)?;
+            writeln!(f, "  domain   : {}", self.domain)?;
         }
         if !self.options.as_ref().is_empty() {
-            write!(f, "  options  : {}\n", self.options)?;
+            writeln!(f, "  options  : {}", self.options)?;
         }
         if self.timeout != 0 {
-            write!(f, "  timeout  : {}\n", self.timeout)?;
+            writeln!(f, "  timeout  : {}", self.timeout)?;
         }
 
-        write!(
+        writeln!(
             f,
-            "  flags    : {:#010x?} {}\n",
+            "  flags    : {:#010x?} {}",
             self.dns_flags, self.dns_flags_string
         )?;
-        write!(
+        writeln!(
             f,
-            "  reach    : {:#010x?} {}\n",
+            "  reach    : {:#010x?} {}",
             self.reach, self.reach_string
         )?;
         if self.order != 0 {
-            write!(f, "  order    : {}\n", self.order)?;
+            writeln!(f, "  order    : {}", self.order)?;
         }
         write!(f, "  config id: {}\n\n", self.config_id)?;
         Ok(())
