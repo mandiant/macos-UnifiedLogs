@@ -8,3 +8,5 @@ mise.local.toml
 test*.zip
 tests/test_data
 dump*.txt
+AGENTS.md
+CLAUDE.md
