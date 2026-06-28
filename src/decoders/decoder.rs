@@ -5,6 +5,8 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
+use tracing::error;
+
 use crate::{
     chunks::firehose::firehose_log::FirehoseItemType,
     decoders::{
@@ -138,7 +140,7 @@ pub(crate) fn check_objects(
     match message_value {
         Ok(value) => value,
         Err(e) => {
-            log::error!("[macos-unifiedlogs] Failed to decode log object. Error: {e:?}");
+            error!("Failed to decode log object. Error: {e:?}");
             e.to_string()
         }
     }

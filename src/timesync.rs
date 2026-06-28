@@ -5,11 +5,11 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-use log::error;
 use nom::Needed;
 use nom::number::complete::{be_u128, le_i64, le_u16, le_u32, le_u64};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use tracing::error;
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct TimesyncBoot {
@@ -80,7 +80,7 @@ impl TimesyncBoot {
         let expected_boot_signature = 0xbbb0;
         if expected_boot_signature != timesync_signature {
             error!(
-                "[macos-unifiedlogs] Incorrect Timesync boot header signature. Expected {expected_boot_signature}. Got: {timesync_signature}",
+                "Incorrect Timesync boot header signature. Expected {expected_boot_signature}. Got: {timesync_signature}",
             );
             return Err(nom::Err::Incomplete(Needed::Unknown));
         }
@@ -123,7 +123,7 @@ impl TimesyncBoot {
         let expected_record_signature = 0x207354;
         if expected_record_signature != timesync_signature {
             error!(
-                "[macos-unifiedlogs] Incorrect Timesync record header signature. Expected {expected_record_signature}. Got: {timesync_signature}",
+                "Incorrect Timesync record header signature. Expected {expected_record_signature}. Got: {timesync_signature}",
             );
             return Err(nom::Err::Incomplete(Needed::Unknown));
         }

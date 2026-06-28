@@ -6,11 +6,11 @@
 // See the License for the specific language governing permissions and limitations under the License.
 
 use crate::util::extract_string;
-use log::error;
 use nom::Needed;
 use nom::bytes::complete::take;
 use nom::number::complete::{be_u128, le_u16, le_u32, le_u64};
 use serde::{Deserialize, Serialize};
+use tracing::error;
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct SharedCacheStrings {
@@ -53,7 +53,7 @@ impl SharedCacheStrings {
         let expected_dsc_signature = 0x64736368;
         if expected_dsc_signature != signature {
             error!(
-                "[macos-unifiedlogs] Incorrect DSC file signature. Expected {expected_dsc_signature}. Got: {signature}"
+                "Incorrect DSC file signature. Expected {expected_dsc_signature}. Got: {signature}"
             );
             return Err(nom::Err::Incomplete(Needed::Unknown));
         }

@@ -11,22 +11,22 @@ keywords = ["forensics", "macOS", "unifiedlog"]
 
 [dependencies]
 nom = "8.0.0"
-serde_json = "1.0.149"
+serde_json = "1.0.150"
 serde = { version = "1.0.228", features = ["derive"] }
-log = "0.4.29"
-lz4_flex = "0.13.0"
+tracing = "0.1.44"
+lz4_flex = "0.13.1"
 byteorder = "1.5.0"
 plist = "1.9.0"
-regex = "1.12.3"
+regex = "1.12.4"
 base64 = "0.22.1"
-chrono = "0.4.44"
+chrono = "0.4.45"
 walkdir = "2.5.0"
-sunlight = "0.1.5"
+sunlight = "0.2.0"
 
 [dev-dependencies]
-chrono = "0.4.44"
+chrono = "0.4.45"
 criterion = "0.8.2"
-anyhow = "1.0.102"
+anyhow = "1.0.103"
 test-case = "3.3"
 
 [[bench]]

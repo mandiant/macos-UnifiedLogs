@@ -6,9 +6,9 @@
 // See the License for the specific language governing permissions and limitations under the License.
 
 use crate::chunks::firehose::firehose_log::{FirehoseItemData, FirehoseItemType, FirehosePreamble};
-use log::{info, warn};
 use nom::bytes::complete::take;
 use nom::number::complete::{le_u8, le_u16, le_u32, le_u64};
+use tracing::{info, warn};
 
 #[derive(Debug, Clone, Default)]
 pub struct Oversize {
@@ -63,7 +63,7 @@ impl Oversize {
         // Contains item data like firehose (ex: 0x42)
         if oversize_data_size > input.len() {
             warn!(
-                "[macos-unifiedlogs] Oversize data size greater than Oversize remaining string size. Using remaining string size"
+                "Oversize data size greater than Oversize remaining string size. Using remaining string size"
             );
             oversize_data_size = input.len();
         }

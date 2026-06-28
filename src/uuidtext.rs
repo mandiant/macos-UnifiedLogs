@@ -5,10 +5,10 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-use log::error;
 use nom::Needed;
 use nom::number::complete::le_u32;
 use serde::{Deserialize, Serialize};
+use tracing::error;
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct UUIDText {
@@ -35,7 +35,7 @@ impl UUIDText {
 
         if expected_uuidtext_signature != uuidtext_signature {
             error!(
-                "[macos-unifiedlogs] Incorrect UUIDText header signature. Expected {expected_uuidtext_signature}. Got: {uuidtext_signature}"
+                "Incorrect UUIDText header signature. Expected {expected_uuidtext_signature}. Got: {uuidtext_signature}"
             );
             return Err(nom::Err::Incomplete(Needed::Unknown));
         }

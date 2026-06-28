@@ -10,12 +10,12 @@ use std::mem::size_of;
 use crate::chunks::firehose::firehose_log::FirehoseItemType;
 use crate::decoders::darwin::errno_codes;
 use crate::decoders::decoder;
-use log::{debug, error, info, warn};
 use nom::Parser;
 use nom::branch::alt;
 use nom::bytes::complete::{is_a, is_not, take, take_until};
 use nom::character::complete::digit0;
 use regex::Regex;
+use tracing::{debug, error, warn};
 
 struct FormatAndMessage {
     formatter: String,
@@ -37,8 +37,8 @@ pub fn format_firehose_log_message(
 ) -> String {
     let mut log_message = format_string;
     let mut format_and_message_vec: Vec<FormatAndMessage> = Vec::new();
-    info!("Unified log base message: {log_message:?}");
-    info!("Unified log entry strings: {item_message:?}");
+    debug!("Unified log base message: {log_message:?}");
+    debug!("Unified log entry strings: {item_message:?}");
 
     // Some log entries may be completely empty (no format string or message data)
     /*
@@ -229,7 +229,7 @@ pub fn format_firehose_log_message(
                 );
                 match results {
                     Ok((_, formatted_message)) => formatted_log_message = formatted_message,
-                    Err(err) => warn!("[macos-unifiedlogs] Failed to format message: {err:?}"),
+                    Err(err) => warn!("Failed to format message: {err:?}"),
                 }
             }
         }
@@ -278,7 +278,7 @@ fn parse_formatter<'a>(
 
         if index >= message_value.len() {
             error!(
-                "[macos-unifiedlogs] Index now greater than messages array. This should not have happened. Index: {index}. Message Array len: {}",
+                "Index now greater than messages array. This should not have happened. Index: {index}. Message Array len: {}",
                 message_value.len()
             );
             return Ok(("", String::from("Failed to format string due index length")));
@@ -298,7 +298,7 @@ fn parse_formatter<'a>(
         match char_results {
             Ok(char_message) => message = (char_message as u8 as char).to_string(),
             Err(err) => {
-                error!("[macos-unifiedlogs] Failed to parse number item to char string: {err:?}");
+                error!("Failed to parse number item to char string: {err:?}");
                 return Ok((
                     "",
                     String::from("Failed to parse number item to char string"),
@@ -342,7 +342,7 @@ fn parse_formatter<'a>(
             index += 1;
             if index >= message_value.len() {
                 error!(
-                    "[macos-unifiedlogs] Index now greater than messages array. This should not have happened. Index: {index}. Message Array len: {}",
+                    "Index now greater than messages array. This should not have happened. Index: {index}. Message Array len: {}",
                     message_value.len()
                 );
                 return Ok((
@@ -369,7 +369,7 @@ fn parse_formatter<'a>(
             match precision_results {
                 Ok(value) => precision_value = value,
                 Err(err) => {
-                    error!("[macos-unifiedlogs] Failed to parse format precision value: {err:?}")
+                    error!("Failed to parse format precision value: {err:?}")
                 }
             }
         } else if precision_value != 0 {
@@ -431,7 +431,7 @@ fn parse_formatter<'a>(
         let width_results = width.parse::<usize>();
         match width_results {
             Ok(value) => message_data.width = value,
-            Err(err) => error!("[macos-unifiedlogs] Failed to parse format width value: {err:?}"),
+            Err(err) => error!("Failed to parse format width value: {err:?}"),
         }
 
         format_message_padding(&mut message_data);
@@ -621,7 +621,7 @@ fn format_message(message: &mut MessageFormatters) {
                 message.message = format!("{plus_option}{item:<.precision_value$}");
             }
             NumberFormat::None => {
-                error!("[macos-unifiedlogs] Got NumberFormat None for {message:?}")
+                error!("Got NumberFormat None for {message:?}")
             }
         }
     } else if let Some(item) = &message.item_string {
@@ -911,7 +911,7 @@ fn format_message_padding(message: &mut MessageFormatters) {
                 );
             }
             NumberFormat::None => {
-                error!("[macos-unifiedlogs] Got NumberFormat None for {message:?}")
+                error!("Got NumberFormat None for {message:?}")
             }
         }
     } else if let Some(item) = &message.item_string {
@@ -976,7 +976,7 @@ fn parse_float(message: String) -> f64 {
     match byte_results {
         Ok(bytes) => return f64::from_bits(bytes as u64),
         Err(err) => warn!(
-            "[macos-unifiedlogs] Failed to parse float log message value: {message}, err: {err:?}. Log message possibly incorrectly formatted ex: printf(%u, \"message\") instead of printf(%u, 10). Apple may record message as '<decode: mismatch for [%u] got [STRING sz:10]>'",
+            "Failed to parse float log message value: {message}, err: {err:?}. Log message possibly incorrectly formatted ex: printf(%u, \"message\") instead of printf(%u, 10). Apple may record message as '<decode: mismatch for [%u] got [STRING sz:10]>'",
         ),
     }
     f64::from_bits(0)
@@ -988,7 +988,7 @@ fn parse_int(message: String) -> i64 {
     match int_results {
         Ok(message) => return message,
         Err(err) => debug!(
-            "[macos-unifiedlogs] Failed to parse int log message value: {message}, err: {err:?}. Log message possibly incorrectly formatted ex: printf(%u, \"message\") instead of printf(%u, 10). Apple may record message as '<decode: mismatch for [%u] got [STRING sz:10]>'",
+            "Failed to parse int log message value: {message}, err: {err:?}. Log message possibly incorrectly formatted ex: printf(%u, \"message\") instead of printf(%u, 10). Apple may record message as '<decode: mismatch for [%u] got [STRING sz:10]>'",
         ),
     }
     0

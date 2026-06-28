@@ -7,7 +7,6 @@
 
 use base64::{DecodeError, Engine, engine::general_purpose};
 use chrono::{SecondsFormat, TimeZone, Utc};
-use log::{error, warn};
 use nom::{
     Parser,
     bytes::complete::{take, take_while},
@@ -15,6 +14,7 @@ use nom::{
     error::ErrorKind,
 };
 use std::str::from_utf8;
+use tracing::{error, warn};
 
 /// Returns the padding to consume in order to align to 8 bytes
 /// Actual total size is computed as `items_count` * `items_size`
@@ -59,7 +59,7 @@ pub(crate) fn extract_string_size(data: &[u8], message_size: u64) -> nom::IResul
         match path_string {
             Ok(results) => return Ok((input, results.trim_end_matches(char::from(0)).to_string())),
             Err(err) => {
-                error!("[macos-unifiedlogs] Failed to get extract specific string size: {err:?}")
+                error!("Failed to get extract specific string size: {err:?}")
             }
         }
     }
@@ -68,7 +68,7 @@ pub(crate) fn extract_string_size(data: &[u8], message_size: u64) -> nom::IResul
     let message_size = match u64_to_usize(message_size) {
         Some(m) => m,
         None => {
-            error!("[macos-unifiedlogs] u64 is bigger than system usize");
+            error!("u64 is bigger than system usize");
             return Err(nom::Err::Error(nom::error::Error::new(
                 data,
                 nom::error::ErrorKind::TooLarge,
@@ -80,7 +80,7 @@ pub(crate) fn extract_string_size(data: &[u8], message_size: u64) -> nom::IResul
     let path_string = String::from_utf8(path.to_vec());
     match path_string {
         Ok(results) => return Ok((input, results.trim_end_matches(char::from(0)).to_string())),
-        Err(err) => error!("[macos-unifiedlogs] Failed to get specific string: {err:?}"),
+        Err(err) => error!("Failed to get specific string: {err:?}"),
     }
     Ok((input, String::from("Could not find path string")))
 }
@@ -118,14 +118,14 @@ pub(crate) fn extract_string(data: &[u8]) -> nom::IResult<&[u8], String> {
                 match path_string {
                     Ok(results) => return Ok((input, results.to_string())),
                     Err(err) => {
-                        warn!("[macos-unifiedlogs] Failed to extract full string: {err:?}");
+                        warn!("Failed to extract full string: {err:?}");
                         return Ok((input, String::from("Could not extract string")));
                     }
                 }
             }
         }
         None => {
-            error!("[macos-unifiedlogs] Cannot extract string. Empty input.");
+            error!("Cannot extract string. Empty input.");
             return Ok((data, String::from("Cannot extract string. Empty input.")));
         }
     }
@@ -137,7 +137,7 @@ pub(crate) fn extract_string(data: &[u8]) -> nom::IResult<&[u8], String> {
             return Ok((input, results.to_string()));
         }
         Err(err) => {
-            warn!("[macos-unifiedlogs] Failed to get string: {err:?}");
+            warn!("Failed to get string: {err:?}");
         }
     }
     Ok((input, String::from("Could not extract string")))

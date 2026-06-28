@@ -7,11 +7,11 @@
 
 use std::{mem::size_of, str::from_utf8};
 
-use log::warn;
 use nom::{
     bytes::complete::take,
     number::complete::{be_u128, le_u32, le_u64},
 };
+use tracing::warn;
 
 #[derive(Debug, Clone, Default)]
 pub struct HeaderChunk {
@@ -114,7 +114,7 @@ impl HeaderChunk {
         match path_data {
             Ok(results) => header_chunk.timezone_path = results.trim_end_matches('\0').to_string(),
             Err(err) => {
-                warn!("[macos-unifiedlogs] Failed to get timezone path from header: {err:?}")
+                warn!("Failed to get timezone path from header: {err:?}")
             }
         }
 
@@ -124,7 +124,7 @@ impl HeaderChunk {
                 header_chunk.build_version_string = results.trim_end_matches('\0').to_string()
             }
             Err(err) => {
-                warn!("[macos-unifiedlogs] Failed to get build version from header: {err:?}")
+                warn!("Failed to get build version from header: {err:?}")
             }
         }
 
@@ -134,7 +134,7 @@ impl HeaderChunk {
                 header_chunk.hardware_model_string = results.trim_end_matches('\0').to_string()
             }
             Err(err) => {
-                warn!("[macos-unifiedlogs] Failed to get hardware info from header: {err:?}")
+                warn!("Failed to get hardware info from header: {err:?}")
             }
         }
 

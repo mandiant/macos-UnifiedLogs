@@ -31,11 +31,11 @@ use crate::traits::{FileProvider, StringCache};
 use crate::util::{
     encode_standard, extract_string, padding_size_8, u64_to_usize, unixepoch_to_iso,
 };
-use log::{error, warn};
 use nom::bytes::complete::take;
 use regex::Regex;
 use serde::Serialize;
 use sunlight::light::extract_protobuf;
+use tracing::{error, warn};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum LogType {
@@ -315,7 +315,7 @@ where
                             }
                             Err(err) => {
                                 warn!(
-                                    "[macos-unifiedlogs] Failed to get message string data for firehose non-activity log entry: {err:?}"
+                                    "Failed to get message string data for firehose non-activity log entry: {err:?}"
                                 );
                             }
                         }
@@ -332,7 +332,7 @@ where
                                     log_data.category = subsystem.category;
                                 }
                                 Err(err) => {
-                                    warn!("[macos-unifiedlogs] Failed to get subsystem: {err:?}")
+                                    warn!("Failed to get subsystem: {err:?}")
                                 }
                             }
                         }
@@ -403,7 +403,7 @@ where
                             }
                             Err(err) => {
                                 warn!(
-                                    "[macos-unifiedlogs] Failed to get message string data for firehose activity log entry: {err:?}"
+                                    "Failed to get message string data for firehose activity log entry: {err:?}"
                                 );
                             }
                         }
@@ -481,7 +481,7 @@ where
                             }
                             Err(err) => {
                                 warn!(
-                                    "[macos-unifiedlogs] Failed to get message string data for firehose signpost log entry: {err:?}"
+                                    "Failed to get message string data for firehose signpost log entry: {err:?}"
                                 );
                             }
                         }
@@ -497,7 +497,7 @@ where
                                     log_data.category = subsystem.category;
                                 }
                                 Err(err) => {
-                                    warn!("[macos-unifiedlogs] Failed to get subsystem: {err:?}")
+                                    warn!("Failed to get subsystem: {err:?}")
                                 }
                             }
                         }
@@ -548,13 +548,13 @@ where
                             }
                             Err(err) => {
                                 warn!(
-                                    "[macos-unifiedlogs] Failed to get message string data for firehose activity log entry: {err:?}",
+                                    "Failed to get message string data for firehose activity log entry: {err:?}",
                                 );
                             }
                         }
                     }
                     _ => {
-                        error!("[macos-unifiedlogs] Parsed unknown log firehose data: {firehose:?}",)
+                        error!("Parsed unknown log firehose data: {firehose:?}",)
                     }
                 }
                 log_data_vec.push(log_data);
@@ -627,9 +627,7 @@ where
                     match results {
                         Ok((_, string_data)) => string_data,
                         Err(err) => {
-                            error!(
-                                "[macos-unifiedlogs] Failed to extract string from statedump: {err:?}"
-                            );
+                            error!("Failed to extract string from statedump: {err:?}");
                             String::from("Failed to extract string from statedump")
                         }
                     }
@@ -737,7 +735,7 @@ impl LogData {
             let chunk_size = match u64_to_usize(chunk_size) {
                 Some(c) => c,
                 None => {
-                    error!("[macos-unifiedlogs] u64 is bigger than system usize");
+                    error!("u64 is bigger than system usize");
                     return Err(nom::Err::Error(nom::error::Error::new(
                         data,
                         nom::error::ErrorKind::TooLarge,
@@ -762,10 +760,7 @@ impl LogData {
                     &mut unified_log_data_true,
                 );
             } else {
-                error!(
-                    "[macos-unifiedlogs] Unknown chunk type: {:?}",
-                    preamble.chunk_tag
-                );
+                error!("Unknown chunk type: {:?}", preamble.chunk_tag);
             }
 
             let padding_size = padding_size_8(preamble.chunk_data_size);
@@ -775,7 +770,7 @@ impl LogData {
             let padding_size = match u64_to_usize(padding_size) {
                 Some(p) => p,
                 None => {
-                    error!("[macos-unifiedlogs] u64 is bigger than system usize");
+                    error!("u64 is bigger than system usize");
                     return Err(nom::Err::Error(nom::error::Error::new(
                         data,
                         nom::error::ErrorKind::TooLarge,
@@ -891,7 +886,7 @@ impl LogData {
         let header_results = HeaderChunk::parse_header(data);
         match header_results {
             Ok((_, header_data)) => unified_log_data.header.push(header_data),
-            Err(err) => error!("[macos-unifiedlogs] Failed to parse header data: {err:?}"),
+            Err(err) => error!("Failed to parse header data: {err:?}"),
         }
     }
 
@@ -900,7 +895,7 @@ impl LogData {
         let catalog_results = CatalogChunk::parse_catalog(data);
         match catalog_results {
             Ok((_, catalog_data)) => unified_log_data.catalog = catalog_data,
-            Err(err) => error!("[macos-unifiedlogs] Failed to parse catalog data: {err:?}"),
+            Err(err) => error!("Failed to parse catalog data: {err:?}"),
         }
     }
 
@@ -921,7 +916,7 @@ impl LogData {
                 );
                 unified_log_data.oversize.append(&mut catalog_data.oversize);
             }
-            Err(err) => error!("[macos-unifiedlogs] Failed to parse chunkset data: {err:?}"),
+            Err(err) => error!("Failed to parse chunkset data: {err:?}"),
         }
     }
 
