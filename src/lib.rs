@@ -37,14 +37,17 @@
 //! ## Example
 //! ```rust
 //!    use macos_unifiedlogs::filesystem::LiveSystemProvider;
-//!    use macos_unifiedlogs::traits::FileProvider;
+//!    use macos_unifiedlogs::traits::{FileProvider, SourceFile};
+//!    use macos_unifiedlogs::cache::MemoryStringCache;
 //!    use macos_unifiedlogs::parser::collect_timesync;
 //!    use macos_unifiedlogs::iterator::UnifiedLogIterator;
 //!    use macos_unifiedlogs::unified_log::UnifiedLogData;
 //!    use macos_unifiedlogs::parser::build_log;
+//!    use std::io::Read;
 //!
 //!    // Run on live macOS system
-//!     let mut provider = LiveSystemProvider::default();
+//!     let provider = LiveSystemProvider::default();
+//!     let cache = MemoryStringCache::default();
 //!     let timesync_data = collect_timesync(&provider).unwrap();
 //!
 //!     // We need to persist the Oversize log entries (they contain large strings that don't fit in normal log entries)
@@ -69,7 +72,8 @@
 //!             chunk.oversize.append(&mut oversize_strings.oversize);
 //!             let (results, _missing_logs) = build_log(
 //!                 &chunk,
-//!                 &mut provider,
+//!                 &provider,
+//!                 &cache,
 //!                 &timesync_data,
 //!                 exclude,
 //!             );
@@ -82,6 +86,8 @@
 //!
 //! ```
 
+/// Thread-safe cache for UUIDText and SharedCacheStrings used during log parsing
+pub mod cache;
 /// Functions to parse catalog information from tracev3 files
 mod catalog;
 mod chunks;

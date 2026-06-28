@@ -8,13 +8,14 @@
 use std::{fs::File, path::PathBuf};
 
 use macos_unifiedlogs::{
+    cache::MemoryStringCache,
     filesystem::LogarchiveProvider,
     parser::{build_log, collect_timesync, parse_log},
-    traits::FileProvider,
+    traits::{FileProvider, SourceFile},
     unified_log::{EventType, LogData, LogType, UnifiedLogData},
 };
 
-fn collect_logs(provider: &dyn FileProvider) -> Vec<UnifiedLogData> {
+fn collect_logs(provider: &impl FileProvider) -> Vec<UnifiedLogData> {
     provider
         .tracev3_files()
         .map(|mut file| {
@@ -53,7 +54,8 @@ fn test_build_log_tahoe() {
     let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_path.push("tests/test_data/system_logs_tahoe.logarchive");
 
-    let mut provider = LogarchiveProvider::new(test_path.as_path());
+    let provider = LogarchiveProvider::new(test_path.as_path());
+    let cache = MemoryStringCache::default();
     let timesync_data = collect_timesync(&provider).unwrap();
 
     test_path.push("Persist/000000000000000a.tracev3");
@@ -62,7 +64,13 @@ fn test_build_log_tahoe() {
     let log_data = parse_log(handle, test_path.to_str().unwrap()).unwrap();
 
     let exclude_missing = false;
-    let (results, _) = build_log(&log_data, &mut provider, &timesync_data, exclude_missing);
+    let (results, _) = build_log(
+        &log_data,
+        &provider,
+        &cache,
+        &timesync_data,
+        exclude_missing,
+    );
     assert_eq!(results.len(), 305785);
 
     assert_eq!(
@@ -179,7 +187,8 @@ fn test_check_log_tahoe() {
     let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_path.push("tests/test_data/system_logs_tahoe.logarchive");
 
-    let mut provider = LogarchiveProvider::new(test_path.as_path());
+    let provider = LogarchiveProvider::new(test_path.as_path());
+    let cache = MemoryStringCache::default();
     let timesync_data = collect_timesync(&provider).unwrap();
 
     test_path.push("Persist/0000000000000002.tracev3");
@@ -188,7 +197,13 @@ fn test_check_log_tahoe() {
     let log_data = parse_log(handle, test_path.to_str().unwrap()).unwrap();
 
     let exclude_missing = false;
-    let (results, _) = build_log(&log_data, &mut provider, &timesync_data, exclude_missing);
+    let (results, _) = build_log(
+        &log_data,
+        &provider,
+        &cache,
+        &timesync_data,
+        exclude_missing,
+    );
 
     let mut invalid_shared_string_offsets = 0;
 
@@ -205,7 +220,8 @@ fn test_parse_all_logs_tahoe() {
     let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_path.push("tests/test_data/system_logs_tahoe.logarchive");
 
-    let mut provider = LogarchiveProvider::new(test_path.as_path());
+    let provider = LogarchiveProvider::new(test_path.as_path());
+    let cache = MemoryStringCache::default();
 
     let timesync_data = collect_timesync(&provider).unwrap();
     let log_data = collect_logs(&provider);
@@ -214,7 +230,7 @@ fn test_parse_all_logs_tahoe() {
     let exclude_missing = false;
 
     for logs in &log_data {
-        let (mut data, _) = build_log(logs, &mut provider, &timesync_data, exclude_missing);
+        let (mut data, _) = build_log(logs, &provider, &cache, &timesync_data, exclude_missing);
         log_data_vec.append(&mut data);
     }
     assert_eq!(log_data_vec.len(), 4288584);
