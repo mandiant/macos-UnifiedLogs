@@ -169,8 +169,8 @@ fn test_build_log_tahoe() {
 
     // Legacy renders oversize-backed messages from oversize data, but keeps
     // message_entries from the inline firehose entry. rewrite-compat exposes
-    // the parsed oversize message entries instead. 
-    // For this Tahoe file that adds 639 strings and 86 numbers in compat; 
+    // the parsed oversize message entries instead.
+    // For this Tahoe file that adds 639 strings and 86 numbers in compat;
     // one non-oversize entry moves from String to PrivateString
     #[cfg(feature = "legacy")]
     assert_eq!(string_count, 369927);
