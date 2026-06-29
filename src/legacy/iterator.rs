@@ -198,7 +198,7 @@ mod tests {
             evidence: String::from("0000000000000002.tracev3"),
         };
 
-        let mut cache = MemoryStringCache::default();
+        let cache = MemoryStringCache::default();
 
         let mut total = 0;
         for chunk in log_iterator {

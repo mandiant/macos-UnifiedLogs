@@ -8,7 +8,7 @@ use macos_unifiedlogs::{
     cache::MemoryStringCache,
     filesystem::LogarchiveProvider,
     parser::{build_log, collect_timesync, parse_log},
-    traits::{FileProvider, SourceFile},
+    traits::FileProvider,
     unified_log::LogData,
 };
 

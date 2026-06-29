@@ -3,16 +3,16 @@
 //! Scans a `.logarchive` directory, loads timesync/DSC/UUIDText data,
 //! then processes all tracev3 files in order, emitting `LogEntry` via callback.
 
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use log::warn;
-use uuid::Uuid;
 use super::dsc::RawSharedCacheStrings;
 use super::filesystem::{FileProvider, LiveSystemProvider, LogarchiveProvider};
 use super::log_entry::LogEntry;
 use super::timesync::{RawTimesyncBoot, TimestampResolver, parse_timesync_file};
 use super::tracev3::{OversizeCache, visit_tracev3};
 use super::uuidtext::RawUUIDText;
+use log::warn;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use uuid::Uuid;
 
 /// Process all tracev3 files in a logarchive directory, emitting log entries via callback.
 ///
