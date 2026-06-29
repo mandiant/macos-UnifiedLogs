@@ -47,6 +47,23 @@ visit_logarchive(Path::new("system_logs.logarchive"), |entry| {
 }).unwrap();
 ```
 
+### Parsing a live macOS system
+
+```rust
+use macos_unifiedlogs::logarchive::visit_live_system;
+
+visit_live_system(|entry| {
+    let timestamp = entry.timestamp().to_rfc3339();
+    let process = entry.process.unwrap_or("");
+    let message = entry.message();
+
+    println!("{timestamp} [{process}] {message}");
+}).unwrap();
+```
+
+For mounted images or nonstandard roots, use `filesystem::LiveSystemProvider::with_roots`
+with `logarchive::visit_provider`.
+
 ### Parsing a single tracev3 file
 
 ```rust

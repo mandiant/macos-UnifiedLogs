@@ -4,7 +4,7 @@
 //! `tracev3_files()` for iterating log files and `logarchive_base_path()` for
 //! loading DSC / `UUIDText` / timesync data from disk.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Trait for providing unified log source files.
 pub trait FileProvider {
@@ -13,6 +13,21 @@ pub trait FileProvider {
 
     /// Root path of the logarchive directory.
     fn logarchive_base_path(&self) -> &Path;
+
+    /// Directory containing `.timesync` files.
+    fn timesync_dir(&self) -> PathBuf {
+        self.logarchive_base_path().join("timesync")
+    }
+
+    /// Root containing UUIDText two-character hex directories.
+    fn uuidtext_root(&self) -> PathBuf {
+        self.logarchive_base_path().to_path_buf()
+    }
+
+    /// Directory containing DSC shared-cache string files.
+    fn dsc_dir(&self) -> PathBuf {
+        self.logarchive_base_path().join("dsc")
+    }
 
     /// Downcast support for internal caching optimizations.
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any;

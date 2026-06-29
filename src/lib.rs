@@ -52,6 +52,8 @@ mod compat_prelude {
     pub use super::compat::*;
 }
 #[cfg(all(feature = "rewrite-compat", not(feature = "legacy")))]
+pub use compat::filesystem;
+#[cfg(all(feature = "rewrite-compat", not(feature = "legacy")))]
 pub use compat_prelude::*;
 
 #[cfg(all(feature = "rewrite-compat", not(feature = "legacy")))]

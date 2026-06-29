@@ -10,6 +10,7 @@ use log::warn;
 use uuid::Uuid;
 
 use super::dsc::RawSharedCacheStrings;
+use super::filesystem::{LiveSystemProvider, LogarchiveProvider, RewriteFileProvider};
 use super::log_entry::LogEntry;
 use super::timesync::{RawTimesyncBoot, TimestampResolver, parse_timesync_file};
 use super::tracev3::{OversizeCache, visit_tracev3};
@@ -22,14 +23,38 @@ use super::uuidtext::RawUUIDText;
 /// is a hard error.
 pub fn visit_logarchive(
     path: &Path,
+    callback: impl for<'a, 'b> FnMut(LogEntry<'a, 'b>),
+) -> Result<(), std::io::Error> {
+    let provider = LogarchiveProvider::new(path);
+    visit_provider(&provider, callback)
+}
+
+/// Process all tracev3 files on the live macOS system, emitting log entries via callback.
+///
+/// This reads tracev3/timesync data from `/private/var/db/diagnostics` and UUIDText/DSC
+/// support files from `/private/var/db/uuidtext`.
+pub fn visit_live_system(
+    callback: impl for<'a, 'b> FnMut(LogEntry<'a, 'b>),
+) -> Result<(), std::io::Error> {
+    let provider = LiveSystemProvider::new();
+    visit_provider(&provider, callback)
+}
+
+/// Process all tracev3 files from a rewrite filesystem provider.
+///
+/// The callback receives each `LogEntry` as it is produced. Individual file or parse
+/// failures are logged as warnings and skipped — only a missing timesync directory
+/// is a hard error.
+pub fn visit_provider(
+    provider: &impl RewriteFileProvider,
     mut callback: impl for<'a, 'b> FnMut(LogEntry<'a, 'b>),
 ) -> Result<(), std::io::Error> {
     // 1. Timesync → TimestampResolver
-    let timesync_data = load_timesync_data(&path.join("timesync"))?;
+    let timesync_data = load_timesync_data(&provider.timesync_dir())?;
     let resolver = TimestampResolver::new(timesync_data);
 
     // 2. DSC files → HashMap<Uuid, RawSharedCacheStrings>
-    let dsc_buffers = load_file_buffers_by_uuid(&path.join("dsc"));
+    let dsc_buffers = load_file_buffers_by_uuid(&provider.dsc_dir());
     let dsc_files: HashMap<Uuid, RawSharedCacheStrings<'_>> = dsc_buffers
         .iter()
         .filter_map(|(uuid, buffer)| {
@@ -41,7 +66,7 @@ pub fn visit_logarchive(
         .collect();
 
     // 3. UUIDText files → HashMap<Uuid, RawUUIDText>
-    let uuidtext_buffers = load_uuidtext_buffers(path);
+    let uuidtext_buffers = load_uuidtext_buffers(&provider.uuidtext_root());
     let uuidtext_files: HashMap<Uuid, RawUUIDText<'_>> = uuidtext_buffers
         .iter()
         .filter_map(|(uuid, buffer)| {
@@ -53,7 +78,7 @@ pub fn visit_logarchive(
         .collect();
 
     // 4. Collect and process all tracev3 files
-    let tracev3_paths = collect_tracev3_paths(path);
+    let tracev3_paths = provider.tracev3_paths();
     let mut oversize_cache = OversizeCache::new();
 
     for tracev3_path in &tracev3_paths {
@@ -201,36 +226,6 @@ pub fn load_uuidtext_buffers(base: &Path) -> Vec<(Uuid, Vec<u8>)> {
     buffers
 }
 
-/// Collect all tracev3 file paths in processing order.
-///
-/// Order: `HighVolume` → `Persist` → `Signpost` → `Special` → `logdata.LiveData.tracev3` (alphabetical)
-/// Within each directory, files are sorted by name (numeric ordering).
-fn collect_tracev3_paths(base: &Path) -> Vec<PathBuf> {
-    let subdirs = ["HighVolume", "Persist", "Signpost", "Special"];
-    let mut paths = Vec::new();
-
-    for subdir in &subdirs {
-        let dir = base.join(subdir);
-        if let Ok(entries) = std::fs::read_dir(&dir) {
-            let dir_paths = sorted_paths(
-                entries
-                    .filter_map(|e| e.ok())
-                    .map(|e| e.path())
-                    .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("tracev3")),
-            );
-            paths.extend(dir_paths);
-        }
-    }
-
-    // LiveData is a single file at the root
-    let live_data = base.join("logdata.LiveData.tracev3");
-    if live_data.is_file() {
-        paths.push(live_data);
-    }
-
-    paths
-}
-
 /// Sort paths to keep parser output deterministic across filesystems.
 fn sorted_paths(paths: impl Iterator<Item = PathBuf>) -> Vec<PathBuf> {
     let mut paths = paths.collect::<Vec<_>>();
@@ -245,6 +240,7 @@ fn sorted_paths(paths: impl Iterator<Item = PathBuf>) -> Vec<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rewrite::filesystem::collect_tracev3_paths;
     use crate::rewrite::helpers::tests::test_data_path;
 
     #[test]

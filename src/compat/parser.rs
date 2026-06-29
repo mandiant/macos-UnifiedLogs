@@ -26,7 +26,7 @@ use crate::rewrite::timesync::{RawTimesyncBoot, TimestampResolver};
 use crate::rewrite::tracev3::{OversizeCache, visit_tracev3};
 use crate::rewrite::uuidtext::RawUUIDText;
 
-use super::filesystem::LogarchiveProvider;
+use super::filesystem::{LiveSystemProvider, LogarchiveProvider};
 use super::traits::FileProvider;
 use super::unified_log::{
     CatalogInfo, CountVec, EventType, FirehoseItem, FirehoseItemType, HeaderInfo, LogData,
@@ -158,8 +158,7 @@ pub fn parse_log(mut reader: impl Read, evidence: &str) -> Result<UnifiedLogData
 pub fn collect_timesync(
     provider: &dyn FileProvider,
 ) -> Result<HashMap<String, TimesyncBoot>, ParserError> {
-    let timesync_dir = provider.logarchive_base_path().join("timesync");
-    let raw_data = load_timesync_data(&timesync_dir).map_err(|e| {
+    let raw_data = load_timesync_data(&provider.timesync_dir()).map_err(|e| {
         error!("[macos-unifiedlogs] Failed to read timesync directory: {e}");
         ParserError::Timesync
     })?;
@@ -197,30 +196,28 @@ pub fn build_log(
         .collect();
     let resolver = TimestampResolver::new(raw_timesync);
 
-    // 2–3. Load DSC + UUIDText buffers (cached on LogarchiveProvider)
-    // Try to use LogarchiveProvider's cache for O(1) buffer access on repeat calls.
-    let lap = provider.as_any_mut().downcast_mut::<LogarchiveProvider>();
-    if let Some(lap) = lap {
-        // Ensure buffers are loaded into the provider's cache
-        lap.dsc_buffers();
-        lap.uuidtext_buffers();
-    }
-
-    // Re-borrow the provider to get the parsed files
-    let base = provider.logarchive_base_path().to_path_buf();
-    let lap = provider.as_any_mut().downcast_mut::<LogarchiveProvider>();
+    // 2–3. Load DSC + UUIDText buffers, using provider caches when available.
+    let fallback_dsc_dir = provider.dsc_dir();
+    let fallback_uuidtext_root = provider.uuidtext_root();
+    let provider_any = provider.as_any_mut();
 
     let (dsc_buffers_owned, uuidtext_buffers_owned);
     let dsc_buf_ref: &[(Uuid, Vec<u8>)];
     let uuidtext_buf_ref: &[(Uuid, Vec<u8>)];
 
-    if let Some(lap) = lap {
-        // Both caches were loaded above, access fields directly (shared borrows only)
+    if let Some(lap) = provider_any.downcast_mut::<LogarchiveProvider>() {
+        lap.dsc_buffers();
+        lap.uuidtext_buffers();
         dsc_buf_ref = lap.dsc_buffers.as_deref().unwrap_or(&[]);
         uuidtext_buf_ref = lap.uuidtext_buffers.as_deref().unwrap_or(&[]);
+    } else if let Some(live) = provider_any.downcast_mut::<LiveSystemProvider>() {
+        live.dsc_buffers();
+        live.uuidtext_buffers();
+        dsc_buf_ref = live.dsc_buffers.as_deref().unwrap_or(&[]);
+        uuidtext_buf_ref = live.uuidtext_buffers.as_deref().unwrap_or(&[]);
     } else {
-        dsc_buffers_owned = load_file_buffers_by_uuid(&base.join("dsc"));
-        uuidtext_buffers_owned = load_uuidtext_buffers(&base);
+        dsc_buffers_owned = load_file_buffers_by_uuid(&fallback_dsc_dir);
+        uuidtext_buffers_owned = load_uuidtext_buffers(&fallback_uuidtext_root);
         dsc_buf_ref = &dsc_buffers_owned;
         uuidtext_buf_ref = &uuidtext_buffers_owned;
     }

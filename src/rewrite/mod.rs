@@ -8,6 +8,7 @@ pub mod chunks_reader;
 pub mod decoders;
 pub mod dsc;
 pub mod error;
+pub mod filesystem;
 pub mod format;
 pub mod header;
 pub mod helpers;

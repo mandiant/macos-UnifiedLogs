@@ -5,10 +5,10 @@
 
 use super::traits::{FileProvider, SourceFile};
 use std::fs::File;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use uuid::Uuid;
-use walkdir::WalkDir;
 
+use crate::rewrite::filesystem::collect_tracev3_paths;
 use crate::rewrite::logarchive::{load_file_buffers_by_uuid, load_uuidtext_buffers};
 
 // ---------------------------------------------------------------------------
@@ -53,14 +53,11 @@ impl LogarchiveProvider {
 
 impl FileProvider for LogarchiveProvider {
     fn tracev3_files(&self) -> Box<dyn Iterator<Item = Box<dyn SourceFile>>> {
-        sort_files(
-            WalkDir::new(&self.base)
-                .sort_by(|a, b| a.file_name().cmp(b.file_name()))
+        Box::new(
+            collect_tracev3_paths(&self.base)
                 .into_iter()
-                .filter_map(|entry| entry.ok())
-                .filter(|entry| is_tracev3(entry.path()))
-                .filter_map(|entry| {
-                    Some(Box::new(LocalFile::new(entry.path()).ok()?) as Box<dyn SourceFile>)
+                .filter_map(|path| {
+                    Some(Box::new(LocalFile::new(&path).ok()?) as Box<dyn SourceFile>)
                 }),
         )
     }
@@ -74,12 +71,89 @@ impl FileProvider for LogarchiveProvider {
     }
 }
 
-fn sort_files(
-    files: impl Iterator<Item = Box<dyn SourceFile>>,
-) -> Box<dyn Iterator<Item = Box<dyn SourceFile>>> {
-    let mut files = files.collect::<Vec<_>>();
-    files.sort_by(|a, b| a.source_path().cmp(b.source_path()));
-    Box::new(files.into_iter())
+// ---------------------------------------------------------------------------
+// LiveSystemProvider
+// ---------------------------------------------------------------------------
+
+/// Provides tracev3 files and support files from a live macOS system.
+///
+/// This preserves the legacy-compatible `filesystem::LiveSystemProvider` API
+/// while using the rewrite path collection rules internally.
+pub struct LiveSystemProvider {
+    diagnostics_root: PathBuf,
+    uuidtext_root: PathBuf,
+    pub(crate) dsc_buffers: Option<Vec<(Uuid, Vec<u8>)>>,
+    pub(crate) uuidtext_buffers: Option<Vec<(Uuid, Vec<u8>)>>,
+}
+
+impl LiveSystemProvider {
+    /// Create a provider using the standard live macOS Unified Log paths.
+    pub fn new() -> Self {
+        Self::with_roots(
+            PathBuf::from("/private/var/db/diagnostics"),
+            PathBuf::from("/private/var/db/uuidtext"),
+        )
+    }
+
+    /// Create a provider with custom roots, useful for tests or mounted images.
+    pub fn with_roots(diagnostics_root: PathBuf, uuidtext_root: PathBuf) -> Self {
+        Self {
+            diagnostics_root,
+            uuidtext_root,
+            dsc_buffers: None,
+            uuidtext_buffers: None,
+        }
+    }
+
+    /// Get DSC buffers, loading from disk on first call.
+    pub(crate) fn dsc_buffers(&mut self) -> &[(Uuid, Vec<u8>)] {
+        if self.dsc_buffers.is_none() {
+            self.dsc_buffers = Some(load_file_buffers_by_uuid(&self.dsc_dir()));
+        }
+        self.dsc_buffers.as_ref().unwrap()
+    }
+
+    /// Get `UUIDText` buffers, loading from disk on first call.
+    pub(crate) fn uuidtext_buffers(&mut self) -> &[(Uuid, Vec<u8>)] {
+        if self.uuidtext_buffers.is_none() {
+            self.uuidtext_buffers = Some(load_uuidtext_buffers(&self.uuidtext_root()));
+        }
+        self.uuidtext_buffers.as_ref().unwrap()
+    }
+}
+
+impl Default for LiveSystemProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl FileProvider for LiveSystemProvider {
+    fn tracev3_files(&self) -> Box<dyn Iterator<Item = Box<dyn SourceFile>>> {
+        Box::new(
+            collect_tracev3_paths(&self.diagnostics_root)
+                .into_iter()
+                .filter_map(|path| {
+                    Some(Box::new(LocalFile::new(&path).ok()?) as Box<dyn SourceFile>)
+                }),
+        )
+    }
+
+    fn logarchive_base_path(&self) -> &Path {
+        &self.diagnostics_root
+    }
+
+    fn uuidtext_root(&self) -> PathBuf {
+        self.uuidtext_root.clone()
+    }
+
+    fn dsc_dir(&self) -> PathBuf {
+        self.uuidtext_root.join("dsc")
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -110,29 +184,25 @@ impl SourceFile for LocalFile {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Path classification (matches legacy LogFileType::TraceV3)
-// ---------------------------------------------------------------------------
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::rewrite::helpers::tests::test_data_path;
 
-static TRACE_FOLDERS: &[&str] = &["HighVolume", "Special", "Signpost", "Persist"];
+    #[test]
+    fn live_provider_uses_live_style_support_roots() {
+        let diagnostics_root = test_data_path().join("system_logs_big_sur.logarchive");
+        let uuidtext_root = test_data_path().join("system_logs_big_sur.logarchive");
+        let provider =
+            LiveSystemProvider::with_roots(diagnostics_root.clone(), uuidtext_root.clone());
 
-fn is_tracev3(path: &Path) -> bool {
-    let components = path.components().collect::<Vec<Component<'_>>>();
-    let n = components.len();
-
-    if let (Some(&Component::Normal(parent)), Some(&Component::Normal(filename))) = (
-        components.get(n.wrapping_sub(2)),
-        components.get(n.wrapping_sub(1)),
-    ) {
-        let parent_s = parent.to_str().unwrap_or_default();
-        let filename_s = filename.to_str().unwrap_or_default();
-
-        if filename_s == "logdata.LiveData.tracev3"
-            || (filename_s.ends_with(".tracev3") && TRACE_FOLDERS.contains(&parent_s))
-        {
-            return true;
-        }
+        assert_eq!(provider.logarchive_base_path(), diagnostics_root);
+        assert_eq!(provider.timesync_dir(), diagnostics_root.join("timesync"));
+        assert_eq!(provider.uuidtext_root(), uuidtext_root);
+        assert_eq!(provider.dsc_dir(), provider.uuidtext_root().join("dsc"));
+        assert_eq!(
+            provider.tracev3_files().count(),
+            collect_tracev3_paths(&diagnostics_root).len()
+        );
     }
-
-    false
 }
