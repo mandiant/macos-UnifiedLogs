@@ -57,9 +57,19 @@ path = "tests/big_sur_tests.rs"
 required-features = ["legacy"]
 
 [[test]]
+name = "big_sur_tests_compat"
+path = "tests/big_sur_tests.rs"
+required-features = ["rewrite-compat"]
+
+[[test]]
 name = "high_sierra_tests"
 path = "tests/high_sierra_tests.rs"
 required-features = ["legacy"]
+
+[[test]]
+name = "high_sierra_tests_compat"
+path = "tests/high_sierra_tests.rs"
+required-features = ["rewrite-compat"]
 
 [[test]]
 name = "monterey_tests"
@@ -67,6 +77,16 @@ path = "tests/monterey_tests.rs"
 required-features = ["legacy"]
 
 [[test]]
+name = "monterey_tests_compat"
+path = "tests/monterey_tests.rs"
+required-features = ["rewrite-compat"]
+
+[[test]]
 name = "tahoe_tests"
 path = "tests/tahoe_tests.rs"
 required-features = ["legacy"]
+
+[[test]]
+name = "tahoe_tests_compat"
+path = "tests/tahoe_tests.rs"
+required-features = ["rewrite-compat"]

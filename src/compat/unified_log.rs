@@ -152,9 +152,8 @@ pub struct FirehoseItemType {
 }
 
 /// A single resolved log entry with all fields as owned `String` types.
-///
-/// Mirrors the legacy `LogData` struct field-for-field so integration tests
-/// compile unchanged.
+/// Mirrors the legacy `LogData` struct field-for-field
+#[derive(Debug, Serialize)]
 pub struct LogData {
     pub subsystem: String,
     pub thread_id: u64,
