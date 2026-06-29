@@ -1,22 +1,19 @@
-//! Filesystem providers for rewrite parser input layouts.
+//! Filesystem providers for parser input layouts.
 //!
-//! The rewrite parser can process the same trace/support-file layout from either
+//! The parser can process the same trace/support-file layout from either
 //! a `.logarchive` directory or a live macOS system. Providers expose those
 //! roots without changing the lower-level `tracev3` parser.
 
 use std::path::{Path, PathBuf};
 
-/// Provides paths required by the rewrite parser.
-pub trait RewriteFileProvider {
+/// Provides paths required by the parser.
+pub trait FileProvider {
     /// Tracev3 files in deterministic processing order.
     fn tracev3_paths(&self) -> Vec<PathBuf>;
-
     /// Directory containing `.timesync` files.
     fn timesync_dir(&self) -> PathBuf;
-
     /// Root containing UUIDText two-character hex directories.
     fn uuidtext_root(&self) -> PathBuf;
-
     /// Directory containing DSC shared-cache string files.
     fn dsc_dir(&self) -> PathBuf;
 }
@@ -36,19 +33,16 @@ impl LogarchiveProvider {
     }
 }
 
-impl RewriteFileProvider for LogarchiveProvider {
+impl FileProvider for LogarchiveProvider {
     fn tracev3_paths(&self) -> Vec<PathBuf> {
         collect_tracev3_paths(&self.base)
     }
-
     fn timesync_dir(&self) -> PathBuf {
         self.base.join("timesync")
     }
-
     fn uuidtext_root(&self) -> PathBuf {
         self.base.clone()
     }
-
     fn dsc_dir(&self) -> PathBuf {
         self.base.join("dsc")
     }
@@ -85,7 +79,7 @@ impl Default for LiveSystemProvider {
     }
 }
 
-impl RewriteFileProvider for LiveSystemProvider {
+impl FileProvider for LiveSystemProvider {
     fn tracev3_paths(&self) -> Vec<PathBuf> {
         collect_tracev3_paths(&self.diagnostics_root)
     }

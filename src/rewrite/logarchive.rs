@@ -10,7 +10,7 @@ use log::warn;
 use uuid::Uuid;
 
 use super::dsc::RawSharedCacheStrings;
-use super::filesystem::{LiveSystemProvider, LogarchiveProvider, RewriteFileProvider};
+use super::filesystem::{LiveSystemProvider, LogarchiveProvider, FileProvider};
 use super::log_entry::LogEntry;
 use super::timesync::{RawTimesyncBoot, TimestampResolver, parse_timesync_file};
 use super::tracev3::{OversizeCache, visit_tracev3};
@@ -46,7 +46,7 @@ pub fn visit_live_system(
 /// failures are logged as warnings and skipped — only a missing timesync directory
 /// is a hard error.
 pub fn visit_provider(
-    provider: &impl RewriteFileProvider,
+    provider: &impl FileProvider,
     mut callback: impl for<'a, 'b> FnMut(LogEntry<'a, 'b>),
 ) -> Result<(), std::io::Error> {
     // 1. Timesync → TimestampResolver
