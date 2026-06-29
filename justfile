@@ -3,21 +3,19 @@ default:
 
 alias c:= check
 check:
-    cargo c --no-default-features --features rewrite --lib --bins --tests --examples
-    cargo c --no-default-features --features rewrite-compat --lib --bins --tests --examples
-    cargo c --no-default-features --features legacy --lib --bins --tests --examples
+    cargo c --no-default-features --lib --bins --tests --examples --features rewrite
+    cargo c --no-default-features --lib --bins --tests --examples --features rewrite-compat
+    cargo c --no-default-features --lib --bins --tests --examples --features legacy
 
 alias t:= test
-test: test_legacy test_rewrite test_compat
-
-test_legacy:
-    cargo t --release --no-default-features --features legacy           --lib --bins --tests
-
-test_compat:
-    cargo t --release --no-default-features --features rewrite-compat   --lib --bins --tests
+test: test_rewrite test_compat test_legacy
 
 test_rewrite:
-    cargo t --release --no-default-features --features rewrite --lib
+    cargo t --release --no-default-features --lib --bins --tests --features rewrite
+test_legacy:
+    cargo t --release --no-default-features --lib --bins --tests --features legacy
+test_compat:
+    cargo t --release --no-default-features --lib --bins --tests --features rewrite-compat
 
 
 dump_all_and_compare path="tests/test_data/system_logs_big_sur_private_enabled.logarchive":
