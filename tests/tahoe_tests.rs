@@ -174,12 +174,12 @@ fn test_build_log_tahoe() {
     // one non-oversize entry moves from String to PrivateString
     #[cfg(feature = "legacy")]
     assert_eq!(string_count, 369927);
-    #[cfg(feature = "rewrite-compat")]
+    #[cfg(feature = "rewrite")]
     assert_eq!(string_count, 370565);
 
     #[cfg(feature = "legacy")]
     assert_eq!(number_count, 382427);
-    #[cfg(feature = "rewrite-compat")]
+    #[cfg(feature = "rewrite")]
     assert_eq!(number_count, 382513);
 
     assert_eq!(precision_count, 13077);
