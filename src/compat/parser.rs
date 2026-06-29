@@ -19,15 +19,12 @@ use crate::rewrite::chunks::firehose::item::{
 use crate::rewrite::chunks::oversize::RawOversize;
 use crate::rewrite::dsc::RawSharedCacheStrings;
 use crate::rewrite::log_entry::{ItemsData, LogEntry};
-use crate::rewrite::logarchive::{
-    load_file_buffers_by_uuid, load_timesync_data, load_uuidtext_buffers,
-};
+use crate::rewrite::logarchive::load_timesync_data;
 use crate::rewrite::timesync::{RawTimesyncBoot, TimestampResolver};
 use crate::rewrite::tracev3::{OversizeCache, visit_tracev3};
 use crate::rewrite::uuidtext::RawUUIDText;
 
-use super::filesystem::{LiveSystemProvider, LogarchiveProvider};
-use super::traits::FileProvider;
+use super::traits::{FileProvider, StringCache};
 use super::unified_log::{
     CatalogInfo, CountVec, EventType, FirehoseItem, FirehoseItemType, HeaderInfo, LogData,
     OversizeEntry, ParserError, TimesyncBoot, UnifiedLogCatalogData, UnifiedLogData,
@@ -182,12 +179,12 @@ pub fn collect_timesync(
 
 /// Build fully resolved `LogData` entries from parsed tracev3 data.
 ///
-/// Loads DSC / `UUIDText` from the filesystem (cached when the provider is
-/// `LogarchiveProvider`), pre-populates oversize cache from
-/// `unified_data.oversize`, then runs `visit_tracev3` to produce entries.
+/// Loads DSC / `UUIDText` from the explicit cache, pre-populates oversize cache
+/// from `unified_data.oversize`, then runs `visit_tracev3` to produce entries.
 pub fn build_log(
     unified_data: &UnifiedLogData,
-    provider: &mut dyn FileProvider,
+    provider: &impl FileProvider,
+    cache: &impl StringCache,
     timesync_data: &HashMap<String, TimesyncBoot>,
     exclude_missing: bool,
 ) -> (Vec<LogData>, UnifiedLogData) {
@@ -201,33 +198,11 @@ pub fn build_log(
         .collect();
     let resolver = TimestampResolver::new(raw_timesync);
 
-    // 2–3. Load DSC + UUIDText buffers, using provider caches when available.
-    let fallback_dsc_dir = provider.dsc_dir();
-    let fallback_uuidtext_root = provider.uuidtext_root();
-    let provider_any = provider.as_any_mut();
+    // 2–3. Load DSC + UUIDText buffers through the explicit cache.
+    let dsc_buffers = cache.dsc_buffers(provider);
+    let uuidtext_buffers = cache.uuidtext_buffers(provider);
 
-    let (dsc_buffers_owned, uuidtext_buffers_owned);
-    let dsc_buf_ref: &[(Uuid, Vec<u8>)];
-    let uuidtext_buf_ref: &[(Uuid, Vec<u8>)];
-
-    if let Some(lap) = provider_any.downcast_mut::<LogarchiveProvider>() {
-        lap.dsc_buffers();
-        lap.uuidtext_buffers();
-        dsc_buf_ref = lap.dsc_buffers.as_deref().unwrap_or(&[]);
-        uuidtext_buf_ref = lap.uuidtext_buffers.as_deref().unwrap_or(&[]);
-    } else if let Some(live) = provider_any.downcast_mut::<LiveSystemProvider>() {
-        live.dsc_buffers();
-        live.uuidtext_buffers();
-        dsc_buf_ref = live.dsc_buffers.as_deref().unwrap_or(&[]);
-        uuidtext_buf_ref = live.uuidtext_buffers.as_deref().unwrap_or(&[]);
-    } else {
-        dsc_buffers_owned = load_file_buffers_by_uuid(&fallback_dsc_dir);
-        uuidtext_buffers_owned = load_uuidtext_buffers(&fallback_uuidtext_root);
-        dsc_buf_ref = &dsc_buffers_owned;
-        uuidtext_buf_ref = &uuidtext_buffers_owned;
-    }
-
-    let dsc_files: HashMap<Uuid, RawSharedCacheStrings<'_>> = dsc_buf_ref
+    let dsc_files: HashMap<Uuid, RawSharedCacheStrings<'_>> = dsc_buffers
         .iter()
         .filter_map(|(uuid, buffer)| {
             let (_, dsc) = RawSharedCacheStrings::parse(buffer)
@@ -237,7 +212,7 @@ pub fn build_log(
         })
         .collect();
 
-    let uuidtext_files: HashMap<Uuid, RawUUIDText<'_>> = uuidtext_buf_ref
+    let uuidtext_files: HashMap<Uuid, RawUUIDText<'_>> = uuidtext_buffers
         .iter()
         .filter_map(|(uuid, buffer)| {
             let (_, uuidtext) = RawUUIDText::parse(buffer)

@@ -6,48 +6,23 @@
 use super::traits::{FileProvider, SourceFile};
 use std::fs::File;
 use std::path::{Path, PathBuf};
-use uuid::Uuid;
 
 use crate::rewrite::filesystem::collect_tracev3_paths;
-use crate::rewrite::logarchive::{load_file_buffers_by_uuid, load_uuidtext_buffers};
 
 // ---------------------------------------------------------------------------
 // LogarchiveProvider
 // ---------------------------------------------------------------------------
 
 /// Provides tracev3 files from a logarchive directory on disk.
-///
-/// Caches DSC and `UUIDText` buffers so they are loaded from disk only once
-/// across multiple `build_log` calls.
 pub struct LogarchiveProvider {
     base: PathBuf,
-    pub(crate) dsc_buffers: Option<Vec<(Uuid, Vec<u8>)>>,
-    pub(crate) uuidtext_buffers: Option<Vec<(Uuid, Vec<u8>)>>,
 }
 
 impl LogarchiveProvider {
     pub fn new(path: &Path) -> Self {
         Self {
             base: path.to_path_buf(),
-            dsc_buffers: None,
-            uuidtext_buffers: None,
         }
-    }
-
-    /// Get DSC buffers, loading from disk on first call.
-    pub(crate) fn dsc_buffers(&mut self) -> &[(Uuid, Vec<u8>)] {
-        if self.dsc_buffers.is_none() {
-            self.dsc_buffers = Some(load_file_buffers_by_uuid(&self.base.join("dsc")));
-        }
-        self.dsc_buffers.as_ref().unwrap()
-    }
-
-    /// Get `UUIDText` buffers, loading from disk on first call.
-    pub(crate) fn uuidtext_buffers(&mut self) -> &[(Uuid, Vec<u8>)] {
-        if self.uuidtext_buffers.is_none() {
-            self.uuidtext_buffers = Some(load_uuidtext_buffers(&self.base));
-        }
-        self.uuidtext_buffers.as_ref().unwrap()
     }
 }
 
@@ -65,10 +40,6 @@ impl FileProvider for LogarchiveProvider {
     fn logarchive_base_path(&self) -> &Path {
         &self.base
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -82,8 +53,6 @@ impl FileProvider for LogarchiveProvider {
 pub struct LiveSystemProvider {
     diagnostics_root: PathBuf,
     uuidtext_root: PathBuf,
-    pub(crate) dsc_buffers: Option<Vec<(Uuid, Vec<u8>)>>,
-    pub(crate) uuidtext_buffers: Option<Vec<(Uuid, Vec<u8>)>>,
 }
 
 impl LiveSystemProvider {
@@ -100,25 +69,7 @@ impl LiveSystemProvider {
         Self {
             diagnostics_root,
             uuidtext_root,
-            dsc_buffers: None,
-            uuidtext_buffers: None,
         }
-    }
-
-    /// Get DSC buffers, loading from disk on first call.
-    pub(crate) fn dsc_buffers(&mut self) -> &[(Uuid, Vec<u8>)] {
-        if self.dsc_buffers.is_none() {
-            self.dsc_buffers = Some(load_file_buffers_by_uuid(&self.dsc_dir()));
-        }
-        self.dsc_buffers.as_ref().unwrap()
-    }
-
-    /// Get `UUIDText` buffers, loading from disk on first call.
-    pub(crate) fn uuidtext_buffers(&mut self) -> &[(Uuid, Vec<u8>)] {
-        if self.uuidtext_buffers.is_none() {
-            self.uuidtext_buffers = Some(load_uuidtext_buffers(&self.uuidtext_root()));
-        }
-        self.uuidtext_buffers.as_ref().unwrap()
     }
 }
 
@@ -149,10 +100,6 @@ impl FileProvider for LiveSystemProvider {
 
     fn dsc_dir(&self) -> PathBuf {
         self.uuidtext_root.join("dsc")
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
     }
 }
 

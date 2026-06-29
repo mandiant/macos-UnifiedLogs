@@ -5,16 +5,18 @@ use std::path::PathBuf;
 
 use common::{DumpEntry, no_output_enabled, parent_activity_id, write_entry};
 use macos_unifiedlogs::{
+    cache::MemoryStringCache,
     filesystem::LogarchiveProvider,
     parser::{build_log, collect_timesync, parse_log},
-    traits::FileProvider,
+    traits::{FileProvider, SourceFile},
     unified_log::LogData,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let path = argument_path()?;
     let no_output = no_output_enabled();
-    let mut provider = LogarchiveProvider::new(&path);
+    let provider = LogarchiveProvider::new(&path);
+    let cache = MemoryStringCache::default();
     let timesync_data = collect_timesync(&provider)?;
     let mut index = 0;
     let mut parsed_logs = Vec::new();
@@ -31,7 +33,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     for mut parsed in parsed_logs {
         parsed.oversize = oversize.clone();
-        let (entries, _) = build_log(&parsed, &mut provider, &timesync_data, false);
+        let (entries, _) = build_log(&parsed, &provider, &cache, &timesync_data, false);
 
         for entry in entries {
             if !no_output {

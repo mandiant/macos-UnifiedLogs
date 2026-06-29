@@ -5,6 +5,9 @@
 //! loading DSC / `UUIDText` / timesync data from disk.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use uuid::Uuid;
 
 /// Trait for providing unified log source files.
 pub trait FileProvider {
@@ -28,9 +31,6 @@ pub trait FileProvider {
     fn dsc_dir(&self) -> PathBuf {
         self.logarchive_base_path().join("dsc")
     }
-
-    /// Downcast support for internal caching optimizations.
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
 }
 
 /// A single source file with path information.
@@ -40,4 +40,11 @@ pub trait SourceFile {
 
     /// The source path of the file (used as evidence string).
     fn source_path(&self) -> &str;
+}
+
+/// Cache for raw DSC and UUIDText buffers used while building log entries.
+pub trait StringCache: Sync {
+    fn dsc_buffers(&self, provider: &impl FileProvider) -> Arc<Vec<(Uuid, Vec<u8>)>>;
+
+    fn uuidtext_buffers(&self, provider: &impl FileProvider) -> Arc<Vec<(Uuid, Vec<u8>)>>;
 }
