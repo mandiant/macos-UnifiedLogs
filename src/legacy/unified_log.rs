@@ -27,7 +27,7 @@ use crate::header::HeaderChunk;
 use crate::message::format_firehose_log_message;
 use crate::preamble::LogPreamble;
 use crate::timesync::TimesyncBoot;
-use crate::traits::FileProvider;
+use crate::traits::{FileProvider, StringCache};
 use crate::util::{
     encode_standard, extract_string, padding_size_8, u64_to_usize, unixepoch_to_iso,
 };
@@ -90,18 +90,28 @@ pub struct UnifiedLogCatalogData {
     pub oversize: Vec<Oversize>,
 }
 
-struct LogIterator<'a> {
+struct LogIterator<'a, P, C>
+where
+    P: FileProvider,
+    C: StringCache,
+{
     unified_log_data: &'a UnifiedLogData,
-    provider: &'a mut dyn FileProvider,
+    provider: &'a P,
+    cache: &'a C,
     timesync_data: &'a HashMap<String, TimesyncBoot>,
     exclude_missing: bool,
     message_re: Regex,
     catalog_data_iterator_index: usize,
 }
-impl<'a> LogIterator<'a> {
+impl<'a, P, C> LogIterator<'a, P, C>
+where
+    P: FileProvider,
+    C: StringCache,
+{
     fn new(
         unified_log_data: &'a UnifiedLogData,
-        provider: &'a mut dyn FileProvider,
+        provider: &'a P,
+        cache: &'a C,
         timesync_data: &'a HashMap<String, TimesyncBoot>,
         exclude_missing: bool,
     ) -> Result<Self, regex::Error> {
@@ -142,6 +152,7 @@ impl<'a> LogIterator<'a> {
         Ok(LogIterator {
             unified_log_data,
             provider,
+            cache,
             timesync_data,
             exclude_missing,
             message_re,
@@ -150,7 +161,11 @@ impl<'a> LogIterator<'a> {
     }
 }
 
-impl Iterator for LogIterator<'_> {
+impl<P, C> Iterator for LogIterator<'_, P, C>
+where
+    P: FileProvider,
+    C: StringCache,
+{
     type Item = (Vec<LogData>, UnifiedLogData);
 
     /// `catalog_data_index` == 0
@@ -234,6 +249,7 @@ impl Iterator for LogIterator<'_> {
                         let message_data = FirehoseNonActivity::get_firehose_nonactivity_strings(
                             &firehose.firehose_non_activity,
                             self.provider,
+                            self.cache,
                             u64::from(firehose.format_string_location),
                             preamble.first_number_proc_id,
                             preamble.second_number_proc_id,
@@ -342,6 +358,7 @@ impl Iterator for LogIterator<'_> {
                         let message_data = FirehoseActivity::get_firehose_activity_strings(
                             &firehose.firehose_activity,
                             self.provider,
+                            self.cache,
                             u64::from(firehose.format_string_location),
                             preamble.first_number_proc_id,
                             preamble.second_number_proc_id,
@@ -397,6 +414,7 @@ impl Iterator for LogIterator<'_> {
                         let message_data = FirehoseSignpost::get_firehose_signpost(
                             &firehose.firehose_signpost,
                             self.provider,
+                            self.cache,
                             u64::from(firehose.format_string_location),
                             preamble.first_number_proc_id,
                             preamble.second_number_proc_id,
@@ -487,6 +505,7 @@ impl Iterator for LogIterator<'_> {
                     0x3 => {
                         let message_data = FirehoseTrace::get_firehose_trace_strings(
                             self.provider,
+                            self.cache,
                             u64::from(firehose.format_string_location),
                             preamble.first_number_proc_id,
                             preamble.second_number_proc_id,
@@ -791,7 +810,8 @@ impl LogData {
     /// Return a reconstructed log entries and any leftover Unified Log entries that could not be reconstructed (data may be stored in other tracev3 files)
     pub fn build_log(
         unified_log_data: &UnifiedLogData,
-        provider: &mut dyn FileProvider,
+        provider: &impl FileProvider,
+        cache: &impl StringCache,
         timesync_data: &HashMap<String, TimesyncBoot>,
         exclude_missing: bool,
     ) -> (Vec<LogData>, UnifiedLogData) {
@@ -804,9 +824,13 @@ impl LogData {
             evidence: unified_log_data.evidence.clone(),
         };
 
-        let Ok(log_iterator) =
-            LogIterator::new(unified_log_data, provider, timesync_data, exclude_missing)
-        else {
+        let Ok(log_iterator) = LogIterator::new(
+            unified_log_data,
+            provider,
+            cache,
+            timesync_data,
+            exclude_missing,
+        ) else {
             return (log_data_vec, missing_unified_log_data_vec);
         };
         for (mut log_data, mut missing_unified_log) in log_iterator {
@@ -964,6 +988,7 @@ impl LogData {
 #[cfg(test)]
 mod tests {
     use super::{LogData, UnifiedLogData};
+    use crate::cache::MemoryStringCache;
     use crate::{
         chunks::firehose::firehose_log::Firehose,
         filesystem::LogarchiveProvider,
@@ -1050,7 +1075,8 @@ mod tests {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         test_path.push("tests/test_data/system_logs_big_sur.logarchive");
 
-        let mut provider = LogarchiveProvider::new(test_path.as_path());
+        let provider = LogarchiveProvider::new(test_path.as_path());
+        let cache = MemoryStringCache::default();
         let timesync_data = collect_timesync(&provider).unwrap();
 
         test_path.push("Persist/0000000000000002.tracev3");
@@ -1059,8 +1085,13 @@ mod tests {
         let log_data = parse_log(reader, test_path.to_str().unwrap()).unwrap();
 
         let exclude_missing = false;
-        let (results, _) =
-            LogData::build_log(&log_data, &mut provider, &timesync_data, exclude_missing);
+        let (results, _) = LogData::build_log(
+            &log_data,
+            &provider,
+            &cache,
+            &timesync_data,
+            exclude_missing,
+        );
 
         assert_eq!(results.len(), 207366);
         assert_eq!(results[0].process, "/usr/libexec/lightsoutmanagementd");

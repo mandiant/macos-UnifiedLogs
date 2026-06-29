@@ -5,12 +5,10 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-
 use log::warn;
 use uuid::Uuid;
-
 use super::dsc::RawSharedCacheStrings;
-use super::filesystem::{LiveSystemProvider, LogarchiveProvider, FileProvider};
+use super::filesystem::{FileProvider, LiveSystemProvider, LogarchiveProvider};
 use super::log_entry::LogEntry;
 use super::timesync::{RawTimesyncBoot, TimestampResolver, parse_timesync_file};
 use super::tracev3::{OversizeCache, visit_tracev3};

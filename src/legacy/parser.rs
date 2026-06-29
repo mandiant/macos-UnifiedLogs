@@ -10,7 +10,7 @@ use log::{error, info};
 use crate::dsc::SharedCacheStrings;
 use crate::error::ParserError;
 use crate::timesync::TimesyncBoot;
-use crate::traits::FileProvider;
+use crate::traits::{FileProvider, SourceFile, StringCache};
 use crate::unified_log::{LogData, UnifiedLogData};
 use crate::uuidtext::UUIDText;
 use std::collections::HashMap;
@@ -41,12 +41,14 @@ pub fn parse_log(mut reader: impl Read, evidence: &str) -> Result<UnifiedLogData
 /// # Example
 /// ```rust
 ///    use macos_unifiedlogs::filesystem::LogarchiveProvider;
-///    use macos_unifiedlogs::traits::FileProvider;
+///    use macos_unifiedlogs::traits::{FileProvider, SourceFile};
 ///    use macos_unifiedlogs::parser::collect_timesync;
 ///    use macos_unifiedlogs::iterator::UnifiedLogIterator;
 ///    use macos_unifiedlogs::unified_log::UnifiedLogData;
 ///    use macos_unifiedlogs::parser::build_log;
+///    use macos_unifiedlogs::cache::MemoryStringCache;
 ///    use std::path::PathBuf;
+///    use std::io::Read;
 ///
 ///    let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 ///    test_path.push("tests/test_data/system_logs_big_sur.logarchive");
@@ -60,6 +62,8 @@ pub fn parse_log(mut reader: impl Read, evidence: &str) -> Result<UnifiedLogData
 ///        oversize: Vec::new(),
 ///        evidence: String::new(),
 ///    };
+///
+///    let cache = MemoryStringCache::default();
 ///    for mut entry in provider.tracev3_files() {
 ///      println!("TraceV3 file: {}", entry.source_path());
 ///      let mut buf = Vec::new();
@@ -75,7 +79,8 @@ pub fn parse_log(mut reader: impl Read, evidence: &str) -> Result<UnifiedLogData
 ///        chunk.oversize.append(&mut oversize_strings.oversize);
 ///        let (results, _missing_logs) = build_log(
 ///            &chunk,
-///            &mut provider,
+///            &provider,
+///            &cache,
 ///            &timesync_data,
 ///            exclude,
 ///        );
@@ -88,15 +93,22 @@ pub fn parse_log(mut reader: impl Read, evidence: &str) -> Result<UnifiedLogData
 /// ```
 pub fn build_log(
     unified_data: &UnifiedLogData,
-    provider: &mut dyn FileProvider,
+    provider: &impl FileProvider,
+    cache: &impl StringCache,
     timesync_data: &HashMap<String, TimesyncBoot>,
     exclude_missing: bool,
 ) -> (Vec<LogData>, UnifiedLogData) {
-    LogData::build_log(unified_data, provider, timesync_data, exclude_missing)
+    LogData::build_log(
+        unified_data,
+        provider,
+        cache,
+        timesync_data,
+        exclude_missing,
+    )
 }
 
 /// Parse all UUID files in provided directory. The directory should follow the same layout as the live system (ex: path/to/files/\<two character UUID\>/\<remaining UUID name\>)
-pub fn collect_strings(provider: &dyn FileProvider) -> Result<Vec<UUIDText>, ParserError> {
+pub fn collect_strings(provider: &impl FileProvider) -> Result<Vec<UUIDText>, ParserError> {
     let mut uuidtext_vec: Vec<UUIDText> = Vec::new();
     // Start process to read a directory containing subdirectories that contain the uuidtext files
     for mut source in provider.uuidtext_files() {
@@ -130,7 +142,7 @@ pub fn collect_strings(provider: &dyn FileProvider) -> Result<Vec<UUIDText>, Par
 
 /// Parse all dsc uuid files in provided directory
 pub fn collect_shared_strings(
-    provider: &dyn FileProvider,
+    provider: &impl FileProvider,
 ) -> Result<Vec<SharedCacheStrings>, ParserError> {
     let mut shared_strings_vec: Vec<SharedCacheStrings> = Vec::new();
     // Start process to read and parse uuid files related to dsc
@@ -171,7 +183,7 @@ pub fn collect_shared_strings(
 ///    let timesync_data = collect_timesync(&provider).unwrap();
 /// ```
 pub fn collect_timesync(
-    provider: &dyn FileProvider,
+    provider: &impl FileProvider,
 ) -> Result<HashMap<String, TimesyncBoot>, ParserError> {
     let mut timesync_data: HashMap<String, TimesyncBoot> = HashMap::new();
     // Start process to read and parse all timesync files
@@ -411,7 +423,8 @@ mod tests {
     fn test_build_log() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         test_path.push("tests/test_data/system_logs_big_sur.logarchive");
-        let mut provider = LogarchiveProvider::new(test_path.as_path());
+        let provider = LogarchiveProvider::new(test_path.as_path());
+        let cache = crate::cache::MemoryStringCache::default();
 
         test_path.push("Persist/0000000000000002.tracev3");
         let handle = std::fs::File::open(&test_path).unwrap();
@@ -420,7 +433,13 @@ mod tests {
         let timesync_data = collect_timesync(&provider).unwrap();
 
         let exclude_missing = false;
-        let (results, _) = build_log(&log_data, &mut provider, &timesync_data, exclude_missing);
+        let (results, _) = build_log(
+            &log_data,
+            &provider,
+            &cache,
+            &timesync_data,
+            exclude_missing,
+        );
         assert_eq!(results.len(), 207366);
         assert_eq!(results[10].process, "/usr/libexec/lightsoutmanagementd");
         assert_eq!(results[10].subsystem, "com.apple.lom");

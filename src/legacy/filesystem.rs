@@ -2,9 +2,8 @@ use crate::dsc::SharedCacheStrings;
 use crate::traits::{FileProvider, SourceFile};
 use crate::uuidtext::UUIDText;
 use log::error;
-use std::collections::HashMap;
 use std::fs::File;
-use std::io::{Error, ErrorKind};
+use std::io::{Error, ErrorKind, Read};
 use std::path::{Component, Path, PathBuf};
 use walkdir::WalkDir;
 
@@ -23,8 +22,8 @@ impl LocalFile {
 }
 
 impl SourceFile for LocalFile {
-    fn reader(&mut self) -> Box<&mut dyn std::io::Read> {
-        Box::new(&mut self.reader)
+    fn reader(&mut self) -> impl std::io::Read {
+        &mut self.reader
     }
 
     fn source_path(&self) -> &str {
@@ -42,17 +41,11 @@ impl SourceFile for LocalFile {
 ///    let provider = LiveSystemProvider::default();
 /// ```
 #[derive(Default, Debug)]
-pub struct LiveSystemProvider {
-    pub(crate) uuidtext_cache: HashMap<String, UUIDText>,
-    pub(crate) dsc_cache: HashMap<String, SharedCacheStrings>,
-}
+pub struct LiveSystemProvider;
 
 impl LiveSystemProvider {
     pub fn new() -> Self {
-        Self {
-            uuidtext_cache: HashMap::new(),
-            dsc_cache: HashMap::new(),
-        }
+        Self
     }
 }
 
@@ -110,23 +103,23 @@ impl From<&Path> for LogFileType {
 }
 
 impl FileProvider for LiveSystemProvider {
-    fn tracev3_files(&self) -> Box<dyn Iterator<Item = Box<dyn SourceFile>>> {
+    fn tracev3_files(&self) -> impl Iterator<Item = impl SourceFile> {
         let path = PathBuf::from("/private/var/db/diagnostics");
-        sorted_local_files(
+        sort_files(
             WalkDir::new(path)
                 .into_iter()
-                .filter_map(|entry| entry.ok())
+                .filter_map(Result::ok)
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::TraceV3))
                 .map(|entry| entry.path().to_path_buf()),
         )
     }
 
-    fn uuidtext_files(&self) -> Box<dyn Iterator<Item = Box<dyn SourceFile>>> {
+    fn uuidtext_files(&self) -> impl Iterator<Item = impl SourceFile> {
         let path = PathBuf::from("/private/var/db/uuidtext");
-        sorted_local_files(
+        sort_files(
             WalkDir::new(path)
                 .into_iter()
-                .filter_map(|entry| entry.ok())
+                .filter_map(Result::ok)
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::UUIDText))
                 .map(|entry| entry.path().to_path_buf()),
         )
@@ -135,10 +128,8 @@ impl FileProvider for LiveSystemProvider {
     fn read_uuidtext(&self, uuid: &str) -> Result<UUIDText, Error> {
         let uuid_len = 32;
         let uuid = if uuid.len() == uuid_len - 1 {
-            // UUID starts with 0 which was not included in the string
             &format!("0{uuid}")
         } else if uuid.len() == uuid_len - 2 {
-            // UUID starts with 00 which was not included in the string
             &format!("00{uuid}")
         } else if uuid.len() == uuid_len {
             uuid
@@ -153,7 +144,6 @@ impl FileProvider for LiveSystemProvider {
         let filename = &uuid[2..];
 
         let mut path = PathBuf::from("/private/var/db/uuidtext");
-
         path.push(dir_name);
         path.push(filename);
 
@@ -178,64 +168,11 @@ impl FileProvider for LiveSystemProvider {
         Ok(uuid_text)
     }
 
-    fn cached_uuidtext(&self, uuid: &str) -> Option<&UUIDText> {
-        self.uuidtext_cache.get(uuid)
-    }
-
-    fn update_uuid(&mut self, uuid: &str, uuid2: &str) {
-        let status = match self.read_uuidtext(uuid) {
-            Ok(result) => result,
-            Err(_err) => return,
-        };
-        // Keep a cache of 30 UUIDText files
-        if self.uuidtext_cache.len() > 30 {
-            for key in self
-                .uuidtext_cache
-                .keys()
-                .take(5)
-                .cloned()
-                .collect::<Vec<String>>()
-            {
-                if key == uuid || key == uuid2 {
-                    continue;
-                }
-                let key = key.clone();
-                self.uuidtext_cache.remove(&key);
-            }
-        }
-        self.uuidtext_cache.insert(uuid.to_string(), status);
-    }
-
-    fn update_dsc(&mut self, uuid: &str, uuid2: &str) {
-        let status = match self.read_dsc_uuid(uuid) {
-            Ok(result) => result,
-            Err(_err) => return,
-        };
-        // Keep a cache of 2 DSC UUID files. These files are larger than typical UUID files. ~30MB - ~150MB
-        // However, there are only a few of them. ~5 - 6
-        while self.dsc_cache.len() > 2 {
-            if let Some(key) = self.dsc_cache.keys().next() {
-                if key == uuid || key == uuid2 {
-                    continue;
-                }
-                let key = key.clone();
-                self.dsc_cache.remove(&key);
-            }
-        }
-        self.dsc_cache.insert(uuid.to_string(), status);
-    }
-
-    fn cached_dsc(&self, uuid: &str) -> Option<&SharedCacheStrings> {
-        self.dsc_cache.get(uuid)
-    }
-
     fn read_dsc_uuid(&self, uuid: &str) -> Result<SharedCacheStrings, Error> {
         let uuid_len = 32;
         let uuid = if uuid.len() == uuid_len - 1 {
-            // UUID starts with 0 which was not included in the string
             &format!("0{uuid}")
         } else if uuid.len() == uuid_len - 2 {
-            // UUID starts with 00 which was not included in the string
             &format!("00{uuid}")
         } else if uuid.len() == uuid_len {
             uuid
@@ -270,9 +207,9 @@ impl FileProvider for LiveSystemProvider {
         Ok(uuid_text)
     }
 
-    fn dsc_files(&self) -> Box<dyn Iterator<Item = Box<dyn SourceFile>>> {
+    fn dsc_files(&self) -> impl Iterator<Item = impl SourceFile> {
         let path = PathBuf::from("/private/var/db/uuidtext/dsc");
-        sorted_local_files(
+        sort_files(
             WalkDir::new(path)
                 .into_iter()
                 .filter_map(|entry| entry.ok())
@@ -281,12 +218,12 @@ impl FileProvider for LiveSystemProvider {
         )
     }
 
-    fn timesync_files(&self) -> Box<dyn Iterator<Item = Box<dyn SourceFile>>> {
+    fn timesync_files(&self) -> impl Iterator<Item = impl SourceFile> {
         let path = PathBuf::from("/private/var/db/diagnostics/timesync");
-        sorted_local_files(
+        sort_files(
             WalkDir::new(path)
                 .into_iter()
-                .filter_map(|entry| entry.ok())
+                .filter_map(Result::ok)
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::Timesync))
                 .map(|entry| entry.path().to_path_buf()),
         )
@@ -306,16 +243,12 @@ impl FileProvider for LiveSystemProvider {
 /// ```
 pub struct LogarchiveProvider {
     base: PathBuf,
-    pub(crate) uuidtext_cache: HashMap<String, UUIDText>,
-    pub(crate) dsc_cache: HashMap<String, SharedCacheStrings>,
 }
 
 impl LogarchiveProvider {
     pub fn new(path: &Path) -> Self {
         Self {
             base: path.to_path_buf(),
-            uuidtext_cache: HashMap::new(),
-            dsc_cache: HashMap::new(),
         }
     }
 }
@@ -325,7 +258,7 @@ impl FileProvider for LogarchiveProvider {
     /// # Example
     /// ```rust
     ///    use macos_unifiedlogs::filesystem::LogarchiveProvider;
-    ///    use macos_unifiedlogs::traits::FileProvider;
+    ///    use macos_unifiedlogs::traits::{FileProvider, SourceFile};
     ///    use macos_unifiedlogs::parser::collect_timesync;
     ///    use std::path::PathBuf;
     ///
@@ -336,21 +269,21 @@ impl FileProvider for LogarchiveProvider {
     ///      println!("TraceV3 file: {}", entry.source_path());
     ///    }
     /// ```
-    fn tracev3_files(&self) -> Box<dyn Iterator<Item = Box<dyn SourceFile>>> {
-        sorted_local_files(
+    fn tracev3_files(&self) -> impl Iterator<Item = impl SourceFile> {
+        Box::new(
             WalkDir::new(&self.base)
                 .into_iter()
-                .filter_map(|entry| entry.ok())
+                .filter_map(Result::ok)
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::TraceV3))
-                .map(|entry| entry.path().to_path_buf()),
+                .filter_map(|entry| LocalFile::new(entry.path()).ok()),
         )
     }
 
-    fn uuidtext_files(&self) -> Box<dyn Iterator<Item = Box<dyn SourceFile>>> {
-        sorted_local_files(
+    fn uuidtext_files(&self) -> impl Iterator<Item = impl SourceFile> {
+        sort_files(
             WalkDir::new(&self.base)
                 .into_iter()
-                .filter_map(|entry| entry.ok())
+                .filter_map(Result::ok)
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::UUIDText))
                 .map(|entry| entry.path().to_path_buf()),
         )
@@ -359,10 +292,8 @@ impl FileProvider for LogarchiveProvider {
     fn read_uuidtext(&self, uuid: &str) -> Result<UUIDText, Error> {
         let uuid_len = 32;
         let uuid = if uuid.len() == uuid_len - 1 {
-            // UUID starts with 0 which was not included in the string
             &format!("0{uuid}")
         } else if uuid.len() == uuid_len - 2 {
-            // UUID starts with 00 which was not included in the string
             &format!("00{uuid}")
         } else if uuid.len() == uuid_len {
             uuid
@@ -404,10 +335,8 @@ impl FileProvider for LogarchiveProvider {
     fn read_dsc_uuid(&self, uuid: &str) -> Result<SharedCacheStrings, Error> {
         let uuid_len = 32;
         let uuid = if uuid.len() == uuid_len - 1 {
-            // UUID starts with 0 which was not included in the string
             &format!("0{uuid}")
         } else if uuid.len() == uuid_len - 2 {
-            // UUID starts with 00 which was not included in the string
             &format!("00{uuid}")
         } else if uuid.len() == uuid_len {
             uuid
@@ -443,72 +372,21 @@ impl FileProvider for LogarchiveProvider {
         Ok(uuid_text)
     }
 
-    fn cached_uuidtext(&self, uuid: &str) -> Option<&UUIDText> {
-        self.uuidtext_cache.get(uuid)
-    }
-
-    fn cached_dsc(&self, uuid: &str) -> Option<&SharedCacheStrings> {
-        self.dsc_cache.get(uuid)
-    }
-
-    fn dsc_files(&self) -> Box<dyn Iterator<Item = Box<dyn SourceFile>>> {
-        sorted_local_files(
+    fn dsc_files(&self) -> impl Iterator<Item = impl SourceFile> {
+        sort_files(
             WalkDir::new(&self.base)
                 .into_iter()
-                .filter_map(|entry| entry.ok())
+                .filter_map(Result::ok)
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::Dsc))
                 .map(|entry| entry.path().to_path_buf()),
         )
     }
 
-    fn update_uuid(&mut self, uuid: &str, uuid2: &str) {
-        let status = match self.read_uuidtext(uuid) {
-            Ok(result) => result,
-            Err(_err) => return,
-        };
-        // Keep a cache of 30 UUIDText files
-        if self.uuidtext_cache.len() > 30 {
-            for key in self
-                .uuidtext_cache
-                .keys()
-                .take(5)
-                .cloned()
-                .collect::<Vec<String>>()
-            {
-                if key == uuid || key == uuid2 {
-                    continue;
-                }
-                let key = key.clone();
-                self.uuidtext_cache.remove(&key);
-            }
-        }
-        self.uuidtext_cache.insert(uuid.to_string(), status);
-    }
-
-    fn update_dsc(&mut self, uuid: &str, uuid2: &str) {
-        let status = match self.read_dsc_uuid(uuid) {
-            Ok(result) => result,
-            Err(_err) => return,
-        };
-        // Keep a cache of 2 DSC UUID files. These files are larger than typical UUID files. ~30MB - ~150MB
-        // However, there are only a few of them. ~5 - 6
-        while self.dsc_cache.len() > 2 {
-            if let Some(key) = self.dsc_cache.keys().next() {
-                if key == uuid || key == uuid2 {
-                    continue;
-                }
-                let key = key.clone();
-                self.dsc_cache.remove(&key);
-            }
-        }
-        self.dsc_cache.insert(uuid.to_string(), status);
-    }
-
-    fn timesync_files(&self) -> Box<dyn Iterator<Item = Box<dyn SourceFile>>> {
-        sorted_local_files(
+    fn timesync_files(&self) -> impl Iterator<Item = impl SourceFile> {
+        sort_files(
             WalkDir::new(&self.base)
                 .into_iter()
-                .filter_map(|entry| entry.ok())
+                .filter_map(Result::ok)
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::Timesync))
                 .map(|entry| entry.path().to_path_buf()),
         )
@@ -519,16 +397,12 @@ impl FileProvider for LogarchiveProvider {
 /// in order to have deterministic output of the parser.
 /// Not having it would cause parsing differences across systems
 /// (macOS does not guarantee order of files returned by the filesystem).
-fn sorted_local_files(
-    paths: impl Iterator<Item = PathBuf>,
-) -> Box<dyn Iterator<Item = Box<dyn SourceFile>>> {
+fn sort_files(paths: impl Iterator<Item = PathBuf>) -> impl Iterator<Item = LocalFile> {
     let mut paths = paths.collect::<Vec<_>>();
     paths.sort();
-    Box::new(
-        paths
-            .into_iter()
-            .filter_map(|path| Some(Box::new(LocalFile::new(&path).ok()?) as Box<dyn SourceFile>)),
-    )
+    paths
+        .into_iter()
+        .filter_map(|path| Some(LocalFile::new(&path).ok()?))
 }
 
 #[cfg(test)]
