@@ -140,12 +140,17 @@ pub fn parse_log(mut reader: impl Read, evidence: &str) -> Result<UnifiedLogData
         });
     }
 
+    let mut header = Vec::new();
+    if headers > 0 {
+        header.push(HeaderInfo::with_raw_data(buf.clone()));
+        header.extend((1..headers).map(|_| HeaderInfo::new()));
+    }
+
     Ok(UnifiedLogData {
-        header: (0..headers).map(|_| HeaderInfo).collect(),
+        header,
         catalog_data: catalog_datas,
         oversize: oversize_entries,
         evidence: evidence.to_string(),
-        raw_data: buf,
     })
 }
 
@@ -255,8 +260,14 @@ pub fn build_log(
     let mut logs = Vec::new();
     let evidence = unified_data.evidence.clone();
 
+    let raw_data = unified_data
+        .header
+        .iter()
+        .find_map(|header| header.raw_data.as_deref())
+        .unwrap_or(&[]);
+
     if let Err(e) = visit_tracev3(
-        &unified_data.raw_data,
+        raw_data,
         &resolver,
         &dsc_files,
         &uuidtext_files,
@@ -318,7 +329,6 @@ pub fn build_log(
         catalog_data: Vec::new(),
         oversize: Vec::new(),
         evidence: unified_data.evidence.clone(),
-        raw_data: Vec::new(),
     };
 
     (logs, remaining)

@@ -66,7 +66,22 @@ impl CountVec {
 // ---------------------------------------------------------------------------
 
 /// Parsed tracev3 file header. Tests only check `header.len()`.
-pub struct HeaderInfo;
+#[derive(Debug)]
+pub struct HeaderInfo {
+    pub(crate) raw_data: Option<Vec<u8>>,
+}
+
+impl HeaderInfo {
+    pub(crate) fn new() -> Self {
+        Self { raw_data: None }
+    }
+
+    pub(crate) fn with_raw_data(raw_data: Vec<u8>) -> Self {
+        Self {
+            raw_data: Some(raw_data),
+        }
+    }
+}
 
 /// Catalog process info container. Tests check
 /// `catalog.catalog_process_info_entries.len()`.
@@ -110,8 +125,6 @@ pub struct UnifiedLogData {
     pub catalog_data: Vec<UnifiedLogCatalogData>,
     pub oversize: Vec<OversizeEntry>,
     pub evidence: String,
-    /// Stored tracev3 bytes for `build_log` to process.
-    pub(crate) raw_data: Vec<u8>,
 }
 
 // ---------------------------------------------------------------------------
