@@ -4,6 +4,7 @@
 //! then processes all tracev3 files in order, emitting `LogEntry` via callback.
 
 use super::dsc::RawSharedCacheStrings;
+use super::error::ParseError;
 use super::filesystem::{FileProvider, LiveSystemProvider, LogarchiveProvider};
 use super::log_entry::LogEntry;
 use super::timesync::{RawTimesyncBoot, TimestampResolver, parse_timesync_file};
@@ -13,6 +14,14 @@ use log::warn;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
+
+#[derive(thiserror::Error, Debug)]
+pub enum VisitTracev3FileError {
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error(transparent)]
+    Parse(#[from] ParseError),
+}
 
 /// Process all tracev3 files in a logarchive directory, emitting log entries via callback.
 ///
@@ -82,6 +91,56 @@ pub fn visit_provider(
         ) {
             warn!("Failed to process {}: {e}", tracev3_path.display());
         }
+    }
+
+    Ok(())
+}
+
+/// Helper function to rocess one tracev3 file from a logarchive, emitting log entries via callback.
+///
+/// The tracev3 path is resolved relative to `logarchive_path`. This helper loads
+/// the logarchive's timesync, DSC, and UUIDText support files before visiting the
+/// selected tracev3 file.
+pub fn visit_logarchive_tracev3_file(
+    logarchive_path: &Path,
+    tracev3_path: impl AsRef<Path>,
+    mut callback: impl for<'a, 'b> FnMut(LogEntry<'a, 'b>),
+) -> Result<(), VisitTracev3FileError> {
+    visit_logarchive_tracev3_files(logarchive_path, &[tracev3_path], |_, entry| {
+        callback(entry);
+    })
+}
+
+/// Helper function to process selected tracev3 files from a logarchive in the provided order.
+///
+/// Tracev3 paths are resolved relative to `logarchive_path`. A single oversize
+/// cache is shared across all files, so callers can visit neighboring Persist,
+/// Special, and LiveData files when oversize payloads are referenced across files.
+/// The callback receives the zero-based index of the tracev3 path that produced
+/// each entry.
+pub fn visit_logarchive_tracev3_files<P: AsRef<Path>>(
+    logarchive_path: &Path,
+    tracev3_paths: &[P],
+    mut callback: impl for<'a, 'b> FnMut(usize, LogEntry<'a, 'b>),
+) -> Result<(), VisitTracev3FileError> {
+    let timesync_data = load_timesync_data(&logarchive_path.join("timesync"))?;
+    let resolver = TimestampResolver::new(timesync_data);
+    let dsc_buffers = load_file_buffers_by_uuid(&logarchive_path.join("dsc"));
+    let dsc_files = parse_dsc_buffers(&dsc_buffers);
+    let uuidtext_buffers = load_uuidtext_buffers(logarchive_path);
+    let uuidtext_files = parse_uuidtext_buffers(&uuidtext_buffers);
+    let mut oversize_cache = OversizeCache::new();
+
+    for (index, tracev3_path) in tracev3_paths.iter().enumerate() {
+        let data = std::fs::read(logarchive_path.join(tracev3_path))?;
+        visit_tracev3(
+            &data,
+            &resolver,
+            &dsc_files,
+            &uuidtext_files,
+            &mut oversize_cache,
+            |entry| callback(index, entry),
+        )?;
     }
 
     Ok(())

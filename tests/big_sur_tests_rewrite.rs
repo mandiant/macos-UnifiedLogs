@@ -7,13 +7,8 @@
 
 use macos_unifiedlogs::{
     chunk::{Chunk, ChunksReader},
-    log_entry::{EventType, LogEntry, LogType},
-    logarchive::{
-        load_file_buffers_by_uuid, load_timesync_data, load_uuidtext_buffers, parse_dsc_buffers,
-        parse_uuidtext_buffers, visit_logarchive,
-    },
-    timesync::TimestampResolver,
-    tracev3::{OversizeCache, visit_tracev3},
+    log_entry::{EventType, LogType},
+    logarchive::{visit_logarchive, visit_logarchive_tracev3_file, visit_logarchive_tracev3_files},
 };
 use regex::Regex;
 use std::path::PathBuf;
@@ -74,7 +69,7 @@ fn test_big_sur_livedata() {
     test_path.push("tests/test_data/system_logs_big_sur.logarchive");
 
     let mut count = 0;
-    visit_trace_file(&test_path, "logdata.LiveData.tracev3", |results| {
+    visit_logarchive_tracev3_file(&test_path, "logdata.LiveData.tracev3", |results| {
         count += 1;
 
         let message = results.message();
@@ -102,7 +97,8 @@ fn test_big_sur_livedata() {
             assert_eq!(results.boot_uuid, uuid!("A2A9017676CF421C84DC9BBD6263FEE7"));
             assert_eq!(results.timezone_name, "Pacific");
         }
-    });
+    })
+    .unwrap();
 
     assert_eq!(count, 101566);
 }
@@ -113,7 +109,7 @@ fn test_build_log_big_sur() {
     test_path.push("tests/test_data/system_logs_big_sur.logarchive");
 
     let mut count = 0;
-    visit_trace_file(&test_path, "Persist/0000000000000004.tracev3", |results| {
+    visit_logarchive_tracev3_file(&test_path, "Persist/0000000000000004.tracev3", |results| {
         if count == 0 {
             assert_eq!(results.process, Some("/usr/libexec/opendirectoryd"));
             assert_eq!(results.subsystem, Some("com.apple.opendirectoryd"));
@@ -146,7 +142,8 @@ fn test_build_log_big_sur() {
             );
         }
         count += 1;
-    });
+    })
+    .unwrap();
 
     assert_eq!(count, 110953);
 }
@@ -457,7 +454,7 @@ fn test_parse_all_logs_private_with_public_mix_big_sur_single_file() {
     let mut hex_count = 0;
     let mut dns = 0;
     let mut public_private_mixture = false;
-    visit_trace_file(&test_path, "Persist/0000000000000009.tracev3", |result| {
+    visit_logarchive_tracev3_file(&test_path, "Persist/0000000000000009.tracev3", |result| {
         results_len += 1;
         let message = result.message();
         if message.contains("7FAE25804F50") {
@@ -474,7 +471,8 @@ fn test_parse_all_logs_private_with_public_mix_big_sur_single_file() {
         {
             public_private_mixture = true
         }
-    });
+    })
+    .unwrap();
 
     assert_eq!(results_len, 91567);
     assert_eq!(hex_count, 4);
@@ -495,7 +493,7 @@ fn test_parse_all_logs_private_with_public_mix_big_sur_special_file() {
     let mut info = 0;
     let mut error = 0;
 
-    visit_trace_file(&test_path, "Special/0000000000000008.tracev3", |result| {
+    visit_logarchive_tracev3_file(&test_path, "Special/0000000000000008.tracev3", |result| {
         results_len += 1;
         if result.event_type == EventType::Statedump {
             statedump += 1;
@@ -508,7 +506,8 @@ fn test_parse_all_logs_private_with_public_mix_big_sur_special_file() {
         } else if result.log_type == LogType::Error {
             error += 1;
         }
-    });
+    })
+    .unwrap();
 
     assert_eq!(results_len, 2238);
     assert_eq!(statedump, 1);
@@ -526,12 +525,13 @@ fn test_big_sur_missing_oversize_strings() {
     let mut data_len = 0;
     let mut missing_strings = 0;
     // livedata may have oversize string data in other tracev3 on disk
-    visit_trace_file(&test_path, "logdata.LiveData.tracev3", |results| {
+    visit_logarchive_tracev3_file(&test_path, "logdata.LiveData.tracev3", |results| {
         data_len += 1;
         if results.message().contains("<Missing message data>") {
             missing_strings += 1;
         }
-    });
+    })
+    .unwrap();
 
     assert_eq!(data_len, 101566);
     // There should be only 29 entries that have actual missing data
@@ -546,7 +546,7 @@ fn test_big_sur_oversize_strings_in_another_file() {
 
     let mut data_len = 0;
     let mut missing_strings = 0;
-    visit_trace_files(
+    visit_logarchive_tracev3_files(
         &test_path,
         &[
             "Persist/0000000000000005.tracev3",
@@ -562,47 +562,11 @@ fn test_big_sur_oversize_strings_in_another_file() {
                 missing_strings += 1;
             }
         },
-    );
+    )
+    .unwrap();
 
     assert_eq!(data_len, 101566);
     // 29 log entries actually have missing data
     // Apple displays as: <decode: missing data>
     assert_eq!(missing_strings, 29);
-}
-
-fn visit_trace_file(
-    logarchive_path: &PathBuf,
-    trace_relative_path: &str,
-    mut callback: impl for<'a, 'b> FnMut(LogEntry<'a, 'b>),
-) {
-    visit_trace_files(logarchive_path, &[trace_relative_path], |_, entry| {
-        callback(entry);
-    });
-}
-
-fn visit_trace_files(
-    logarchive_path: &PathBuf,
-    trace_relative_paths: &[&str],
-    mut callback: impl for<'a, 'b> FnMut(usize, LogEntry<'a, 'b>),
-) {
-    let timesync_data = load_timesync_data(&logarchive_path.join("timesync")).unwrap();
-    let resolver = TimestampResolver::new(timesync_data);
-    let dsc_buffers = load_file_buffers_by_uuid(&logarchive_path.join("dsc"));
-    let dsc_files = parse_dsc_buffers(&dsc_buffers);
-    let uuidtext_buffers = load_uuidtext_buffers(logarchive_path);
-    let uuidtext_files = parse_uuidtext_buffers(&uuidtext_buffers);
-    let mut oversize_cache = OversizeCache::new();
-
-    for (index, trace_relative_path) in trace_relative_paths.iter().enumerate() {
-        let data = std::fs::read(logarchive_path.join(trace_relative_path)).unwrap();
-        visit_tracev3(
-            &data,
-            &resolver,
-            &dsc_files,
-            &uuidtext_files,
-            &mut oversize_cache,
-            |entry| callback(index, entry),
-        )
-        .unwrap();
-    }
 }

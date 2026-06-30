@@ -9,7 +9,7 @@ description = "A library to help parse macOS UnifiedLogs"
 keywords = ["forensics", "macOS", "unifiedlog"]
 
 [features]
-default = ["legacy"]
+default = ["rewrite"]
 legacy = []
 rewrite = []
 rewrite-compat = ["rewrite"]
