@@ -13,6 +13,7 @@ use super::uuidtext::RawUUIDText;
 use log::warn;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use uuid::Uuid;
 
 #[derive(thiserror::Error, Debug)]
@@ -85,6 +86,7 @@ pub fn visit_provider(
             &dsc_files,
             &uuidtext_files,
             &mut oversize_cache,
+            Rc::new(tracev3_path.clone()),
             |entry| {
                 callback(entry);
             },
@@ -96,7 +98,7 @@ pub fn visit_provider(
     Ok(())
 }
 
-/// Helper function to rocess one tracev3 file from a logarchive, emitting log entries via callback.
+/// Helper function to process one tracev3 file from a logarchive, emitting log entries via callback.
 ///
 /// The tracev3 path is resolved relative to `logarchive_path`. This helper loads
 /// the logarchive's timesync, DSC, and UUIDText support files before visiting the
@@ -132,13 +134,15 @@ pub fn visit_logarchive_tracev3_files<P: AsRef<Path>>(
     let mut oversize_cache = OversizeCache::new();
 
     for (index, tracev3_path) in tracev3_paths.iter().enumerate() {
-        let data = std::fs::read(logarchive_path.join(tracev3_path))?;
+        let evidence = logarchive_path.join(tracev3_path);
+        let data = std::fs::read(&evidence)?;
         visit_tracev3(
             &data,
             &resolver,
             &dsc_files,
             &uuidtext_files,
             &mut oversize_cache,
+            Rc::new(evidence),
             |entry| callback(index, entry),
         )?;
     }

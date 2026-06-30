@@ -5,6 +5,8 @@
 
 use std::collections::HashMap;
 use std::io::Read;
+use std::path::PathBuf;
+use std::rc::Rc;
 
 use base64::Engine;
 use log::{error, info, warn};
@@ -233,8 +235,6 @@ pub fn build_log(
 
     // 5. Process tracev3 data via the rewrite pipeline
     let mut logs = Vec::new();
-    let evidence = unified_data.evidence.clone();
-
     let raw_data = unified_data
         .header
         .iter()
@@ -247,6 +247,7 @@ pub fn build_log(
         &dsc_files,
         &uuidtext_files,
         &mut oversize_cache,
+        Rc::new(PathBuf::from(&unified_data.evidence)),
         |entry| {
             let message = entry.message();
 
@@ -291,7 +292,7 @@ pub fn build_log(
                 message_entries,
                 timestamp,
                 message_flags: entry.message_flags.clone(),
-                evidence: evidence.clone(),
+                evidence: entry.evidence.to_string_lossy().into_owned(),
             });
         },
     ) {

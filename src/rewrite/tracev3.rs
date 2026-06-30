@@ -20,6 +20,7 @@ use super::uuidtext::RawUUIDText;
 use log::warn;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::rc::Rc;
 use uuid::Uuid;
 
@@ -63,10 +64,12 @@ impl OversizeCache {
 // Public API
 // ---------------------------------------------------------------------------
 
-/// Process a single tracev3 file buffer, emitting `LogEntry` via callback.
+
+/// Process a single tracev3 file buffer.
 ///
 /// The callback receives each log entry as it is produced. Entry-level errors
 /// (bad body parse, missing oversize data) are logged as warnings and skipped.
+/// The same evidence path is attached to every emitted `LogEntry`.
 #[allow(clippy::too_many_arguments)]
 pub fn visit_tracev3<'a>(
     data: &'a [u8],
@@ -74,6 +77,7 @@ pub fn visit_tracev3<'a>(
     dsc_files: &'a HashMap<Uuid, RawSharedCacheStrings<'a>>,
     uuidtext_files: &'a HashMap<Uuid, RawUUIDText<'a>>,
     oversize_cache: &mut OversizeCache,
+    evidence: Rc<PathBuf>,
     mut callback: impl for<'b> FnMut(LogEntry<'a, 'b>),
 ) -> Result<(), ParseError> {
     let mut current_header: Option<RawHeaderChunk<'a>> = None;
@@ -95,6 +99,7 @@ pub fn visit_tracev3<'a>(
                     &mut deferred_readers,
                     &current_header,
                     resolver,
+                    &evidence,
                     &mut callback,
                 );
                 current_header = Some(h);
@@ -106,6 +111,7 @@ pub fn visit_tracev3<'a>(
                     &mut deferred_readers,
                     &current_header,
                     resolver,
+                    &evidence,
                     &mut callback,
                 );
                 current_catalog = Some(c);
@@ -153,6 +159,7 @@ pub fn visit_tracev3<'a>(
                                 dsc_files,
                                 uuidtext_files,
                                 oversize_cache,
+                                &evidence,
                                 &mut callback,
                             );
                         }
@@ -176,6 +183,7 @@ pub fn visit_tracev3<'a>(
         &mut deferred_readers,
         &current_header,
         resolver,
+        &evidence,
         &mut callback,
     );
 
@@ -193,6 +201,7 @@ fn flush_deferred_entries<'a>(
     deferred_readers: &mut Vec<ChunkSetReader<'a>>,
     current_header: &Option<RawHeaderChunk<'a>>,
     resolver: &TimestampResolver,
+    evidence: &Rc<PathBuf>,
     callback: &mut impl for<'b> FnMut(LogEntry<'a, 'b>),
 ) {
     if deferred_readers.is_empty() {
@@ -238,6 +247,7 @@ fn flush_deferred_entries<'a>(
                         format_string: None,
                         boot_uuid: header.boot_uuid,
                         timezone_name,
+                        evidence: Rc::clone(evidence),
                         message_flags: Vec::new(),
                         items: ItemsData::Simpledump {
                             subsystem: sd.subsystem,
@@ -295,6 +305,7 @@ fn flush_deferred_entries<'a>(
                         format_string: None,
                         boot_uuid: header.boot_uuid,
                         timezone_name,
+                        evidence: Rc::clone(evidence),
                         message_flags: Vec::new(),
                         items: ItemsData::Statedump {
                             title_name: sd.title_name,
@@ -371,6 +382,7 @@ fn visit_firehose_entries<'a: 'b, 'b>(
     dsc_files: &'a HashMap<Uuid, RawSharedCacheStrings<'a>>,
     uuidtext_files: &'a HashMap<Uuid, RawUUIDText<'a>>,
     oversize_cache: &'b OversizeCache,
+    evidence: &Rc<PathBuf>,
     callback: &mut impl FnMut(LogEntry<'a, 'b>),
 ) {
     let boot_uuid = header.boot_uuid;
@@ -477,6 +489,7 @@ fn visit_firehose_entries<'a: 'b, 'b>(
                     format_string: None,
                     boot_uuid,
                     timezone_name,
+                    evidence: Rc::clone(evidence),
                     message_flags: Vec::new(),
                     items: ItemsData::Loss {
                         count: b.count,
@@ -523,6 +536,7 @@ fn visit_firehose_entries<'a: 'b, 'b>(
                     format_string: None,
                     boot_uuid,
                     timezone_name,
+                    evidence: Rc::clone(evidence),
                     message_flags: Vec::new(),
                     items: ItemsData::None,
                     signpost_id: 0,
@@ -656,6 +670,7 @@ fn visit_firehose_entries<'a: 'b, 'b>(
             format_string: resolved.format_string,
             boot_uuid,
             timezone_name,
+            evidence: Rc::clone(evidence),
             message_flags,
             items,
             signpost_id,
@@ -672,6 +687,7 @@ fn visit_firehose_entries<'a: 'b, 'b>(
         boot_uuid,
         timezone_name,
         &emitted_unknown_markers,
+        evidence,
         callback,
     );
 }
@@ -687,6 +703,7 @@ fn emit_embedded_unknown_markers<'a: 'b, 'b>(
     boot_uuid: Uuid,
     timezone_name: &'a str,
     emitted_unknown_markers: &[(u64, u32, u16)],
+    evidence: &Rc<PathBuf>,
     callback: &mut impl FnMut(LogEntry<'a, 'b>),
 ) {
     const HEADER_SIZE: usize = 24;
@@ -751,6 +768,7 @@ fn emit_embedded_unknown_markers<'a: 'b, 'b>(
             format_string: None,
             boot_uuid,
             timezone_name,
+            evidence: Rc::clone(evidence),
             message_flags: Vec::new(),
             items: ItemsData::None,
             signpost_id: 0,
