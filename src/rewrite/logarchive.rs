@@ -51,29 +51,11 @@ pub fn visit_provider(
     let timesync_data = load_timesync_data(&provider.timesync_dir())?;
     let resolver = TimestampResolver::new(timesync_data);
 
-    // 2. DSC files → HashMap<Uuid, RawSharedCacheStrings>
+    // 2. DSC and UUIDText support files
     let dsc_buffers = load_file_buffers_by_uuid(&provider.dsc_dir());
-    let dsc_files: HashMap<Uuid, RawSharedCacheStrings<'_>> = dsc_buffers
-        .iter()
-        .filter_map(|(uuid, buffer)| {
-            let (_, dsc) = RawSharedCacheStrings::parse(buffer)
-                .inspect_err(|e| warn!("Failed to parse DSC {uuid}: {e}"))
-                .ok()?;
-            Some((*uuid, dsc))
-        })
-        .collect();
-
-    // 3. UUIDText files → HashMap<Uuid, RawUUIDText>
+    let dsc_files = parse_dsc_buffers(&dsc_buffers);
     let uuidtext_buffers = load_uuidtext_buffers(&provider.uuidtext_root());
-    let uuidtext_files: HashMap<Uuid, RawUUIDText<'_>> = uuidtext_buffers
-        .iter()
-        .filter_map(|(uuid, buffer)| {
-            let (_, uuidtext) = RawUUIDText::parse(buffer)
-                .inspect_err(|e| warn!("Failed to parse UUIDText {uuid}: {e}"))
-                .ok()?;
-            Some((*uuid, uuidtext))
-        })
-        .collect();
+    let uuidtext_files = parse_uuidtext_buffers(&uuidtext_buffers);
 
     // 4. Collect and process all tracev3 files
     let tracev3_paths = provider.tracev3_paths();
@@ -174,6 +156,21 @@ pub fn load_file_buffers_by_uuid(dir: &Path) -> Vec<(Uuid, Vec<u8>)> {
     buffers
 }
 
+/// Parse DSC support buffers keyed by UUID.
+pub fn parse_dsc_buffers(
+    buffers: &[(Uuid, Vec<u8>)],
+) -> HashMap<Uuid, RawSharedCacheStrings<'_>> {
+    buffers
+        .iter()
+        .filter_map(|(uuid, buffer)| {
+            let (_, dsc) = RawSharedCacheStrings::parse(buffer)
+                .inspect_err(|e| warn!("Failed to parse DSC {uuid}: {e}"))
+                .ok()?;
+            Some((*uuid, dsc))
+        })
+        .collect()
+}
+
 /// Load `UUIDText` files from 2-char hex directories at the logarchive root.
 ///
 /// Directory layout: `{XX}/{YYYYYYYYYYYYYYYYYYYYYYYYYYYYYY}`
@@ -222,6 +219,19 @@ pub fn load_uuidtext_buffers(base: &Path) -> Vec<(Uuid, Vec<u8>)> {
         }
     }
     buffers
+}
+
+/// Parse UUIDText support buffers keyed by UUID.
+pub fn parse_uuidtext_buffers(buffers: &[(Uuid, Vec<u8>)]) -> HashMap<Uuid, RawUUIDText<'_>> {
+    buffers
+        .iter()
+        .filter_map(|(uuid, buffer)| {
+            let (_, uuidtext) = RawUUIDText::parse(buffer)
+                .inspect_err(|e| warn!("Failed to parse UUIDText {uuid}: {e}"))
+                .ok()?;
+            Some((*uuid, uuidtext))
+        })
+        .collect()
 }
 
 /// Sort paths to keep parser output deterministic across filesystems.
