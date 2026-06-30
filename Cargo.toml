@@ -9,7 +9,7 @@ description = "A library to help parse macOS UnifiedLogs"
 keywords = ["forensics", "macOS", "unifiedlog"]
 
 [features]
-default = ["rewrite"]
+default = ["legacy"]
 legacy = []
 rewrite = []
 rewrite-compat = ["rewrite"]
@@ -100,6 +100,11 @@ required-features = ["rewrite-compat"]
 name = "tahoe_tests"
 path = "tests/tahoe_tests.rs"
 required-features = ["legacy"]
+
+[[test]]
+name = "tahoe_tests_rewrite"
+path = "tests/tahoe_tests_rewrite.rs"
+required-features = ["rewrite"]
 
 [[test]]
 name = "tahoe_tests_compat"

@@ -184,6 +184,14 @@ pub struct LogEntry<'a, 'b> {
 }
 
 impl<'a, 'b> LogEntry<'a, 'b> {
+    /// Return the deferred raw item data used to format this entry's message.
+    ///
+    /// The returned value borrows from this `LogEntry`; callers can inspect or parse it
+    /// while the visitor callback is active.
+    pub fn items(&self) -> &ItemsData<'b> {
+        &self.items
+    }
+
     /// Format the log message on demand. This is the only allocation point.
     pub fn message(&self) -> Rc<String> {
         if let Ok(borrow) = self.resolved_message.try_borrow()
