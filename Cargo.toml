@@ -87,6 +87,11 @@ path = "tests/monterey_tests.rs"
 required-features = ["legacy"]
 
 [[test]]
+name = "monterey_tests_rewrite"
+path = "tests/monterey_tests_rewrite.rs"
+required-features = ["rewrite"]
+
+[[test]]
 name = "monterey_tests_compat"
 path = "tests/monterey_tests_compat.rs"
 required-features = ["rewrite-compat"]
