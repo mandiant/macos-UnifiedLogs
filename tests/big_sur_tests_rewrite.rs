@@ -15,9 +15,9 @@ use macos_unifiedlogs::{
     timesync::TimestampResolver,
     tracev3::{OversizeCache, visit_tracev3},
 };
+use regex::Regex;
 use std::path::PathBuf;
 use uuid::uuid;
-use regex::Regex;
 
 #[test]
 fn test_parse_log_big_sur() {
@@ -184,6 +184,7 @@ fn test_parse_all_logs_big_sur() {
     let mut parent_activity = 0;
     let mut no_such_file_or_directory = 0;
 
+    // Breakdown log entries by smaller types to ensure count is accurate
     visit_logarchive(&test_path, |logs| {
         log_data_vec_len += 1;
         let message = logs.message();
@@ -257,6 +258,10 @@ fn test_parse_all_logs_big_sur() {
     })
     .unwrap();
 
+    // Run: "log raw-dump -a macos-unifiedlogs/tests/test_data/system_logs_big_sur.logarchive"
+    // total log entries: 747,294
+    // Add Statedump log entries: 322
+    // Total log entries: 747,616
     assert_eq!(log_data_vec_len, 747616);
     assert_eq!(unknown_strings, 0);
     assert_eq!(invalid_offsets, 54);
@@ -283,10 +288,302 @@ fn test_parse_all_logs_big_sur() {
     assert_eq!(no_such_file_or_directory, 1728)
 }
 
+#[test]
+fn test_parse_all_persist_logs_with_network_big_sur() {
+    let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    test_path.push("tests/test_data/system_logs_big_sur.logarchive");
+
+    let mut messages_containing_network = 0;
+    let mut default_type = 0;
+    let mut info_type = 0;
+    let mut error_type = 0;
+    let mut create_type = 0;
+    let mut state_simple_dump = 0;
+    let mut signpost = 0;
+
+    let mut network_message_uuid = false;
+
+    // Check all logs that contain the word "network"
+    visit_logarchive(&test_path, |logs| {
+        let message = logs.message();
+        if message.to_lowercase().contains("network") {
+            if logs.log_type == LogType::Default {
+                default_type += 1;
+                if message.contains("7C10C1EF-1B86-494F-800D-C769A89172C1") {
+                    // The Console.app does not show the following network message. This might be a bug in the app?
+                    // But the log command shows it correctly
+                    // This is the only message that contains the UUID 7C10C1EF-1B86-494F-800D-C769A89172C1
+                    /*
+                    tp 2264 + 286:      log default (has_current_aid, shared_cache, has_subsystem)
+                    thread:         00000000000036ea
+                    time:           +95.856s
+                    walltime:       1648611808 - 2022-03-29 20:43:28 (Tuesday)
+                    cur_aid:        8000000000007840
+                    location:       pc:0x405faf5 fmt:0x4613cd0
+                    image uuid:     6D702F3B-34C0-3809-8CEC-1D59D58CF8BB
+                    image path:     /usr/lib/libnetwork.dylib
+                    format:         [C%u %{public,uuid_t}.16P %{public}s %{public}s] start
+                    subsystem:      50 com.apple.network.connection
+                    [C6 527C4884-E24B-425C-B3AB-AA91DCD23FCE configuration.ls.apple.com:443 tcp, url hash: 8feb6d24, tls, context: com.apple.CFNetwork.NSURLSession.{7C10C1EF-1B86-494F-800D-C769A89172C1}{(null)}{Y}{1}, proc: 21B380F4-D50C-3463-9CAF-46BB2178258B] start
+                     */
+                    network_message_uuid = true;
+                }
+            } else if logs.log_type == LogType::Info {
+                info_type += 1;
+            } else if logs.log_type == LogType::Error {
+                error_type += 1
+            } else if logs.log_type == LogType::Create {
+                create_type += 1;
+                // We are basing these counts on the Cosole.app tool
+                // Console.app skips Activity event logs
+                return;
+            } else if logs.event_type == EventType::Simpledump
+                || logs.event_type == EventType::Statedump
+            {
+                state_simple_dump += 1;
+                // We are basing these counts on the Cosole.app tool
+                // Console.app skips Simple and State dump event logs
+                return;
+            } else if logs.log_type.is_signpost() {
+                signpost += 1;
+                // We are basing these counts on the Cosole.app tool
+                // Console.app skips Signpost event logs
+                return;
+            }
+            messages_containing_network += 1;
+        }
+    })
+    .unwrap();
+
+    assert_eq!(messages_containing_network, 9173);
+    // Console.app is missing a log entry. The log command shows the entry
+    assert_eq!(default_type, 8320);
+    assert!(network_message_uuid);
+
+    assert_eq!(info_type, 638);
+    assert_eq!(error_type, 215);
+    assert_eq!(create_type, 687);
+    assert_eq!(state_simple_dump, 34);
+    assert_eq!(signpost, 62);
+}
+
+#[test]
+fn test_parse_all_logs_private_big_sur() {
+    let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    test_path.push("tests/test_data/system_logs_big_sur_private_enabled.logarchive");
+
+    let mut log_data_vec_len = 0;
+    let mut empty_counter = 0;
+    let mut not_found = 0;
+    let mut staff_count = 0;
+    visit_logarchive(&test_path, |logs| {
+        log_data_vec_len += 1;
+        let message = logs.message();
+        if message.is_empty() {
+            empty_counter += 1;
+        }
+        if message.contains("<not found>") {
+            not_found += 1;
+        }
+        if message.contains("group: staff@/Local/Default") {
+            staff_count += 1;
+        }
+    })
+    .unwrap();
+
+    assert_eq!(log_data_vec_len, 887890);
+    assert_eq!(not_found, 0);
+    assert_eq!(staff_count, 4);
+    assert_eq!(empty_counter, 596);
+}
+
+// Test for logs that have same public data in private
+#[test]
+fn test_parse_all_logs_private_with_public_mix_big_sur() {
+    let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    test_path.push("tests/test_data/system_logs_big_sur_public_private_data_mix.logarchive");
+
+    let mut log_data_vec_len = 0;
+    let mut not_found = 0;
+    let mut user_not_found = 0;
+    let mut mobile_not_found = 0;
+    let mut bssid_count = 0;
+    let mut dns_query_count = 0;
+    let mut bofa_count = 0;
+
+    visit_logarchive(&test_path, |logs| {
+        log_data_vec_len += 1;
+        let message = logs.message();
+        if message.contains("<not found>") {
+            not_found += 1;
+        }
+        if message.contains("user: -1 <not found>") {
+            user_not_found += 1;
+        }
+
+        if message.contains("refreshing: details, reason: expired, user: mobile <not found>") {
+            mobile_not_found += 1;
+        }
+
+        if message.contains("BSSID 00:00:00:00:00:00") {
+            bssid_count += 1;
+        }
+
+        if message.contains("https://doh.dns.apple.com/dns-query") {
+            dns_query_count += 1;
+        }
+
+        if message.contains("bankofamerica") {
+            bofa_count += 1;
+        }
+    })
+    .unwrap();
+
+    assert_eq!(log_data_vec_len, 1287628);
+    assert_eq!(not_found, 5);
+    assert_eq!(user_not_found, 2);
+    assert_eq!(mobile_not_found, 1);
+    assert_eq!(bssid_count, 39);
+    assert_eq!(dns_query_count, 41);
+    assert_eq!(bofa_count, 573);
+}
+
+#[test]
+fn test_parse_all_logs_private_with_public_mix_big_sur_single_file() {
+    let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    test_path.push("tests/test_data/system_logs_big_sur_public_private_data_mix.logarchive");
+
+    let mut results_len = 0;
+    let mut hex_count = 0;
+    let mut dns = 0;
+    let mut public_private_mixture = false;
+    visit_trace_file(&test_path, "Persist/0000000000000009.tracev3", |result| {
+        results_len += 1;
+        let message = result.message();
+        if message.contains("7FAE25804F50") {
+            hex_count += 1;
+        }
+        if result.subsystem.unwrap_or("").contains(".mdns") {
+            dns += 1;
+        }
+        // 7FAE25B0E420 is half public and half private
+        // B0E420 exists in public data but is copied/prepended to the private data.
+        // 7FAE25 only exists in private data
+        if message.as_str()
+            == "os_transaction created: (7FAE25B0E420) CLLS:0x7fae23628160.LocationFine"
+        {
+            public_private_mixture = true
+        }
+    });
+
+    assert_eq!(results_len, 91567);
+    assert_eq!(hex_count, 4);
+    assert_eq!(dns, 801);
+    assert!(public_private_mixture);
+}
+
+// We are able to get 2238 entries from this special tracev3 file. But log command only gets 231
+#[test]
+fn test_parse_all_logs_private_with_public_mix_big_sur_special_file() {
+    let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    test_path.push("tests/test_data/system_logs_big_sur_public_private_data_mix.logarchive");
+
+    let mut results_len = 0;
+    let mut statedump = 0;
+    let mut default = 0;
+    let mut fault = 0;
+    let mut info = 0;
+    let mut error = 0;
+
+    visit_trace_file(&test_path, "Special/0000000000000008.tracev3", |result| {
+        results_len += 1;
+        if result.event_type == EventType::Statedump {
+            statedump += 1;
+        } else if result.log_type == LogType::Default {
+            default += 1;
+        } else if result.log_type == LogType::Fault {
+            fault += 1;
+        } else if result.log_type == LogType::Info {
+            info += 1;
+        } else if result.log_type == LogType::Error {
+            error += 1;
+        }
+    });
+
+    assert_eq!(results_len, 2238);
+    assert_eq!(statedump, 1);
+    assert_eq!(default, 1972);
+    assert_eq!(fault, 32);
+    assert_eq!(info, 41);
+    assert_eq!(error, 192);
+}
+
+#[test]
+fn test_big_sur_missing_oversize_strings() {
+    let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    test_path.push("tests/test_data/system_logs_big_sur.logarchive");
+
+    let mut data_len = 0;
+    let mut missing_strings = 0;
+    // livedata may have oversize string data in other tracev3 on disk
+    visit_trace_file(&test_path, "logdata.LiveData.tracev3", |results| {
+        data_len += 1;
+        if results.message().contains("<Missing message data>") {
+            missing_strings += 1;
+        }
+    });
+
+    assert_eq!(data_len, 101566);
+    // There should be only 29 entries that have actual missing data
+    // 23 strings are in other trave3 files. 23 + 29 = 52
+    assert_eq!(missing_strings, 52);
+}
+
+#[test]
+fn test_big_sur_oversize_strings_in_another_file() {
+    let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    test_path.push("tests/test_data/system_logs_big_sur.logarchive");
+
+    let mut data_len = 0;
+    let mut missing_strings = 0;
+    visit_trace_files(
+        &test_path,
+        &[
+            "Persist/0000000000000005.tracev3",
+            "Special/0000000000000005.tracev3",
+            "logdata.LiveData.tracev3",
+        ],
+        |index, results| {
+            if index != 2 {
+                return;
+            }
+            data_len += 1;
+            if results.message().contains("<Missing message data>") {
+                missing_strings += 1;
+            }
+        },
+    );
+
+    assert_eq!(data_len, 101566);
+    // 29 log entries actually have missing data
+    // Apple displays as: <decode: missing data>
+    assert_eq!(missing_strings, 29);
+}
+
 fn visit_trace_file(
     logarchive_path: &PathBuf,
     trace_relative_path: &str,
-    callback: impl for<'a, 'b> FnMut(LogEntry<'a, 'b>),
+    mut callback: impl for<'a, 'b> FnMut(LogEntry<'a, 'b>),
+) {
+    visit_trace_files(logarchive_path, &[trace_relative_path], |_, entry| {
+        callback(entry);
+    });
+}
+
+fn visit_trace_files(
+    logarchive_path: &PathBuf,
+    trace_relative_paths: &[&str],
+    mut callback: impl for<'a, 'b> FnMut(usize, LogEntry<'a, 'b>),
 ) {
     let timesync_data = load_timesync_data(&logarchive_path.join("timesync")).unwrap();
     let resolver = TimestampResolver::new(timesync_data);
@@ -294,15 +591,18 @@ fn visit_trace_file(
     let dsc_files = parse_dsc_buffers(&dsc_buffers);
     let uuidtext_buffers = load_uuidtext_buffers(logarchive_path);
     let uuidtext_files = parse_uuidtext_buffers(&uuidtext_buffers);
-    let data = std::fs::read(logarchive_path.join(trace_relative_path)).unwrap();
+    let mut oversize_cache = OversizeCache::new();
 
-    visit_tracev3(
-        &data,
-        &resolver,
-        &dsc_files,
-        &uuidtext_files,
-        &mut OversizeCache::new(),
-        callback,
-    )
-    .unwrap();
+    for (index, trace_relative_path) in trace_relative_paths.iter().enumerate() {
+        let data = std::fs::read(logarchive_path.join(trace_relative_path)).unwrap();
+        visit_tracev3(
+            &data,
+            &resolver,
+            &dsc_files,
+            &uuidtext_files,
+            &mut oversize_cache,
+            |entry| callback(index, entry),
+        )
+        .unwrap();
+    }
 }

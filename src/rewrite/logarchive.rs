@@ -157,9 +157,7 @@ pub fn load_file_buffers_by_uuid(dir: &Path) -> Vec<(Uuid, Vec<u8>)> {
 }
 
 /// Parse DSC support buffers keyed by UUID.
-pub fn parse_dsc_buffers(
-    buffers: &[(Uuid, Vec<u8>)],
-) -> HashMap<Uuid, RawSharedCacheStrings<'_>> {
+pub fn parse_dsc_buffers(buffers: &[(Uuid, Vec<u8>)]) -> HashMap<Uuid, RawSharedCacheStrings<'_>> {
     buffers
         .iter()
         .filter_map(|(uuid, buffer)| {

@@ -55,6 +55,19 @@ pub enum LogType {
     Loss,
 }
 
+impl LogType {
+    pub fn is_signpost(self) -> bool {
+        use LogType::*;
+        match self {
+            ProcessSignpostEvent | ProcessSignpostStart | ProcessSignpostEnd
+            | SystemSignpostEvent | SystemSignpostStart | SystemSignpostEnd
+            | ThreadSignpostEvent | ThreadSignpostStart | ThreadSignpostEnd => true,
+            Debug | Info | Default | Error | Fault | Create | Useraction | Simpledump
+            | Statedump | Loss => false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum MessageFlags {
     SharedCache,
