@@ -72,6 +72,11 @@ path = "tests/high_sierra_tests.rs"
 required-features = ["legacy"]
 
 [[test]]
+name = "high_sierra_tests_rewrite"
+path = "tests/high_sierra_tests_rewrite.rs"
+required-features = ["rewrite"]
+
+[[test]]
 name = "high_sierra_tests_compat"
 path = "tests/high_sierra_tests_compat.rs"
 required-features = ["rewrite-compat"]

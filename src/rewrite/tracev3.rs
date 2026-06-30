@@ -64,7 +64,6 @@ impl OversizeCache {
 // Public API
 // ---------------------------------------------------------------------------
 
-
 /// Process a single tracev3 file buffer.
 ///
 /// The callback receives each log entry as it is produced. Entry-level errors
