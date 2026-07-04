@@ -222,9 +222,11 @@ fn parse_dns_resolver<'a>(data: &'a [u8]) -> nom::IResult<&'a [u8], DnsConfigStr
     let min_size = 10;
     let mut remaining = input;
 
-    let dns_flags_string = (dns_flags == 6)
-        .then_some("(Request A records, Request AAAA records)")
-        .unwrap_or_default();
+    let dns_flags_string = if dns_flags == 6 {
+        "(Request A records, Request AAAA records)"
+    } else {
+        ""
+    };
 
     let reach_string = match reach {
         0 => "(Not Reachable)",

@@ -101,7 +101,7 @@ pub fn visit_provider(
 /// Helper function to process one tracev3 file from a logarchive, emitting log entries via callback.
 ///
 /// The tracev3 path is resolved relative to `logarchive_path`. This helper loads
-/// the logarchive's timesync, DSC, and UUIDText support files before visiting the
+/// the logarchive's timesync, DSC, and `UUIDText` support files before visiting the
 /// selected tracev3 file.
 pub fn visit_logarchive_tracev3_file(
     logarchive_path: &Path,
@@ -117,7 +117,7 @@ pub fn visit_logarchive_tracev3_file(
 ///
 /// Tracev3 paths are resolved relative to `logarchive_path`. A single oversize
 /// cache is shared across all files, so callers can visit neighboring Persist,
-/// Special, and LiveData files when oversize payloads are referenced across files.
+/// Special, and `LiveData` files when oversize payloads are referenced across files.
 /// The callback receives the zero-based index of the tracev3 path that produced
 /// each entry.
 pub fn visit_logarchive_tracev3_files<P: AsRef<Path>>(
@@ -282,7 +282,7 @@ pub fn load_uuidtext_buffers(base: &Path) -> Vec<(Uuid, Vec<u8>)> {
     buffers
 }
 
-/// Parse UUIDText support buffers keyed by UUID.
+/// Parse `UUIDText` support buffers keyed by UUID.
 pub fn parse_uuidtext_buffers(buffers: &[(Uuid, Vec<u8>)]) -> HashMap<Uuid, RawUUIDText<'_>> {
     buffers
         .iter()
@@ -309,8 +309,10 @@ fn sorted_paths(paths: impl Iterator<Item = PathBuf>) -> Vec<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::log_entry::EventType;
     use crate::rewrite::filesystem::collect_tracev3_paths;
     use crate::rewrite::helpers::tests::test_data_path;
+    use chrono::SecondsFormat;
 
     #[test]
     fn test_visit_logarchive_big_sur() {
@@ -379,5 +381,54 @@ mod tests {
             last.contains("LiveData"),
             "last tracev3 should be LiveData, got: {last}"
         );
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn test_visit_live_system() {
+        visit_live_system(|entry| {
+            assert_ne!(
+                entry.event_type,
+                EventType::Unknown,
+                "Got unknown event type for {entry:?}"
+            );
+
+            assert!(
+                !entry
+                    .timestamp()
+                    .to_rfc3339_opts(SecondsFormat::Nanos, true)
+                    .starts_with("1970-")
+            );
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn test_load_timsync_data() {
+        let base = test_data_path().join("system_logs_big_sur.logarchive");
+        let times = load_timesync_data(&base.join("timesync").as_path()).unwrap();
+        assert_eq!(times.len(), 5);
+    }
+
+    #[test]
+    fn test_load_file_buffers_uuid() {
+        let base = test_data_path().join("system_logs_tahoe.logarchive");
+        let cache = load_file_buffers_by_uuid(&base.join("dsc").as_path());
+        assert_eq!(cache.len(), 1);
+
+        let cache_files = parse_dsc_buffers(&cache);
+        assert_eq!(cache_files.len(), 1);
+    }
+
+    #[test]
+    fn test_load_uuidtext_buffers() {
+        let base = test_data_path().join("system_logs_tahoe.logarchive");
+        let provider = LogarchiveProvider::new(&base);
+
+        let result = load_uuidtext_buffers(&provider.uuidtext_root());
+        assert_eq!(result.len(), 876);
+
+        let files = parse_uuidtext_buffers(&result);
+        assert_eq!(files.len(), 876);
     }
 }
