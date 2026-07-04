@@ -5,13 +5,18 @@ edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = ["legacy"]
+legacy = ["macos-unifiedlogs/legacy"]
+rewrite-compat = ["macos-unifiedlogs/rewrite-compat"]
+
 [dependencies]
 simplelog = "0.12.2"
 csv = "1.4.0"
 chrono = "0.4.44"
 log = "0.4.29"
 serde_json = "1.0.149"
-macos-unifiedlogs = { path = "../../" }
+macos-unifiedlogs = { path = "../../", default-features = false }
 clap = { version = "4.6.1", features = ["derive"] }
 serde = { version = "1.0.228", features = ["derive"] }
 libc = "0.2.186"
