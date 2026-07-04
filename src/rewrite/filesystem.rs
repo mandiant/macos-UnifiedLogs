@@ -12,7 +12,7 @@ pub trait FileProvider {
     fn tracev3_paths(&self) -> Vec<PathBuf>;
     /// Directory containing `.timesync` files.
     fn timesync_dir(&self) -> PathBuf;
-    /// Root containing UUIDText two-character hex directories.
+    /// Root containing `UUIDText` two-character hex directories.
     fn uuidtext_root(&self) -> PathBuf;
     /// Directory containing DSC shared-cache string files.
     fn dsc_dir(&self) -> PathBuf;
