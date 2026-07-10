@@ -1,5 +1,4 @@
 use nom::number::complete::{be_u128, le_i64, le_u16, le_u32, le_u64};
-use serde::Serialize;
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -9,7 +8,7 @@ const TIMESYNC_RECORD_SIGNATURE: u32 = 0x0020_7354;
 /// A single timesync calibration record (40 bytes on disk).
 ///
 /// Maps Mach continuous timestamps to wall-clock time (nanoseconds since UNIX epoch).
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy)]
 pub struct RawTimesyncRecord {
     pub kernel_time: u64,
     pub walltime: i64,
@@ -49,7 +48,7 @@ impl RawTimesyncRecord {
 }
 
 /// A boot session header with its associated timesync records.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
 pub struct RawTimesyncBoot {
     pub boot_uuid: Uuid,
     pub timebase_numerator: u32,
