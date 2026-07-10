@@ -1,9 +1,11 @@
 # macos-unifiedlogs
 
-A simple and high-performance Rust library that can help parse Apple's Unified Log files.
+A simple Rust library that can help parse the macOS Unified Log files.
 
-Unified Logs were introduced in macOS 10.12 (Sierra, 2016) as part of Apple's unified logging system across macOS, iOS, watchOS, and tvOS. This library can parse the binary tracev3 files and emit structured log entries.
-
+Unified Logs were introduced in macOS version 10.12 (Sierra, 2016). Part of
+Apple's goal to create a unified log format for all Apple products. They exist
+on macOS, iOS, watchOS, tvOS. The Unified Logs replace many of the old log
+formats Apple used. This library can be used to parse these log files.\
 Data that is currently extracted includes:
 
 - Process ID
@@ -19,8 +21,9 @@ Data that is currently extracted includes:
 - Subsystem
 - Category
 - Process
-- Raw message
-- Raw log items
+- Raw message - Message extracted from UUID file
+- Message entries - Message parts from tracev3 file. Combines with Raw message
+  to get the Log Message
 - Library UUID
 - Process UUID
 - Boot UUID
@@ -33,101 +36,27 @@ An example binary is available to download
 - `unifiedlog_iterator` - Can parse a logarchive into a JSOL or CSV file. It can also parse the logs
   on a live system. The output file will be quite large
 
-
-## Rewrite Design
-
-Starting with version 0.7.0, the library received a large rewrite to speed up the parsing of Unified Log data.  
-The rewrite parser is available with the `rewrite` feature. Its core type is
-`LogEntry<'a, 'b>` — a zero-copy log entry that borrows directly from the parsed
-file buffers. Messages are formatted lazily on demand via `.message()`, avoiding
-heap allocation until explicitly needed.
-
-## Usage
-
-The default feature is still `legacy` so existing developers can upgrade without API
-breakage. New integrations should use the rewrite parser by disabling default
-features and enabling `rewrite`:
-
-```toml
-[dependencies]
-macos-unifiedlogs = { version = "0.7", default-features = false, features = ["rewrite"] }
-```
-
-### Parsing a logarchive directory
-
-```rust
-use macos_unifiedlogs::logarchive::visit_logarchive;
-use std::path::Path;
-
-visit_logarchive(Path::new("system_logs.logarchive"), |entry| {
-    let timestamp = entry.timestamp().to_rfc3339();
-    let process = entry.process.unwrap_or("");
-    let message = entry.message();
-
-    println!("{timestamp} [{process}] {message}");
-}).unwrap();
-```
-
-### Parsing a live macOS system
-
-```rust
-use macos_unifiedlogs::logarchive::visit_live_system;
-
-visit_live_system(|entry| {
-    let timestamp = entry.timestamp().to_rfc3339();
-    let process = entry.process.unwrap_or("");
-    let message = entry.message();
-
-    println!("{timestamp} [{process}] {message}");
-}).unwrap();
-```
-
-For mounted images or nonstandard roots, use `filesystem::LiveSystemProvider::with_roots`
-with `logarchive::visit_provider`.
-
-### Parsing a single tracev3 file
-
-```rust
-use macos_unifiedlogs::{
-    dsc::RawSharedCacheStrings,
-    logarchive::{load_timesync_data, load_file_buffers_by_uuid, load_uuidtext_buffers},
-    timesync::TimestampResolver,
-    tracev3::{visit_tracev3, OversizeCache},
-    uuidtext::RawUUIDText,
-};
-use std::collections::HashMap;
-
-// Load context from the logarchive directory
-let base = std::path::Path::new("system_logs.logarchive");
-let resolver = TimestampResolver::new(load_timesync_data(&base.join("timesync")).unwrap());
-
-let dsc_buffers = load_file_buffers_by_uuid(&base.join("dsc"));
-let dsc_files: HashMap<_, RawSharedCacheStrings<'_>> = dsc_buffers.iter()
-    .filter_map(|(uuid, buf)| Some((*uuid, RawSharedCacheStrings::parse(buf).ok()?.1)))
-    .collect();
-
-let uuidtext_buffers = load_uuidtext_buffers(base);
-let uuidtext_files: HashMap<_, RawUUIDText<'_>> = uuidtext_buffers.iter()
-    .filter_map(|(uuid, buf)| Some((*uuid, RawUUIDText::parse(buf).ok()?.1)))
-    .collect();
-
-// Parse a single file
-let data = std::fs::read(base.join("Persist/0000000000000004.tracev3")).unwrap();
-let mut oversize_cache = OversizeCache::new();
-visit_tracev3(&data, &resolver, &dsc_files, &uuidtext_files, &mut oversize_cache, |entry| {
-    let message = entry.message();
-    println!("{:?} {:?} {}", entry.event_type, entry.log_type, message);
-}).unwrap();
-```
-
-
 ## Limitations
 
-1. No printf-style error code lookup (`%m`). The library outputs the raw error number, not the human-readable string that the macOS `log` command provides.
+Its been tested against millions of log entries. However, due the complexity of
+the Unified Log format there are some limitations:
 
-2. Unsupported custom log objects are base64-encoded rather than decoded.
+1. No printf style error code lookup support. This library does not do any error
+   code lookups for log messages. The native `log` command on macOS supports
+   error code lookups when it encounters printf style `%m` messages.\
+   For example the log message: 'Failed to open file, error: %m'\
+   a. This Library outputs:
+   ```
+   Failed to open file, error: 1
+   ```
+   b. The macOS Log command outputs:
+   ```
+   Failed to open file, error: no such file or directory
+   ```
 
-## References
+2. This library supports most custom objects in log messages. However, unsupported objects will be base64 encoded
+
+# References
 
 - https://github.com/ydkhatri/UnifiedLogReader
 - https://github.com/libyal/dtformats/blob/main/documentation/Apple%20Unified%20Logging%20and%20Activity%20Tracing%20formats.asciidoc

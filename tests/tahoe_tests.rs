@@ -7,13 +7,11 @@
 
 use std::{fs::File, path::PathBuf};
 
-#[cfg(not(feature = "rewrite-compat"))]
-use macos_unifiedlogs::traits::SourceFile;
 use macos_unifiedlogs::{
     cache::MemoryStringCache,
     filesystem::LogarchiveProvider,
     parser::{build_log, collect_timesync, parse_log},
-    traits::FileProvider,
+    traits::{FileProvider, SourceFile},
     unified_log::{EventType, LogData, LogType, UnifiedLogData},
 };
 
@@ -176,22 +174,8 @@ fn test_build_log_tahoe() {
             }
         }
     }
-
-    // Legacy renders oversize-backed messages from oversize data, but keeps
-    // message_entries from the inline firehose entry. rewrite-compat exposes
-    // the parsed oversize message entries instead.
-    // For this Tahoe file that adds 639 strings and 86 numbers in compat;
-    // one non-oversize entry moves from String to PrivateString
-    #[cfg(feature = "legacy")]
     assert_eq!(string_count, 369927);
-    #[cfg(feature = "rewrite")]
-    assert_eq!(string_count, 370565);
-
-    #[cfg(feature = "legacy")]
     assert_eq!(number_count, 382427);
-    #[cfg(feature = "rewrite")]
-    assert_eq!(number_count, 382513);
-
     assert_eq!(precision_count, 13077);
     assert_eq!(private_number_count, 711);
 

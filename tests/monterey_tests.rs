@@ -7,13 +7,11 @@
 
 use std::{fs::File, path::PathBuf};
 
-#[cfg(not(feature = "rewrite-compat"))]
-use macos_unifiedlogs::traits::SourceFile;
 use macos_unifiedlogs::{
     cache::MemoryStringCache,
     filesystem::LogarchiveProvider,
     parser::{build_log, collect_timesync, parse_log},
-    traits::FileProvider,
+    traits::{FileProvider, SourceFile},
     unified_log::{EventType, LogData, LogType, UnifiedLogData},
 };
 use regex::Regex;

@@ -12,9 +12,7 @@ use macos_unifiedlogs::filesystem::{LiveSystemProvider, LogarchiveProvider};
 use macos_unifiedlogs::iterator::UnifiedLogIterator;
 use macos_unifiedlogs::parser::{build_log, collect_timesync, parse_log};
 use macos_unifiedlogs::timesync::TimesyncBoot;
-use macos_unifiedlogs::traits::{FileProvider, StringCache};
-#[cfg(not(feature = "rewrite-compat"))]
-use macos_unifiedlogs::traits::SourceFile;
+use macos_unifiedlogs::traits::{FileProvider, SourceFile, StringCache};
 use macos_unifiedlogs::unified_log::{LogData, UnifiedLogData};
 use simplelog::{ColorChoice, Config, TermLogger, TerminalMode};
 use std::collections::HashMap;
