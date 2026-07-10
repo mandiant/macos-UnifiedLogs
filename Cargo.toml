@@ -2,17 +2,12 @@
 name = "macos-unifiedlogs"
 version = "0.6.0"
 edition = "2024"
-autotests = false
 license = "Apache-2.0"
 repository = "https://github.com/mandiant/macos-unifiedlogs"
 description = "A library to help parse macOS UnifiedLogs"
 keywords = ["forensics", "macOS", "unifiedlog"]
 
-[features]
-default = ["legacy"]
-legacy = []
-rewrite = []
-rewrite-compat = ["rewrite"]
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 nom = "8.0.0"
@@ -23,21 +18,16 @@ lz4_flex = "0.13.0"
 byteorder = "1.5.0"
 plist = "1.9.0"
 regex = "1.12.3"
-uuid = { version = "1.23", default-features = false, features = ["v4", "serde"] }
 base64 = "0.22.1"
-chrono = { version = "0.4.44", features = ["serde"] }
+chrono = "0.4.44"
 walkdir = "2.5.0"
 sunlight = "0.1.5"
-strum = { version = "0.27", features = ["derive"] }
-thiserror = "2"
-num_enum = "0.7"
-bitflags = "2.11"
 
 [dev-dependencies]
+chrono = "0.4.44"
 criterion = "0.8.2"
 anyhow = "1.0.102"
 test-case = "3.3"
-pretty_env_logger = "0.5"
 
 [[bench]]
 name = "high_sierra_benchmark"
@@ -50,63 +40,3 @@ harness = false
 [[bench]]
 name = "monterey_benchmark"
 harness = false
-
-[[test]]
-name = "big_sur_tests"
-path = "tests/big_sur_tests.rs"
-required-features = ["legacy"]
-
-[[test]]
-name = "big_sur_tests_compat"
-path = "tests/big_sur_tests_compat.rs"
-required-features = ["rewrite-compat"]
-
-[[test]]
-name = "big_sur_tests_rewrite"
-path = "tests/big_sur_tests_rewrite.rs"
-required-features = ["rewrite"]
-
-[[test]]
-name = "high_sierra_tests"
-path = "tests/high_sierra_tests.rs"
-required-features = ["legacy"]
-
-[[test]]
-name = "high_sierra_tests_rewrite"
-path = "tests/high_sierra_tests_rewrite.rs"
-required-features = ["rewrite"]
-
-[[test]]
-name = "high_sierra_tests_compat"
-path = "tests/high_sierra_tests_compat.rs"
-required-features = ["rewrite-compat"]
-
-[[test]]
-name = "monterey_tests"
-path = "tests/monterey_tests.rs"
-required-features = ["legacy"]
-
-[[test]]
-name = "monterey_tests_rewrite"
-path = "tests/monterey_tests_rewrite.rs"
-required-features = ["rewrite"]
-
-[[test]]
-name = "monterey_tests_compat"
-path = "tests/monterey_tests_compat.rs"
-required-features = ["rewrite-compat"]
-
-[[test]]
-name = "tahoe_tests"
-path = "tests/tahoe_tests.rs"
-required-features = ["legacy"]
-
-[[test]]
-name = "tahoe_tests_rewrite"
-path = "tests/tahoe_tests_rewrite.rs"
-required-features = ["rewrite"]
-
-[[test]]
-name = "tahoe_tests_compat"
-path = "tests/tahoe_tests_compat.rs"
-required-features = ["rewrite-compat"]

@@ -107,10 +107,11 @@ impl FileProvider for LiveSystemProvider {
         let path = PathBuf::from("/private/var/db/diagnostics");
         sort_files(
             WalkDir::new(path)
+                .sort_by(|a, b| a.file_name().cmp(b.file_name()))
                 .into_iter()
                 .filter_map(Result::ok)
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::TraceV3))
-                .map(|entry| entry.path().to_path_buf()),
+                .filter_map(|entry| LocalFile::new(entry.path()).ok()),
         )
     }
 
@@ -121,7 +122,7 @@ impl FileProvider for LiveSystemProvider {
                 .into_iter()
                 .filter_map(Result::ok)
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::UUIDText))
-                .map(|entry| entry.path().to_path_buf()),
+                .filter_map(|entry| LocalFile::new(entry.path()).ok()),
         )
     }
 
@@ -209,13 +210,15 @@ impl FileProvider for LiveSystemProvider {
 
     fn dsc_files(&self) -> impl Iterator<Item = impl SourceFile> {
         let path = PathBuf::from("/private/var/db/uuidtext/dsc");
-        sort_files(
-            WalkDir::new(path)
-                .into_iter()
-                .filter_map(|entry| entry.ok())
-                .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::Dsc))
-                .map(|entry| entry.path().to_path_buf()),
-        )
+        sort_files(WalkDir::new(path).into_iter().filter_map(|entry| {
+            if !matches!(
+                LogFileType::from(entry.as_ref().ok()?.path()),
+                LogFileType::Dsc
+            ) {
+                return None;
+            }
+            LocalFile::new(entry.ok()?.path()).ok()
+        }))
     }
 
     fn timesync_files(&self) -> impl Iterator<Item = impl SourceFile> {
@@ -225,7 +228,7 @@ impl FileProvider for LiveSystemProvider {
                 .into_iter()
                 .filter_map(Result::ok)
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::Timesync))
-                .map(|entry| entry.path().to_path_buf()),
+                .filter_map(|entry| LocalFile::new(entry.path()).ok()),
         )
     }
 }
@@ -272,6 +275,7 @@ impl FileProvider for LogarchiveProvider {
     fn tracev3_files(&self) -> impl Iterator<Item = impl SourceFile> {
         Box::new(
             WalkDir::new(&self.base)
+                .sort_by(|a, b| a.file_name().cmp(b.file_name()))
                 .into_iter()
                 .filter_map(Result::ok)
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::TraceV3))
@@ -285,7 +289,7 @@ impl FileProvider for LogarchiveProvider {
                 .into_iter()
                 .filter_map(Result::ok)
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::UUIDText))
-                .map(|entry| entry.path().to_path_buf()),
+                .filter_map(|entry| LocalFile::new(entry.path()).ok()),
         )
     }
 
@@ -378,7 +382,7 @@ impl FileProvider for LogarchiveProvider {
                 .into_iter()
                 .filter_map(Result::ok)
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::Dsc))
-                .map(|entry| entry.path().to_path_buf()),
+                .filter_map(|entry| LocalFile::new(entry.path()).ok()),
         )
     }
 
@@ -388,7 +392,7 @@ impl FileProvider for LogarchiveProvider {
                 .into_iter()
                 .filter_map(Result::ok)
                 .filter(|entry| matches!(LogFileType::from(entry.path()), LogFileType::Timesync))
-                .map(|entry| entry.path().to_path_buf()),
+                .filter_map(|entry| LocalFile::new(entry.path()).ok()),
         )
     }
 }
@@ -397,12 +401,12 @@ impl FileProvider for LogarchiveProvider {
 /// in order to have deterministic output of the parser.
 /// Not having it would cause parsing differences across systems
 /// (macOS does not guarantee order of files returned by the filesystem).
-fn sort_files(paths: impl Iterator<Item = PathBuf>) -> impl Iterator<Item = LocalFile> {
-    let mut paths = paths.collect::<Vec<_>>();
-    paths.sort();
-    paths
-        .into_iter()
-        .filter_map(|path| Some(LocalFile::new(&path).ok()?))
+fn sort_files(
+    files: impl Iterator<Item = impl SourceFile>,
+) -> impl Iterator<Item = impl SourceFile> {
+    let mut files = files.collect::<Vec<_>>();
+    files.sort_by(|a, b| a.source_path().cmp(b.source_path()));
+    Box::new(files.into_iter())
 }
 
 #[cfg(test)]

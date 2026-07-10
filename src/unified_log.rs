@@ -607,11 +607,8 @@ where
             let data_string = match statedump.unknown_data_type {
                 0x1 => Statedump::parse_statedump_plist(&statedump.statedump_data),
                 0x2 => match extract_protobuf(&statedump.statedump_data) {
-                    Ok(map) => {
-                        let map: std::collections::BTreeMap<_, _> = map.into_iter().collect();
-                        serde_json::to_string(&map)
-                            .unwrap_or(String::from("Failed to serialize Protobuf HashMap"))
-                    }
+                    Ok(map) => serde_json::to_string(&map)
+                        .unwrap_or(String::from("Failed to serialize Protobuf HashMap")),
                     Err(_err) => format!(
                         "Failed to parse StateDump protobuf: {}",
                         encode_standard(&statedump.statedump_data)
