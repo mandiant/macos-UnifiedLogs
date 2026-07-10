@@ -1,47 +1,29 @@
+# How to build
+1. Download and install Rust from https://www.rust-lang.org/
+   * Windows users will need Windows C++ build tools https://visualstudio.microsoft.com/visual-cpp-build-tools/
+     * Select `Desktop development with C++`
+     * This is a Rust requirement for Windows
+2. Git clone the repo
+3. Navigate to cloned repo.
+4. Execute `cargo build` to build debug library. `cargo build --release` to build release version
+   * Navigate to examples directory and run `cargo build --release` to build the example files
+   * `unifiedlog_parser` and `unifiedlog_parser_json` can parse a live macOS system if no arguements are presented. Both can also parse a `logarchive` if passed as an arguement
 
-## Building
+# Running test suite
+1. Follow steps above
+2. Download `test_data.zip` from Github releases
+3. Copy/move `test_data.zip` to clone repo `tests` directory
+4. Decompress `test_data.zip`
+5. Execute `cargo test --release` to run tests
+   * You can also just use `cargo test` to run tests but it will be slower
 
-You will need to install [Rust](https://www.rust-lang.org). Once instal the library can be built with cargo
 
+# Running benchmarks
+1. Download `test_data.zip` from Github releases
+2. Copy/move `test_data.zip` to clone repo `tests` directory
+3. Decompress `test_data.zip`
+4. Run `cargo bench`  
+or  
+4. Install criterion, `cargo install cargo-criterion`
+5. Run `cargo criterion`
 
-```bash
-cargo build --release
-cargo build --release --no-default-features --features rewrite
-cargo test --release        # release mode recommended — debug is very slow
-cargo test --release --no-default-features --features rewrite --lib
-cargo clippy
-```
-
-### Test data
-
-Test data is not in git. Download from GitHub releases:
-```bash
-cd tests
-wget -O test_data.zip https://github.com/mandiant/macos-UnifiedLogs/releases/download/v1.0.0/test_data.zip
-unzip test_data.zip
-```
-
-## Feature flags
-
-| Feature | Default | Effect |
-|---------|---------|--------|
-| `legacy` | **yes** | Existing owned-data parser and public API (`LogData`, `parse_log`, `build_log`). Kept as the default to avoid breaking existing users. |
-| `rewrite` | no | Recommended parser for new code. Provides the zero-copy rewrite API (`LogEntry<'a, 'b>`, lazy messages, `visit_logarchive`, `visit_tracev3`). Use with `--no-default-features`. |
-| `rewrite-compat` | no | Rewrite parser behind the legacy-compatible API surface. Enables `rewrite` and exposes compatibility wrappers for callers that still need `LogData`-style output. |
-
-Recommended commands:
-
-```bash
-# Current default legacy API
-cargo test --release --no-default-features --features legacy
-
-# Native rewrite API
-cargo test --release --no-default-features --features rewrite --lib
-
-# Rewrite engine through compatibility API
-cargo test --release --no-default-features --features rewrite-compat
-```
-
-Do not enable `legacy` and `rewrite` together. Both parsers contain modules with
-the same historical names, so the supported modes compile one API surface at a
-time.

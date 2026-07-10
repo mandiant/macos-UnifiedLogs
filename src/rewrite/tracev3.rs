@@ -619,7 +619,7 @@ fn visit_firehose_entries<'a: 'b, 'b>(
                 None => {
                     warn!(
                         "Missing oversize data for data_ref={data_ref}, \
-                        proc=({}, {})",
+             proc=({}, {})",
                         fh.first_proc_id, fh.second_proc_id
                     );
                     ItemsData::None
@@ -694,7 +694,7 @@ fn visit_firehose_entries<'a: 'b, 'b>(
 // ---------------------------------------------------------------------------
 // Mapping helpers
 // ---------------------------------------------------------------------------
-#[allow(clippy::too_many_arguments)]
+
 fn emit_embedded_unknown_markers<'a: 'b, 'b>(
     fh: &RawFirehose<'b>,
     resolver: &TimestampResolver,

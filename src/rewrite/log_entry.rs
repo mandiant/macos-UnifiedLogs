@@ -101,6 +101,7 @@ pub struct PrivateDataContext<'b> {
 }
 
 /// Raw data needed to format a message on demand.
+/// Not public — callers use `LogEntry::message()`.
 ///
 /// Borrows raw item bytes with lifetime `'b` from the tracev3 chunk data
 /// or oversize cache — zero-copy. The `'b` lifetime is scoped to a single
@@ -169,6 +170,7 @@ pub struct LogEntry<'a, 'b> {
     pub timezone_name: &'a str,
     pub evidence: Rc<PathBuf>,
     pub message_flags: Vec<MessageFlags>,
+    // Private: deferred message data
     pub items: ItemsData<'b>,
     // Signpost fields — populated only for Signpost entries, 0 otherwise.
     pub signpost_id: u64,
