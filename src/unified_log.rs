@@ -16,6 +16,7 @@ use crate::chunks::firehose::activity::FirehoseActivity;
 use crate::chunks::firehose::firehose_log::{
     Firehose, FirehoseItemType, FirehosePreamble, MessageFlags,
 };
+use crate::chunks::firehose::message::MessageData;
 use crate::chunks::firehose::nonactivity::FirehoseNonActivity;
 use crate::chunks::firehose::signpost::FirehoseSignpost;
 use crate::chunks::firehose::trace::FirehoseTrace;
@@ -569,7 +570,7 @@ where
                 simpledump.continous_time,
                 no_firehose_preamble,
             );
-            let log_data = LogData {
+            let mut log_data = LogData {
                 subsystem: simpledump.subsystem.to_owned(),
                 thread_id: simpledump.thread_id,
                 pid: simpledump.first_proc_id,
@@ -592,12 +593,27 @@ where
                     .unwrap_or("Unknown Timezone Name")
                     .to_string(),
                 library_uuid: simpledump.sender_uuid.to_owned(),
-                process_uuid: simpledump.dsc_uuid.to_owned(),
+                process_uuid: String::new(),
                 raw_message: String::new(),
                 message_entries: Vec::new(),
                 message_flags: Vec::new(),
                 evidence: self.unified_log_data.evidence.clone(),
             };
+
+            // Extract Process info from shared strings
+            if let Ok((_, proc_lib)) = MessageData::extract_shared_strings(
+                self.provider,
+                self.cache,
+                u64::from(simpledump.unknown_offset),
+                simpledump.first_proc_id,
+                simpledump.second_proc_id as u32,
+                &catalog_data.catalog,
+                0,
+            ) {
+                log_data.process_uuid = proc_lib.process_uuid;
+                log_data.process = proc_lib.process;
+            }
+
             log_data_vec.push(log_data);
         }
 
