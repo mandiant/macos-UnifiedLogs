@@ -7,12 +7,12 @@
 
 use super::network::{get_ip_four, get_ip_six};
 use crate::util::{encode_standard, extract_string};
-use log::warn;
 use nom::{
     bytes::complete::take,
     number::complete::{be_u32, be_u64, le_i32, le_u32, le_u64},
 };
 use std::collections::HashSet;
+use tracing::warn;
 
 /// Parse DNS configuration. Can view live data with macOS command `scutil --dns`. This info is also logged to the Unified Log
 pub(crate) fn get_dns_config(data: &[u8]) -> nom::IResult<&[u8], String> {
@@ -70,9 +70,7 @@ fn parse_dns_config<'a>(
             1 => resolvers.push(parse_dns_resolver(config_data)?.1),
             2 => scopes.push(parse_dns_resolver(config_data)?.1),
             _ => {
-                warn!(
-                    "[macos-unifiedlogs] Unknown DNS config type. Neither resolver or scope: {resolver_or_scope}"
-                );
+                warn!("Unknown DNS config type. Neither resolver or scope: {resolver_or_scope}");
                 return Ok((
                     remaining,
                     format!(
@@ -230,7 +228,7 @@ fn parse_dns_resolver(data: &[u8]) -> nom::IResult<&[u8], DnsConfig> {
             0xa => config.domain = extract_string(option_data)?.1,
             0xe => config.options = extract_string(option_data)?.1,
             _ => {
-                warn!("[macos-unifiedlogs] Unknown DNS option type: {option_type}");
+                warn!("Unknown DNS option type: {option_type}");
                 config.unknown = format!(
                     "Unknown DNS option type: {option_type}: {}",
                     encode_standard(data)
@@ -258,7 +256,7 @@ fn parse_nameserver(data: &[u8]) -> nom::IResult<&[u8], String> {
         let (input, ip) = get_ip_six(input)?;
         (input, ip.to_string())
     } else {
-        warn!("[macos-unifiedlogs] Unknown nameserver data type");
+        warn!("Unknown nameserver data type");
         (
             data,
             format!("Unknown nameserver data type: {}", encode_standard(data)),
@@ -344,7 +342,7 @@ fn parse_interface<'a>(
             0x2 => get_ip_four(ip_data)?.1.to_string(),
             0x1E => get_ip_six(ip_data)?.1.to_string(),
             _ => {
-                warn!("[macos-unifiedlogs] Unknown interface family: {interface_family}");
+                warn!("Unknown interface family: {interface_family}");
                 format!("Unknown interface family: {interface_family}")
             }
         };

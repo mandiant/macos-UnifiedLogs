@@ -9,9 +9,9 @@ use crate::catalog::CatalogChunk;
 use crate::chunks::firehose::firehose_log::{FirehoseItemData, FirehoseItemType};
 use crate::chunks::firehose::message::MessageData;
 use crate::traits::{FileProvider, StringCache};
-use log::{error, warn};
 use nom::bytes::complete::take;
 use nom::number::complete::{be_u8, be_u16, be_u32, be_u64, le_u8, le_u32};
+use tracing::{error, warn};
 
 #[derive(Debug, Clone, Default)]
 pub struct FirehoseTrace {
@@ -53,7 +53,7 @@ impl FirehoseTrace {
         match message_result {
             Ok((_, result)) => result,
             Err(err) => {
-                error!("[macos-unifiedlogs] Could not get Trace message data: {err:?}");
+                error!("Could not get Trace message data: {err:?}");
                 FirehoseItemData {
                     item_info: Vec::new(),
                     backtrace_strings: Vec::new(),
@@ -107,9 +107,7 @@ impl FirehoseTrace {
                     item_info.message_strings = format!("{value}")
                 }
                 _ => {
-                    warn!(
-                        "[macos-unifiedlogs] Unhandled size of trace data: {entry_size}. Defaulting to size of one"
-                    );
+                    warn!("Unhandled size of trace data: {entry_size}. Defaulting to size of one");
                     let (_, unknown_size) = le_u8(message_data)?;
                     item_info.message_strings = format!("{unknown_size}")
                 }

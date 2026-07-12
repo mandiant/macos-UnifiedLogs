@@ -1,10 +1,10 @@
 use crate::dsc::SharedCacheStrings;
 use crate::traits::{FileProvider, SourceFile};
 use crate::uuidtext::UUIDText;
-use log::error;
 use std::fs::File;
 use std::io::{Error, ErrorKind, Read};
 use std::path::{Component, Path, PathBuf};
+use tracing::error;
 use walkdir::WalkDir;
 
 pub struct LocalFile {
@@ -156,7 +156,7 @@ impl FileProvider for LiveSystemProvider {
             Ok((_, results)) => results,
             Err(err) => {
                 error!(
-                    "[macos-unifiedlogs] Failed to parse UUID file {}: {err:?}",
+                    "Failed to parse UUID file {}: {err:?}",
                     path.to_str().unwrap_or_default()
                 );
                 return Err(Error::new(
@@ -195,7 +195,7 @@ impl FileProvider for LiveSystemProvider {
             Ok((_, results)) => results,
             Err(err) => {
                 error!(
-                    "[macos-unifiedlogs] Failed to parse dsc UUID file {}: {err:?}",
+                    "Failed to parse dsc UUID file {}: {err:?}",
                     path.to_str().unwrap_or_default(),
                 );
                 return Err(Error::new(
@@ -323,7 +323,7 @@ impl FileProvider for LogarchiveProvider {
             Ok((_, results)) => results,
             Err(err) => {
                 error!(
-                    "[macos-unifiedlogs] Failed to parse UUID file {}: {err:?}",
+                    "Failed to parse UUID file {}: {err:?}",
                     base.to_str().unwrap_or_default(),
                 );
                 return Err(Error::new(
@@ -363,7 +363,7 @@ impl FileProvider for LogarchiveProvider {
             Ok((_, results)) => results,
             Err(err) => {
                 error!(
-                    "[macos-unifiedlogs] Failed to parse dsc UUID file {}: {err:?}",
+                    "Failed to parse dsc UUID file {}: {err:?}",
                     base.to_str().unwrap_or_default(),
                 );
                 return Err(Error::new(

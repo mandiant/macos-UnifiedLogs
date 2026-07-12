@@ -5,9 +5,9 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-use log::{debug, error};
 use nom::Needed;
 use nom::number::complete::{be_u128, le_u16};
+use tracing::{debug, error};
 
 use crate::chunks::firehose::firehose_log::MessageFlags;
 
@@ -51,15 +51,13 @@ impl FirehoseFormatters {
          */
         match firehose_flags & flag_check {
             0x20 => {
-                debug!("[macos-unifiedlogs] Firehose flag: has_large_offset");
+                debug!("Firehose flag: has_large_offset");
                 let (firehose_input, firehose_large_offset) = le_u16(input)?;
                 formatter_flags.has_large_offset = firehose_large_offset;
                 input = firehose_input;
                 flags.push(MessageFlags::HasLargeOffset);
                 if (firehose_flags & large_shared_cache) != 0 {
-                    debug!(
-                        "[macos-unifiedlogs] Firehose flag: large_shared_cache and has_large_offset"
-                    );
+                    debug!("Firehose flag: large_shared_cache and has_large_offset");
                     let (firehose_input, firehose_large_shared_cache) = le_u16(firehose_input)?;
                     formatter_flags.large_shared_cache = firehose_large_shared_cache;
                     flags.push(MessageFlags::LargeSharedCache);
@@ -70,7 +68,7 @@ impl FirehoseFormatters {
                 }
             }
             0xc => {
-                debug!("[macos-unifiedlogs] Firehose flag: large_shared_cache");
+                debug!("Firehose flag: large_shared_cache");
                 if (firehose_flags & large_offset) != 0 {
                     let (firehose_input, firehose_large_offset) = le_u16(input)?;
                     formatter_flags.has_large_offset = firehose_large_offset;
@@ -83,11 +81,11 @@ impl FirehoseFormatters {
                 input = firehose_input;
             }
             0x8 => {
-                debug!("[macos-unifiedlogs] Firehose flag: absolute");
+                debug!("Firehose flag: absolute");
                 formatter_flags.absolute = true;
                 flags.push(MessageFlags::Absolute);
                 if (firehose_flags & message_strings_uuid) == 0 {
-                    debug!("[macos-unifiedlogs] Firehose flag: alt index absolute flag");
+                    debug!("Firehose flag: alt index absolute flag");
                     let (firehose_input, firehose_uuid_file_index) = le_u16(input)?;
                     formatter_flags.main_exe_alt_index = firehose_uuid_file_index;
                     input = firehose_input;
@@ -95,12 +93,12 @@ impl FirehoseFormatters {
                 }
             }
             0x2 => {
-                debug!("[macos-unifiedlogs] Firehose flag: main_exe");
+                debug!("Firehose flag: main_exe");
                 formatter_flags.main_exe = true;
                 flags.push(MessageFlags::MainExe);
             }
             0x4 => {
-                debug!("[macos-unifiedlogs] Firehose flag: shared_cache");
+                debug!("Firehose flag: shared_cache");
                 formatter_flags.shared_cache = true;
                 flags.push(MessageFlags::SharedCache);
                 if (firehose_flags & large_offset) != 0 {
@@ -111,15 +109,15 @@ impl FirehoseFormatters {
                 }
             }
             0xa => {
-                debug!("[macos-unifiedlogs] Firehose flag: uuid_relative");
+                debug!("Firehose flag: uuid_relative");
                 let (firehose_input, firehose_uuid_relative) = be_u128(input)?;
                 formatter_flags.uuid_relative = format!("{firehose_uuid_relative:032X}");
                 input = firehose_input;
                 flags.push(MessageFlags::UuidRelative);
             }
             _ => {
-                error!("[macos-unifiedlogs] Unknown Firehose formatter flag: {firehose_flags:?}");
-                debug!("[macos-unifiedlogs] Firehose data: {data:X?}");
+                error!("Unknown Firehose formatter flag: {firehose_flags:?}");
+                debug!("Firehose data: {data:X?}");
                 flags.push(MessageFlags::Unknown);
                 return Err(nom::Err::Incomplete(Needed::Unknown));
             }

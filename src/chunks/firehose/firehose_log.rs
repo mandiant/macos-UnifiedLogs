@@ -13,7 +13,6 @@ use crate::chunks::firehose::trace::FirehoseTrace;
 use crate::util::{
     encode_standard, extract_string_size, padding_size_8, padding_size_four, u64_to_usize,
 };
-use log::{debug, error, warn};
 use nom::Parser;
 use nom::bytes::complete::take_while;
 use nom::combinator::map;
@@ -25,6 +24,7 @@ use nom::{
 };
 use serde::Serialize;
 use std::mem::size_of;
+use tracing::{debug, error, warn};
 
 #[derive(Debug, Clone, Default)]
 pub struct FirehosePreamble {
@@ -238,7 +238,7 @@ impl FirehosePreamble {
 
         // If there is private data, go through and update any logs that have private data items
         if private_data_virtual_offset != 0x1000 {
-            debug!("[macos-unifiedlogs] Parsing Private Firehose Data");
+            debug!("Parsing Private Firehose Data");
             // Nom any padding
             let (mut private_input, _) = take_while(|b: u8| b == 0)(input)?;
 
@@ -334,7 +334,7 @@ impl FirehosePreamble {
         let backtrace_signature_size: usize = 3;
 
         if (firehose_flags & has_context_data) != 0 {
-            debug!("[macos-unifiedlogs] Identified Backtrace data in Firehose log chunk");
+            debug!("Identified Backtrace data in Firehose log chunk");
             let (backtrace_input, backtrace_data) =
                 FirehosePreamble::get_backtrace_data(firehose_input)?;
             firehose_input = backtrace_input;
@@ -387,11 +387,8 @@ impl FirehosePreamble {
                 firehose_input = item_value_input;
                 item.message_strings = message_string;
             } else {
-                error!(
-                    "[macos-unifiedlogs] Unknown Firehose item: {}",
-                    &item.item_type
-                );
-                debug!("[macos-unifiedlogs] Firehose item data: {data:?}");
+                error!("Unknown Firehose item: {}", &item.item_type);
+                debug!("Firehose item data: {data:?}");
             }
         }
 
@@ -526,11 +523,11 @@ impl FirehosePreamble {
             return Ok((input, firehose_results));
         } else {
             warn!(
-                "[macos-unifiedlogs] Unknown log activity type: {} -  {} bytes left",
+                "Unknown log activity type: {} -  {} bytes left",
                 log_activity_type,
                 input.len()
             );
-            debug!("[macos-unifiedlogs] Firehose data: {data:X?}");
+            debug!("Firehose data: {data:X?}");
             return Ok((input, firehose_results));
         }
 
@@ -562,7 +559,7 @@ impl FirehosePreamble {
         let padding_data = match u64_to_usize(padding_data) {
             Some(p) => p,
             None => {
-                error!("[macos-unifiedlogs] u64 is bigger than system usize");
+                error!("u64 is bigger than system usize");
                 return Err(nom::Err::Error(nom::error::Error::new(
                     input,
                     nom::error::ErrorKind::TooLarge,
@@ -606,7 +603,7 @@ impl FirehosePreamble {
         let padding_size = match u64_to_usize(padding_size) {
             Some(p) => p,
             None => {
-                error!("[macos-unifiedlogs] u64 is bigger than system usize");
+                error!("u64 is bigger than system usize");
                 return Err(nom::Err::Error(nom::error::Error::new(
                     input,
                     nom::error::ErrorKind::TooLarge,
@@ -713,8 +710,8 @@ impl FirehosePreamble {
             8 => le_i64(input)?,
             1 => map(le_i8, i64::from).parse(input)?,
             _ => {
-                warn!("[macos-unifiedlogs] Unknown number size support: {item_size:?}");
-                debug!("[macos-unifiedlogs] Item data: {data:?}");
+                warn!("Unknown number size support: {item_size:?}");
+                debug!("Item data: {data:?}");
                 (input, -9999)
             }
         })

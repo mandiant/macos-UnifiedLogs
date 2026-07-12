@@ -7,10 +7,10 @@
 
 use crate::decoders::{config, location};
 use crate::util::{encode_standard, extract_string};
-use log::{error, info};
 use nom::bytes::complete::take;
 use nom::number::complete::{be_u128, le_u8, le_u32, le_u64};
 use plist::Value;
+use tracing::{error, info};
 
 #[derive(Debug, Clone, Default)]
 pub struct Statedump {
@@ -103,7 +103,7 @@ impl Statedump {
     /// Parse the binary plist file in the log. The plist may be empty
     pub fn parse_statedump_plist(plist_data: &[u8]) -> String {
         if plist_data.is_empty() {
-            info!("[macos-unifiedlogs] Empty plist data in statedump");
+            info!("Empty plist data in statedump");
             return String::from("Empty plist data");
         }
         let data: Result<Value, plist::Error> = plist::from_bytes(plist_data);
@@ -113,13 +113,13 @@ impl Statedump {
                 match json_data {
                     Ok(json) => json,
                     Err(err) => {
-                        error!("[macos-unifiedlogs] Failed to convert plist to json: {err:?}");
+                        error!("Failed to convert plist to json: {err:?}");
                         String::from("Failed to convert plist data to json")
                     }
                 }
             }
             Err(err) => {
-                error!("[macos-unifiedlogs] Failed to parse statedump plist data: {err:?}");
+                error!("Failed to parse statedump plist data: {err:?}");
                 String::from("Failed to get plist data")
             }
         }
@@ -143,7 +143,7 @@ impl Statedump {
         match message_result {
             Ok((_, result)) => result,
             Err(err) => {
-                error!("[macos-unifiedlogs] Failed to parse statedump object {name}: {err:?}");
+                error!("Failed to parse statedump object {name}: {err:?}");
                 format!("Failed to parse statedump object: {name}")
             }
         }

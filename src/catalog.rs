@@ -5,10 +5,7 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-use std::collections::HashMap;
-
 use crate::{preamble::LogPreamble, util::*};
-use log::error;
 use nom::{
     IResult, Parser,
     bytes::complete::take,
@@ -17,6 +14,8 @@ use nom::{
     multi::many_m_n,
     number::complete::{be_u128, le_u16, le_u32, le_u64},
 };
+use std::collections::HashMap;
+use tracing::{error, warn};
 
 #[derive(Debug, Clone, Default)]
 pub struct CatalogChunk {
@@ -226,7 +225,7 @@ impl CatalogChunk {
             .get(catalog_main_uuid_index as usize)
             .map(ToString::to_string)
             .unwrap_or_else(|| {
-                log::warn!("[macos-unifiedlogs] Could not find main UUID in catalog");
+                warn!("Could not find main UUID in catalog");
                 String::new()
             });
 
@@ -234,7 +233,7 @@ impl CatalogChunk {
             .get(catalog_dsc_uuid_index as usize)
             .map(ToString::to_string)
             .unwrap_or_else(|| {
-                //log::warn!("[macos-unifiedlogs] Could not find DSC UUID in catalog");
+                //log::warn!("Could not find DSC UUID in catalog");
                 String::new()
             });
 
@@ -243,7 +242,7 @@ impl CatalogChunk {
         let padding = match u64_to_usize(padding) {
             Some(p) => p,
             None => {
-                error!("[macos-unifiedlogs] u64 is bigger than system usize");
+                error!("u64 is bigger than system usize");
                 return Err(nom::Err::Error(nom::error::Error::new(
                     input,
                     nom::error::ErrorKind::TooLarge,
@@ -356,7 +355,7 @@ impl CatalogChunk {
         let padding = match u64_to_usize(padding) {
             Some(p) => p,
             None => {
-                error!("[macos-unifiedlogs] u64 is bigger than system usize");
+                error!("u64 is bigger than system usize");
                 return Err(nom::Err::Error(nom::error::Error::new(
                     input,
                     nom::error::ErrorKind::TooLarge,
@@ -411,7 +410,6 @@ impl CatalogChunk {
             }
         }
 
-        //log::warn!("[macos-unifiedlogs] Did not find subsystem in log entry");
         subsystem_info.subsystem = String::from("Unknown subsystem");
         Ok((&[], subsystem_info))
     }
@@ -425,7 +423,7 @@ impl CatalogChunk {
             return u64::from(entry.pid);
         }
 
-        log::warn!("[macos-unifiedlogs] Did not find PID in log Catalog");
+        warn!("Did not find PID in log Catalog");
         0
     }
 
@@ -438,7 +436,7 @@ impl CatalogChunk {
             return entry.effective_user_id;
         }
 
-        log::warn!("[macos-unifiedlogs] Did not find EUID in log Catalog");
+        warn!("Did not find EUID in log Catalog");
         0
     }
 }

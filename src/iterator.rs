@@ -4,8 +4,8 @@ use crate::{
     unified_log::{LogData, UnifiedLogCatalogData, UnifiedLogData},
     util::padding_size_8,
 };
-use log::{error, warn};
 use nom::bytes::complete::take;
+use tracing::{error, warn};
 
 #[derive(Debug, Clone)]
 /// Iterator to loop through Chunks in the tracev3 file
@@ -75,10 +75,7 @@ impl Iterator for UnifiedLogIterator {
                     &mut unified_log_data_true,
                 );
             } else {
-                error!(
-                    "[macos-unifiedlogs] Unknown chunk type: {}",
-                    preamble.chunk_tag
-                );
+                error!("Unknown chunk type: {}", preamble.chunk_tag);
             }
 
             let padding_size = padding_size_8(preamble.chunk_data_size);
@@ -123,7 +120,7 @@ fn nom_bytes<'a>(data: &'a [u8], size: &u64) -> nom::IResult<&'a [u8], &'a [u8]>
     let size = match usize::try_from(*size).ok() {
         Some(s) => s,
         None => {
-            error!("[macos-unifiedlogs] u64 is bigger than system usize");
+            error!("u64 is bigger than system usize");
             return Err(nom::Err::Error(nom::error::Error::new(
                 data,
                 nom::error::ErrorKind::TooLarge,
@@ -198,7 +195,7 @@ mod tests {
             evidence: String::from("0000000000000002.tracev3"),
         };
 
-        let mut cache = MemoryStringCache::default();
+        let cache = MemoryStringCache::default();
 
         let mut total = 0;
         for chunk in log_iterator {

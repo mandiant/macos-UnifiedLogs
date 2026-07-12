@@ -7,13 +7,13 @@
 
 use super::DecoderError;
 use crate::util::decode_standard;
-use log::warn;
 use nom::{
     Parser,
     combinator::map,
     number::complete::{be_u8, be_u16, be_u32, be_u128},
 };
 use std::net::{Ipv4Addr, Ipv6Addr};
+use tracing::warn;
 
 /// Parse an IPv6 address
 pub(crate) fn ipv_six(input: &str) -> Result<Ipv6Addr, DecoderError<'_>> {
@@ -103,7 +103,7 @@ fn get_sockaddr_data(input: &[u8]) -> nom::IResult<&[u8], String> {
             }
         }
         _ => {
-            warn!("[macos-unifiedlogs] Unknown sockaddr family: {family}. From: {input:?}",);
+            warn!("Unknown sockaddr family: {family}. From: {input:?}",);
             Ok((input, format!("Unknown sockaddr family: {family}",)))
         }
     }

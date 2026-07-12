@@ -6,7 +6,6 @@
 // See the License for the specific language governing permissions and limitations under the License.
 
 use chrono::{SecondsFormat, TimeZone, Utc};
-use log::{LevelFilter, debug, error, info, warn};
 use macos_unifiedlogs::cache::MemoryStringCache;
 use macos_unifiedlogs::filesystem::{LiveSystemProvider, LogarchiveProvider};
 use macos_unifiedlogs::iterator::UnifiedLogIterator;
@@ -14,15 +13,19 @@ use macos_unifiedlogs::parser::{build_log, collect_timesync, parse_log};
 use macos_unifiedlogs::timesync::TimesyncBoot;
 use macos_unifiedlogs::traits::{FileProvider, SourceFile, StringCache};
 use macos_unifiedlogs::unified_log::{LogData, UnifiedLogData};
-use simplelog::{ColorChoice, Config, TermLogger, TerminalMode};
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::Display;
-use std::fs;
+use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use tracing::level_filters::LevelFilter;
+use tracing::{debug, error, info, warn};
+use tracing_subscriber::fmt::layer;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 
 use clap::{Parser, ValueEnum, builder};
 use csv::Writer;
@@ -150,6 +153,14 @@ struct Args {
     #[clap(short, long, default_value = Format::Jsonl)]
     format: Format,
 
+    /// Logging level (error, warn, info, debug, trace)
+    #[clap(short, long, value_parser, default_value_t = String::from("info"))]
+    logging: String,
+
+    /// Display logging results to terminal
+    #[clap(short, long, value_parser, default_value_t = false)]
+    terminal_logging: bool,
+
     /// Append to output file.
     /// If false, will overwrite output file
     #[clap(short, long, default_value = "false")]
@@ -196,16 +207,43 @@ impl From<Format> for &str {
 }
 
 fn main() {
-    TermLogger::init(
-        LevelFilter::Warn,
-        Config::default(),
-        TerminalMode::Stderr,
-        ColorChoice::Auto,
-    )
-    .expect("Failed to initialize simple logger");
+    let args = Args::parse();
+    let log_file =
+        File::create("unified_iterator_log.jsonl").expect("Could not create logging file");
+
+    if args.terminal_logging {
+        tracing_subscriber::registry()
+            .with(
+                layer()
+                    .json()
+                    .with_file(true)
+                    .with_line_number(true)
+                    .with_target(false)
+                    .flatten_event(true)
+                    .with_writer(log_file),
+            )
+            .with(logging_level(&args.logging))
+            .with(layer().with_ansi(true))
+            .try_init()
+            .expect("Could not start tracing_subscriber with terminal_logging");
+    } else {
+        tracing_subscriber::registry()
+            .with(
+                layer()
+                    .json()
+                    .with_file(true)
+                    .with_line_number(true)
+                    .with_target(false)
+                    .flatten_event(true)
+                    .with_writer(log_file),
+            )
+            .with(logging_level(&args.logging))
+            .try_init()
+            .expect("Could not start tracing_subscriber");
+    }
+
     info!("Starting Unified Log parser...");
 
-    let args = Args::parse();
     let output_format = args.format;
 
     // Determine source ID for bookmark
@@ -331,6 +369,16 @@ fn main() {
 
     if let Err(e) = result {
         error!("Error during parsing: {e}");
+    }
+}
+
+fn logging_level(level: &str) -> LevelFilter {
+    match level.to_ascii_lowercase().as_str() {
+        "error" => LevelFilter::ERROR,
+        "warn" => LevelFilter::WARN,
+        "debug" => LevelFilter::DEBUG,
+        "trace" => LevelFilter::TRACE,
+        _ => LevelFilter::INFO,
     }
 }
 
@@ -590,7 +638,7 @@ fn parse_trace_file(
             {
                 return Err(BrokenPipeError);
             }
-            log::error!("Failed to output remaining log data: {err:?}");
+            error!("Failed to output remaining log data: {err:?}");
         }
     }
     info!("Parsed {log_count} log entries (skipped {skipped_count} older entries)");
@@ -609,7 +657,7 @@ fn iterate_chunks(
     let mut buf = Vec::new();
 
     if let Err(err) = reader.read_to_end(&mut buf) {
-        log::error!("Failed to read tracev3 file: {err:?}");
+        error!("Failed to read tracev3 file: {err:?}");
         return Ok((0, 0));
     }
 
@@ -657,7 +705,7 @@ fn iterate_chunks(
                 debug!("Broken pipe detected, saving bookmark before exit...");
                 return Err(BrokenPipeError);
             }
-            log::error!("Failed to output log data: {err:?}");
+            error!("Failed to output log data: {err:?}");
         }
 
         if missing_logs.catalog_data.is_empty()

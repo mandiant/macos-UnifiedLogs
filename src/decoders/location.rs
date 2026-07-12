@@ -11,12 +11,12 @@ use super::{
     DecoderError,
     bool::{lowercase_bool, lowercase_int_bool},
 };
-use log::warn;
 use nom::{
     IResult, Parser,
     bytes::complete::take,
     number::complete::{le_f64, le_i32, le_i64, le_u8, le_u32},
 };
+use tracing::warn;
 
 #[derive(Debug, Default)]
 struct LocationTrackerState {
@@ -174,7 +174,7 @@ fn get_sqlite_data(input: &[u8]) -> IResult<&[u8], &'static str> {
         101 => "SQLITE DONE",
         266 => "SQLITE IO ERR READ",
         _ => {
-            warn!("[macos-unifiedlogs] Unknown Core Location sqlite error: {sqlite_code}");
+            warn!("Unknown Core Location sqlite error: {sqlite_code}");
             "Unknown Core Location sqlite error"
         }
     };
@@ -502,7 +502,7 @@ pub(crate) fn get_daemon_status_tracker(input: &[u8]) -> nom::IResult<&[u8], Str
         2 => "kReachabilityLarge",
         1000 => "kReachabilityUnachievable",
         _ => {
-            warn!("[macos-unifiedlogs] Unknown reachability value: {reachability}");
+            warn!("Unknown reachability value: {reachability}");
             "Unknown reachability value"
         }
     };
@@ -515,7 +515,7 @@ pub(crate) fn get_daemon_status_tracker(input: &[u8]) -> nom::IResult<&[u8], Str
         0 => "kChargerTypeUnknown",
         2 => "kChargerTypeUsb",
         _ => {
-            warn!("[macos-unifiedlogs] Unknown charger type value: {charger_type}");
+            warn!("Unknown charger type value: {charger_type}");
             "Unknown charger type value"
         }
     };

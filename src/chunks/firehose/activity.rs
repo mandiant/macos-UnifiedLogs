@@ -10,8 +10,8 @@ use crate::chunks::firehose::firehose_log::MessageFlags;
 use crate::chunks::firehose::flags::FirehoseFormatters;
 use crate::chunks::firehose::message::{MessageData, MessageParams};
 use crate::traits::{FileProvider, StringCache};
-use log::debug;
 use nom::number::complete::{le_u32, le_u64};
+use tracing::debug;
 
 #[derive(Debug, Clone, Default)]
 pub struct FirehoseActivity {
@@ -53,7 +53,7 @@ impl FirehoseActivity {
 
         let unique_pid = 0x10; // has_unique_pid flag
         if (firehose_flags & unique_pid) != 0 {
-            debug!("[macos-unifiedlogs] Activity Firehose log chunk has unique_pid flag");
+            debug!("Activity Firehose log chunk has unique_pid flag");
             let (firehose_input, firehose_unique_pid) = le_u64(input)?;
             activity.pid = firehose_unique_pid;
             activity.flags.push(MessageFlags::HasUniquePid);
@@ -62,7 +62,7 @@ impl FirehoseActivity {
 
         let activity_id_current = 0x1; // has_current_aid flag
         if (firehose_flags & activity_id_current) != 0 {
-            debug!("[macos-unifiedlogs] Activity Firehose log chunk has has_current_aid flag");
+            debug!("Activity Firehose log chunk has has_current_aid flag");
             let (firehose_input, firehose_activity_id) = le_u32(input)?;
             let (firehose_input, firehose_sentinel) = le_u32(firehose_input)?;
 
@@ -75,9 +75,7 @@ impl FirehoseActivity {
 
         let activity_id_other = 0x200; // has_other_current_aid flag. In Activity log entries this is another activity id flag
         if (firehose_flags & activity_id_other) != 0 {
-            debug!(
-                "[macos-unifiedlogs] Activity Firehose log chunk has has_other_current_aid flag"
-            );
+            debug!("Activity Firehose log chunk has has_other_current_aid flag");
             let (firehose_input, firehose_activity_id) = le_u32(input)?;
             let (firehose_input, firehose_sentinel) = le_u32(firehose_input)?;
 
