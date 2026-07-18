@@ -125,6 +125,9 @@ fn test_parse_all_logs_monterey() {
     let mut statedump_protocol_buffer = 0;
     let mut string_count = 0;
 
+    let mut simple_logs = Vec::new();
+    let mut simple_log_display = 0;
+
     let mut mutilities_worldclock = 0;
     let mut mutililties_return = 0;
     let mut location_tracker = 0;
@@ -181,7 +184,21 @@ fn test_parse_all_logs_monterey() {
         if logs.message.contains("Question Count: 1, Answer Record Count: 0, Authority Record Count: 0, Additional Record Count: 0") {
             dns_counts += 1;
         }
+
+        if logs.log_type == LogType::Simpledump {
+            if logs.process
+                == "/System/Library/PrivateFrameworks/MobileAccessoryUpdater.framework/XPCServices/UARPUpdaterServiceDisplay.xpc/Contents/MacOS/UARPUpdaterServiceDisplay"
+                && logs.subsystem.is_empty()
+            {
+                simple_log_display += 1;
+            }
+            simple_logs.push(logs);
+        }
     }
+
+    assert_eq!(simple_logs.len(), 162715);
+    assert_eq!(simple_log_display, 34);
+
     assert_eq!(unknown_strings, 531);
     assert_eq!(invalid_offsets, 60);
     assert_eq!(invalid_shared_string_offsets, 309);
