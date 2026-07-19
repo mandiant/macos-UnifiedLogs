@@ -6,48 +6,13 @@
 // See the License for the specific language governing permissions and limitations under the License.
 
 use macos_unifiedlogs::{
-    cache::MemoryStringCache,
-    filesystem::LogarchiveProvider,
-    parser::{build_log, collect_timesync, parse_log},
-    traits::{FileProvider, SourceFile},
-    unified_log::{EventType, LogData, LogType, UnifiedLogData},
+    chunk::{Chunk, ChunksReader},
+    log_entry::{EventType, LogType},
+    logarchive::{visit_logarchive, visit_logarchive_tracev3_file, visit_logarchive_tracev3_files},
 };
 use regex::Regex;
-use std::{fs::File, path::PathBuf};
-
-fn collect_logs(provider: &impl FileProvider) -> Vec<UnifiedLogData> {
-    provider
-        .tracev3_files()
-        .map(|mut file| {
-            let path = file.source_path().to_string();
-            parse_log(file.reader(), &path).unwrap()
-        })
-        .collect()
-}
-
-fn is_signpost(log_type: LogType) -> bool {
-    match log_type {
-        LogType::ProcessSignpostEvent
-        | LogType::ProcessSignpostStart
-        | LogType::ProcessSignpostEnd
-        | LogType::SystemSignpostEvent
-        | LogType::SystemSignpostStart
-        | LogType::SystemSignpostEnd
-        | LogType::ThreadSignpostEvent
-        | LogType::ThreadSignpostStart
-        | LogType::ThreadSignpostEnd => true,
-        LogType::Debug
-        | LogType::Info
-        | LogType::Default
-        | LogType::Error
-        | LogType::Fault
-        | LogType::Create
-        | LogType::Useraction
-        | LogType::Simpledump
-        | LogType::Statedump
-        | LogType::Loss => false,
-    }
-}
+use std::path::PathBuf;
+use uuid::uuid;
 
 #[test]
 fn test_parse_log_big_sur() {
@@ -55,20 +20,47 @@ fn test_parse_log_big_sur() {
     test_path.push("tests/test_data/system_logs_big_sur.logarchive");
     test_path.push("Persist/0000000000000004.tracev3");
 
-    let handle = File::open(&test_path.as_path()).unwrap();
-    let log_data = parse_log(handle, test_path.to_str().unwrap()).unwrap();
+    let data = std::fs::read(&test_path).unwrap();
 
-    assert_eq!(log_data.catalog_data[0].firehose.len(), 82);
-    assert_eq!(log_data.catalog_data[0].simpledump.len(), 0);
-    assert_eq!(log_data.header.len(), 1);
-    assert_eq!(
-        log_data.catalog_data[0]
-            .catalog
-            .catalog_process_info_entries
-            .len(),
-        45
-    );
-    assert_eq!(log_data.catalog_data[0].statedump.len(), 0);
+    let mut firehose = Vec::new();
+    let mut simpledump = Vec::new();
+    let mut headers_count = 0;
+    let mut catalog_process_info_entries = Vec::new();
+    let mut statedump = Vec::new();
+    let mut chunks_count = 0;
+
+    let mut reader = ChunksReader::new(&data);
+    reader
+        .visit(|chunk| {
+            match chunk {
+                Chunk::Header(_) => headers_count += 1,
+                Chunk::Catalog(catalog) => {
+                    firehose.push(0);
+                    simpledump.push(0);
+                    catalog_process_info_entries.push(catalog.catalog_process_info_entries.len());
+                    statedump.push(0);
+                }
+                Chunk::Firehose(_) => {
+                    *firehose.last_mut().unwrap() += 1;
+                }
+                Chunk::Simpledump(_) => {
+                    *simpledump.last_mut().unwrap() += 1;
+                }
+                Chunk::Statedump(_) => {
+                    *statedump.last_mut().unwrap() += 1;
+                }
+                _ => {}
+            };
+            chunks_count += 1;
+        })
+        .unwrap();
+
+    assert_eq!(chunks_count, 3446);
+    assert_eq!(firehose[0], 82);
+    assert_eq!(simpledump[0], 0);
+    assert_eq!(headers_count, 1);
+    assert_eq!(catalog_process_info_entries[0], 45);
+    assert_eq!(statedump[0], 0);
 }
 
 #[test]
@@ -76,25 +68,14 @@ fn test_big_sur_livedata() {
     let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_path.push("tests/test_data/system_logs_big_sur.logarchive");
 
-    let provider = LogarchiveProvider::new(test_path.as_path());
-    let cache = MemoryStringCache::default();
+    let mut count = 0;
+    visit_logarchive_tracev3_file(&test_path, "logdata.LiveData.tracev3", |results| {
+        count += 1;
 
-    let timesync_data = collect_timesync(&provider).unwrap();
-
-    test_path.push("logdata.LiveData.tracev3");
-    let handle = File::open(&test_path.as_path()).unwrap();
-    let results = parse_log(handle, test_path.to_str().unwrap()).unwrap();
-    test_path.pop();
-
-    let exclude_missing = false;
-    let (data, _) = build_log(&results, &provider, &cache, &timesync_data, exclude_missing);
-    assert_eq!(data.len(), 101566);
-
-    for results in data {
-        // Test for a log message that uses a firehose_header_timestamp with a value of zero
-        if results.message == "TimeSyncTime is mach_absolute_time nanoseconds\n" {
+        let message = results.message();
+        if message.as_str() == "TimeSyncTime is mach_absolute_time nanoseconds\n" {
             assert_eq!(
-                results.message,
+                message.as_str(),
                 "TimeSyncTime is mach_absolute_time nanoseconds\n"
             );
             assert_eq!(results.activity_id, 0);
@@ -103,18 +84,23 @@ fn test_big_sur_livedata() {
             assert_eq!(results.pid, 0);
             assert_eq!(
                 results.library,
-                "/System/Library/Extensions/IOTimeSyncFamily.kext/Contents/MacOS/IOTimeSyncFamily"
+                Some(
+                    "/System/Library/Extensions/IOTimeSyncFamily.kext/Contents/MacOS/IOTimeSyncFamily"
+                )
             );
-            assert_eq!(results.subsystem, String::new());
-            assert_eq!(results.category, String::new());
+            assert_eq!(results.subsystem, None);
+            assert_eq!(results.category, None);
             assert_eq!(results.event_type, EventType::Log);
             assert_eq!(results.log_type, LogType::Info);
-            assert_eq!(results.process, "/kernel");
+            assert_eq!(results.process, Some("/kernel"));
             assert_eq!(results.time, 1642304801596413351.0);
-            assert_eq!(results.boot_uuid, "A2A9017676CF421C84DC9BBD6263FEE7");
+            assert_eq!(results.boot_uuid, uuid!("A2A9017676CF421C84DC9BBD6263FEE7"));
             assert_eq!(results.timezone_name, "Pacific");
         }
-    }
+    })
+    .unwrap();
+
+    assert_eq!(count, 101566);
 }
 
 #[test]
@@ -122,49 +108,44 @@ fn test_build_log_big_sur() {
     let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_path.push("tests/test_data/system_logs_big_sur.logarchive");
 
-    let provider = LogarchiveProvider::new(test_path.as_path());
-    let cache = MemoryStringCache::default();
+    let mut count = 0;
+    visit_logarchive_tracev3_file(&test_path, "Persist/0000000000000004.tracev3", |results| {
+        if count == 0 {
+            assert_eq!(results.process, Some("/usr/libexec/opendirectoryd"));
+            assert_eq!(results.subsystem, Some("com.apple.opendirectoryd"));
+            assert_eq!(results.time, 1642303933964503310.0);
+            assert_eq!(results.activity_id, 0);
+            assert_eq!(results.library, Some("/usr/libexec/opendirectoryd"));
+            assert_eq!(
+                results.message().as_str(),
+                "opendirectoryd (build 796.100) launched..."
+            );
+            assert_eq!(results.pid, 105);
+            assert_eq!(results.thread_id, 670);
+            assert_eq!(results.category, Some("default"));
+            assert_eq!(results.log_type, LogType::Default);
+            assert_eq!(results.event_type, EventType::Log);
+            assert_eq!(results.euid, 0);
+            assert_eq!(results.boot_uuid, uuid!("AACFB573E87545CE98B893D132766A46"));
+            assert_eq!(results.timezone_name, "Pacific");
+            assert_eq!(
+                results.library_uuid,
+                uuid!("B736DF1625F538248E9527A8CEC4991E")
+            );
+            assert_eq!(
+                results.process_uuid,
+                uuid!("B736DF1625F538248E9527A8CEC4991E")
+            );
+            assert_eq!(
+                results.raw_message(),
+                "opendirectoryd (build %{public}s) launched..."
+            );
+        }
+        count += 1;
+    })
+    .unwrap();
 
-    let timesync_data = collect_timesync(&provider).unwrap();
-
-    test_path.push("Persist/0000000000000004.tracev3");
-
-    let handle = File::open(&test_path.as_path()).unwrap();
-
-    let log_data = parse_log(handle, test_path.to_str().unwrap()).unwrap();
-
-    let exclude_missing = false;
-    let (results, _) = build_log(
-        &log_data,
-        &provider,
-        &cache,
-        &timesync_data,
-        exclude_missing,
-    );
-    assert_eq!(results.len(), 110953);
-    assert_eq!(results[0].process, "/usr/libexec/opendirectoryd");
-    assert_eq!(results[0].subsystem, "com.apple.opendirectoryd");
-    assert_eq!(results[0].time, 1642303933964503310.0);
-    assert_eq!(results[0].activity_id, 0);
-    assert_eq!(results[0].library, "/usr/libexec/opendirectoryd");
-    assert_eq!(
-        results[0].message,
-        "opendirectoryd (build 796.100) launched..."
-    );
-    assert_eq!(results[0].pid, 105);
-    assert_eq!(results[0].thread_id, 670);
-    assert_eq!(results[0].category, "default");
-    assert_eq!(results[0].log_type, LogType::Default);
-    assert_eq!(results[0].event_type, EventType::Log);
-    assert_eq!(results[0].euid, 0);
-    assert_eq!(results[0].boot_uuid, "AACFB573E87545CE98B893D132766A46");
-    assert_eq!(results[0].timezone_name, "Pacific");
-    assert_eq!(results[0].library_uuid, "B736DF1625F538248E9527A8CEC4991E");
-    assert_eq!(results[0].process_uuid, "B736DF1625F538248E9527A8CEC4991E");
-    assert_eq!(
-        results[0].raw_message,
-        "opendirectoryd (build %{public}s) launched..."
-    );
+    assert_eq!(count, 110953);
 }
 
 #[test]
@@ -172,24 +153,7 @@ fn test_parse_all_logs_big_sur() {
     let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_path.push("tests/test_data/system_logs_big_sur.logarchive");
 
-    let provider = LogarchiveProvider::new(test_path.as_path());
-    let cache = MemoryStringCache::default();
-
-    let timesync_data = collect_timesync(&provider).unwrap();
-    let log_data = collect_logs(&provider);
-
-    let mut log_data_vec: Vec<LogData> = Vec::new();
-    let exclude_missing = false;
-    for logs in &log_data {
-        let (mut data, _) = build_log(logs, &provider, &cache, &timesync_data, exclude_missing);
-        log_data_vec.append(&mut data);
-    }
-    // Run: "log raw-dump -a macos-unifiedlogs/tests/test_data/system_logs_big_sur.logarchive"
-    // total log entries: 747,294
-    // Add Statedump log entries: 322
-    // Total log entries: 747,616
-    assert_eq!(log_data_vec.len(), 747616);
-
+    let mut log_data_vec_len = 0;
     let mut unknown_strings = 0;
     let mut invalid_offsets = 0;
     let mut invalid_shared_string_offsets = 0;
@@ -218,24 +182,26 @@ fn test_parse_all_logs_big_sur() {
     let mut no_such_file_or_directory = 0;
 
     // Breakdown log entries by smaller types to ensure count is accurate
-    for logs in &log_data_vec {
-        if logs.message.contains("Failed to get string message from ")
-            || logs.message.contains("Unknown shared string message")
+    visit_logarchive(&test_path, |logs| {
+        log_data_vec_len += 1;
+        let message = logs.message();
+        let raw_message = logs.raw_message();
+
+        if message.contains("Failed to get string message from ")
+            || message.contains("Unknown shared string message")
         {
             unknown_strings += 1;
-        } else if logs.message.contains("Error: Invalid offset ") {
+        } else if message.contains("Error: Invalid offset ") {
             invalid_offsets += 1;
-        } else if logs.message.contains("Error: Invalid shared string offset") {
+        } else if message.contains("Error: Invalid shared string offset") {
             invalid_shared_string_offsets += 1;
-        } else if logs.message.contains("Unsupported Statedump object") {
+        } else if message.contains("Unsupported Statedump object") {
             statedump_custom_objects += 1;
-        } else if logs.message.contains("Failed to parse StateDump protobuf")
-            || logs
-                .message
-                .contains("Failed to serialize Protobuf HashMap")
+        } else if message.contains("Failed to parse StateDump protobuf")
+            || message.contains("Failed to serialize Protobuf HashMap")
         {
             statedump_protocol_buffer += 1;
-        } else if logs.message
+        } else if message.as_str()
             == r##"#32EC4B64 [AssetCacheLocatorService.queue] sending POST [327]{"locator-tag":"#32ec4b64","local-addresses":["192.168.101.144"],"ranked-results":true,"locator-software":[{"build":"20G224","type":"system","name":"macOS","version":"11.6.1"},{"id":"com.apple.AssetCacheLocatorService","executable":"AssetCacheLocatorService","type":"bundle","name":"AssetCacheLocatorService","version":"118"}]} to https://lcdn-locator.apple.com/lcdn/locate"##
         {
             found_precision_string = true;
@@ -263,34 +229,37 @@ fn test_parse_all_logs_big_sur() {
             loss_type += 1;
         }
 
-        if logs.message.contains("\"subHarvester\":\"Trace\"") {
+        if message.contains("\"subHarvester\":\"Trace\"") {
             location_harvest_count += 1;
         }
 
-        if message_re.is_match(&logs.raw_message) {
+        if message_re.is_match(raw_message) {
             string_count += 1;
         }
 
-        if logs.raw_message.is_empty()
-            && logs.message.is_empty()
-            && logs.event_type != EventType::Loss
-        {
+        if raw_message.is_empty() && message.is_empty() && logs.event_type != EventType::Loss {
             empty_format_count += 1
         }
 
-        if logs.message.contains("nw_resolver_create_dns_getaddrinfo_locked_block_invoke [C1] Got DNS result type NoAddress ifindex=0 configuration.ls.apple.com configuration.ls.apple.com. ::") {
+        if message.contains("nw_resolver_create_dns_getaddrinfo_locked_block_invoke [C1] Got DNS result type NoAddress ifindex=0 configuration.ls.apple.com configuration.ls.apple.com. ::") {
             sock_count += 1;
         }
 
-        if logs.parent_activity_id == 208 {
+        if logs.parent_activity_id == Some(208) {
             parent_activity += 1;
         }
 
-        if logs.message.contains("No such file or directory") {
+        if message.contains("No such file or directory") {
             no_such_file_or_directory += 1;
         }
-    }
+    })
+    .unwrap();
 
+    // Run: "log raw-dump -a macos-unifiedlogs/tests/test_data/system_logs_big_sur.logarchive"
+    // total log entries: 747,294
+    // Add Statedump log entries: 322
+    // Total log entries: 747,616
+    assert_eq!(log_data_vec_len, 747616);
     assert_eq!(unknown_strings, 0);
     assert_eq!(invalid_offsets, 54);
     assert_eq!(invalid_shared_string_offsets, 0);
@@ -321,20 +290,6 @@ fn test_parse_all_persist_logs_with_network_big_sur() {
     let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_path.push("tests/test_data/system_logs_big_sur.logarchive");
 
-    let provider = LogarchiveProvider::new(test_path.as_path());
-    let cache = MemoryStringCache::default();
-
-    let timesync_data = collect_timesync(&provider).unwrap();
-    let log_data = collect_logs(&provider);
-
-    let mut log_data_vec: Vec<LogData> = Vec::new();
-    let exclude_missing = false;
-
-    for logs in &log_data {
-        let (mut data, _) = build_log(logs, &provider, &cache, &timesync_data, exclude_missing);
-        log_data_vec.append(&mut data);
-    }
-
     let mut messages_containing_network = 0;
     let mut default_type = 0;
     let mut info_type = 0;
@@ -346,14 +301,12 @@ fn test_parse_all_persist_logs_with_network_big_sur() {
     let mut network_message_uuid = false;
 
     // Check all logs that contain the word "network"
-    for logs in &log_data_vec {
-        if logs.message.to_lowercase().contains("network") {
+    visit_logarchive(&test_path, |logs| {
+        let message = logs.message();
+        if message.to_lowercase().contains("network") {
             if logs.log_type == LogType::Default {
                 default_type += 1;
-                if logs
-                    .message
-                    .contains("7C10C1EF-1B86-494F-800D-C769A89172C1")
-                {
+                if message.contains("7C10C1EF-1B86-494F-800D-C769A89172C1") {
                     // The Console.app does not show the following network message. This might be a bug in the app?
                     // But the log command shows it correctly
                     // This is the only message that contains the UUID 7C10C1EF-1B86-494F-800D-C769A89172C1
@@ -380,23 +333,25 @@ fn test_parse_all_persist_logs_with_network_big_sur() {
                 create_type += 1;
                 // We are basing these counts on the Cosole.app tool
                 // Console.app skips Activity event logs
-                continue;
+                return;
             } else if logs.event_type == EventType::Simpledump
                 || logs.event_type == EventType::Statedump
             {
+                state_simple_dump += 1;
                 // We are basing these counts on the Cosole.app tool
                 // Console.app skips Simple and State dump event logs
-                state_simple_dump += 1;
-                continue;
-            } else if is_signpost(logs.log_type) {
+                return;
+            } else if logs.log_type.is_signpost() {
+                signpost += 1;
                 // We are basing these counts on the Cosole.app tool
                 // Console.app skips Signpost event logs
-                signpost += 1;
-                continue;
+                return;
             }
             messages_containing_network += 1;
         }
-    }
+    })
+    .unwrap();
+
     assert_eq!(messages_containing_network, 9173);
     // Console.app is missing a log entry. The log command shows the entry
     assert_eq!(default_type, 8320);
@@ -414,34 +369,26 @@ fn test_parse_all_logs_private_big_sur() {
     let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_path.push("tests/test_data/system_logs_big_sur_private_enabled.logarchive");
 
-    let provider = LogarchiveProvider::new(test_path.as_path());
-    let cache = MemoryStringCache::default();
-
-    let timesync_data = collect_timesync(&provider).unwrap();
-    let log_data = collect_logs(&provider);
-
-    let mut log_data_vec: Vec<LogData> = Vec::new();
-    let exclude_missing = false;
-    for logs in &log_data {
-        let (mut data, _) = build_log(logs, &provider, &cache, &timesync_data, exclude_missing);
-        log_data_vec.append(&mut data);
-    }
-    assert_eq!(log_data_vec.len(), 887890);
-
+    let mut log_data_vec_len = 0;
     let mut empty_counter = 0;
     let mut not_found = 0;
     let mut staff_count = 0;
-    for logs in log_data_vec {
-        if logs.message.is_empty() {
+    visit_logarchive(&test_path, |logs| {
+        log_data_vec_len += 1;
+        let message = logs.message();
+        if message.is_empty() {
             empty_counter += 1;
         }
-        if logs.message.contains("<not found>") {
+        if message.contains("<not found>") {
             not_found += 1;
         }
-        if logs.message.contains("group: staff@/Local/Default") {
+        if message.contains("group: staff@/Local/Default") {
             staff_count += 1;
         }
-    }
+    })
+    .unwrap();
+
+    assert_eq!(log_data_vec_len, 887890);
     assert_eq!(not_found, 0);
     assert_eq!(staff_count, 4);
     assert_eq!(empty_counter, 596);
@@ -453,21 +400,7 @@ fn test_parse_all_logs_private_with_public_mix_big_sur() {
     let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_path.push("tests/test_data/system_logs_big_sur_public_private_data_mix.logarchive");
 
-    let provider = LogarchiveProvider::new(test_path.as_path());
-    let cache = MemoryStringCache::default();
-
-    let timesync_data = collect_timesync(&provider).unwrap();
-    let log_data = collect_logs(&provider);
-
-    let mut log_data_vec: Vec<LogData> = Vec::new();
-    let exclude_missing = false;
-
-    for logs in &log_data {
-        let (mut data, _) = build_log(logs, &provider, &cache, &timesync_data, exclude_missing);
-        log_data_vec.append(&mut data);
-    }
-    assert_eq!(log_data_vec.len(), 1287628);
-
+    let mut log_data_vec_len = 0;
     let mut not_found = 0;
     let mut user_not_found = 0;
     let mut mobile_not_found = 0;
@@ -475,33 +408,35 @@ fn test_parse_all_logs_private_with_public_mix_big_sur() {
     let mut dns_query_count = 0;
     let mut bofa_count = 0;
 
-    for logs in log_data_vec {
-        if logs.message.contains("<not found>") {
+    visit_logarchive(&test_path, |logs| {
+        log_data_vec_len += 1;
+        let message = logs.message();
+        if message.contains("<not found>") {
             not_found += 1;
         }
-        if logs.message.contains("user: -1 <not found>") {
+        if message.contains("user: -1 <not found>") {
             user_not_found += 1;
         }
 
-        if logs
-            .message
-            .contains("refreshing: details, reason: expired, user: mobile <not found>")
-        {
+        if message.contains("refreshing: details, reason: expired, user: mobile <not found>") {
             mobile_not_found += 1;
         }
 
-        if logs.message.contains("BSSID 00:00:00:00:00:00") {
+        if message.contains("BSSID 00:00:00:00:00:00") {
             bssid_count += 1;
         }
 
-        if logs.message.contains("https://doh.dns.apple.com/dns-query") {
+        if message.contains("https://doh.dns.apple.com/dns-query") {
             dns_query_count += 1;
         }
 
-        if logs.message.contains("bankofamerica") {
+        if message.contains("bankofamerica") {
             bofa_count += 1;
         }
-    }
+    })
+    .unwrap();
+
+    assert_eq!(log_data_vec_len, 1287628);
     assert_eq!(not_found, 5);
     assert_eq!(user_not_found, 2);
     assert_eq!(mobile_not_found, 1);
@@ -515,47 +450,31 @@ fn test_parse_all_logs_private_with_public_mix_big_sur_single_file() {
     let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_path.push("tests/test_data/system_logs_big_sur_public_private_data_mix.logarchive");
 
-    let provider = LogarchiveProvider::new(test_path.as_path());
-    let cache = MemoryStringCache::default();
-
-    let timesync_data = collect_timesync(&provider).unwrap();
-
-    test_path.push("Persist/0000000000000009.tracev3");
-
-    let handle = File::open(&test_path.as_path()).unwrap();
-
-    let log_data = parse_log(handle, test_path.to_str().unwrap()).unwrap();
-
-    let exclude_missing = false;
-    let (results, _) = build_log(
-        &log_data,
-        &provider,
-        &cache,
-        &timesync_data,
-        exclude_missing,
-    );
-    assert_eq!(results.len(), 91567);
-
+    let mut results_len = 0;
     let mut hex_count = 0;
     let mut dns = 0;
     let mut public_private_mixture = false;
-    for result in results {
-        if result.message.contains("7FAE25804F50") {
+    visit_logarchive_tracev3_file(&test_path, "Persist/0000000000000009.tracev3", |result| {
+        results_len += 1;
+        let message = result.message();
+        if message.contains("7FAE25804F50") {
             hex_count += 1;
         }
-        if result.subsystem.contains(".mdns") {
+        if result.subsystem.unwrap_or("").contains(".mdns") {
             dns += 1;
         }
         // 7FAE25B0E420 is half public and half private
         // B0E420 exists in public data but is copied/prepended to the private data.
         // 7FAE25 only exists in private data
-        if result.message
+        if message.as_str()
             == "os_transaction created: (7FAE25B0E420) CLLS:0x7fae23628160.LocationFine"
         {
             public_private_mixture = true
         }
-    }
+    })
+    .unwrap();
 
+    assert_eq!(results_len, 91567);
     assert_eq!(hex_count, 4);
     assert_eq!(dns, 801);
     assert!(public_private_mixture);
@@ -567,34 +486,15 @@ fn test_parse_all_logs_private_with_public_mix_big_sur_special_file() {
     let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_path.push("tests/test_data/system_logs_big_sur_public_private_data_mix.logarchive");
 
-    let provider = LogarchiveProvider::new(test_path.as_path());
-    let cache = MemoryStringCache::default();
-
-    let timesync_data = collect_timesync(&provider).unwrap();
-
-    test_path.push("Special/0000000000000008.tracev3");
-
-    let handle = File::open(&test_path.as_path()).unwrap();
-
-    let log_data = parse_log(handle, test_path.to_str().unwrap()).unwrap();
-
-    let exclude_missing = false;
-    let (results, _) = build_log(
-        &log_data,
-        &provider,
-        &cache,
-        &timesync_data,
-        exclude_missing,
-    );
-    assert_eq!(results.len(), 2238);
-
+    let mut results_len = 0;
     let mut statedump = 0;
     let mut default = 0;
     let mut fault = 0;
     let mut info = 0;
     let mut error = 0;
 
-    for result in results {
+    visit_logarchive_tracev3_file(&test_path, "Special/0000000000000008.tracev3", |result| {
+        results_len += 1;
         if result.event_type == EventType::Statedump {
             statedump += 1;
         } else if result.log_type == LogType::Default {
@@ -606,8 +506,10 @@ fn test_parse_all_logs_private_with_public_mix_big_sur_special_file() {
         } else if result.log_type == LogType::Error {
             error += 1;
         }
-    }
+    })
+    .unwrap();
 
+    assert_eq!(results_len, 2238);
     assert_eq!(statedump, 1);
     assert_eq!(default, 1972);
     assert_eq!(fault, 32);
@@ -620,34 +522,18 @@ fn test_big_sur_missing_oversize_strings() {
     let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_path.push("tests/test_data/system_logs_big_sur.logarchive");
 
-    let provider = LogarchiveProvider::new(test_path.as_path());
-    let cache = MemoryStringCache::default();
-
-    let timesync_data = collect_timesync(&provider).unwrap();
-
-    // livedata may have oversize string data in other tracev3 on disk
-    test_path.push("logdata.LiveData.tracev3");
-    let handle = File::open(&test_path.as_path()).unwrap();
-
-    let log_data = parse_log(handle, test_path.to_str().unwrap()).unwrap();
-    test_path.pop();
-
-    let exclude_missing = false;
-    let (data, _) = build_log(
-        &log_data,
-        &provider,
-        &cache,
-        &timesync_data,
-        exclude_missing,
-    );
-    assert_eq!(data.len(), 101566);
-
+    let mut data_len = 0;
     let mut missing_strings = 0;
-    for results in data {
-        if results.message.contains("<Missing message data>") {
+    // livedata may have oversize string data in other tracev3 on disk
+    visit_logarchive_tracev3_file(&test_path, "logdata.LiveData.tracev3", |results| {
+        data_len += 1;
+        if results.message().contains("<Missing message data>") {
             missing_strings += 1;
         }
-    }
+    })
+    .unwrap();
+
+    assert_eq!(data_len, 101566);
     // There should be only 29 entries that have actual missing data
     // 23 strings are in other trave3 files. 23 + 29 = 52
     assert_eq!(missing_strings, 52);
@@ -658,44 +544,28 @@ fn test_big_sur_oversize_strings_in_another_file() {
     let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_path.push("tests/test_data/system_logs_big_sur.logarchive");
 
-    let provider = LogarchiveProvider::new(test_path.as_path());
-    let cache = MemoryStringCache::default();
-
-    let timesync_data = collect_timesync(&provider).unwrap();
-
-    // Get most recent Persist tracev3 file could contain oversize log entries
-    test_path.push("Persist/0000000000000005.tracev3");
-    let handle = File::open(&test_path.as_path()).unwrap();
-
-    let mut log_data = parse_log(handle, test_path.to_str().unwrap()).unwrap();
-    test_path.pop();
-    test_path.pop();
-
-    // Get most recent Special tracev3 file that could contain oversize log entries
-    test_path.push("Special/0000000000000005.tracev3");
-    let handle = File::open(&test_path.as_path()).unwrap();
-    let mut special_data = parse_log(handle, test_path.to_str().unwrap()).unwrap();
-    test_path.pop();
-    test_path.pop();
-
-    test_path.push("logdata.LiveData.tracev3");
-    let handle = File::open(&test_path.as_path()).unwrap();
-    let mut results = parse_log(handle, test_path.to_str().unwrap()).unwrap();
-    test_path.pop();
-
-    results.oversize.append(&mut log_data.oversize);
-    results.oversize.append(&mut special_data.oversize);
-
-    let exclude_missing = false;
-    let (data, _) = build_log(&results, &provider, &cache, &timesync_data, exclude_missing);
-    assert_eq!(data.len(), 101566);
-
+    let mut data_len = 0;
     let mut missing_strings = 0;
-    for results in data {
-        if results.message.contains("<Missing message data>") {
-            missing_strings += 1;
-        }
-    }
+    visit_logarchive_tracev3_files(
+        &test_path,
+        &[
+            "Persist/0000000000000005.tracev3",
+            "Special/0000000000000005.tracev3",
+            "logdata.LiveData.tracev3",
+        ],
+        |index, results| {
+            if index != 2 {
+                return;
+            }
+            data_len += 1;
+            if results.message().contains("<Missing message data>") {
+                missing_strings += 1;
+            }
+        },
+    )
+    .unwrap();
+
+    assert_eq!(data_len, 101566);
     // 29 log entries actually have missing data
     // Apple displays as: <decode: missing data>
     assert_eq!(missing_strings, 29);

@@ -1,465 +1,432 @@
-// Copyright 2022 Mandiant, Inc. All Rights Reserved
-// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at
-// http://www.apache.org/licenses/LICENSE-2.0
-// Unless required by applicable law or agreed to in writing, software distributed under the License
-// is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and limitations under the License.
+//! Logarchive directory walker — orchestrates the full parsing pipeline.
+//!
+//! Scans a `.logarchive` directory, loads timesync/DSC/UUIDText data,
+//! then processes all tracev3 files in order, emitting `LogEntry` via callback.
 
-use log::{error, info};
-
-use crate::dsc::SharedCacheStrings;
-use crate::error::ParserError;
-use crate::timesync::TimesyncBoot;
-use crate::traits::{FileProvider, SourceFile, StringCache};
-use crate::unified_log::{LogData, UnifiedLogData};
-use crate::uuidtext::UUIDText;
+use super::dsc::RawSharedCacheStrings;
+use super::error::ParseError;
+use super::filesystem::{FileProvider, LiveSystemProvider, LogarchiveProvider};
+use super::log_entry::LogEntry;
+use super::timesync::{RawTimesyncBoot, TimestampResolver, parse_timesync_file};
+use super::tracev3::{OversizeCache, visit_tracev3};
+use super::uuidtext::RawUUIDText;
+use log::warn;
 use std::collections::HashMap;
-use std::io::Read;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::rc::Rc;
+use uuid::Uuid;
 
-/// Parse a tracev3 file and return the deconstructed log data
-pub fn parse_log(mut reader: impl Read, evidence: &str) -> Result<UnifiedLogData, ParserError> {
-    let mut buf = Vec::new();
-    if let Err(err) = reader.read_to_end(&mut buf) {
-        error!("[macos-unifiedlogs] Failed to read the tracev3 file: {err:?}");
-        return Err(ParserError::Read);
-    }
-
-    info!("Read {} bytes from tracev3 file", buf.len());
-
-    let log_data_results = LogData::parse_unified_log(&buf, evidence);
-    match log_data_results {
-        Ok((_, log_data)) => Ok(log_data),
-        Err(err) => {
-            error!("[macos-unifiedlogs] Failed to parse the tracev3 file: {err:?}");
-            Err(ParserError::Tracev3Parse)
-        }
-    }
+#[derive(thiserror::Error, Debug)]
+pub enum VisitTracev3FileError {
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error(transparent)]
+    Parse(#[from] ParseError),
 }
 
-/// Reconstruct Unified Log entries. Provide a bool to ignore log entries that are not able to be recontructed. You may be able to reconstruct after parsing additional log files
-/// # Example
-/// ```rust
-///    use macos_unifiedlogs::filesystem::LogarchiveProvider;
-///    use macos_unifiedlogs::traits::{FileProvider, SourceFile};
-///    use macos_unifiedlogs::parser::collect_timesync;
-///    use macos_unifiedlogs::iterator::UnifiedLogIterator;
-///    use macos_unifiedlogs::unified_log::UnifiedLogData;
-///    use macos_unifiedlogs::parser::build_log;
-///    use macos_unifiedlogs::cache::MemoryStringCache;
-///    use std::path::PathBuf;
-///    use std::io::Read;
+/// Process all tracev3 files in a logarchive directory, emitting log entries via callback.
 ///
-///    let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-///    test_path.push("tests/test_data/system_logs_big_sur.logarchive");
-///    let mut provider = LogarchiveProvider::new(test_path.as_path());
-///    let timesync_data = collect_timesync(&provider).unwrap();
+/// The callback receives each `LogEntry` as it is produced. Individual file or parse
+/// failures are logged as warnings and skipped — only a missing timesync directory
+/// is a hard error.
+pub fn visit_logarchive(
+    path: &Path,
+    callback: impl for<'a, 'b> FnMut(LogEntry<'a, 'b>),
+) -> Result<(), std::io::Error> {
+    let provider = LogarchiveProvider::new(path);
+    visit_provider(&provider, callback)
+}
+
+/// Process all tracev3 files on the live macOS system, emitting log entries via callback.
 ///
-///    // We need to persist the Oversize log entries (they contain large strings that don't fit in normal log entries)
-///    let mut oversize_strings = UnifiedLogData {
-///        header: Vec::new(),
-///        catalog_data: Vec::new(),
-///        oversize: Vec::new(),
-///        evidence: String::new(),
-///    };
+/// This reads tracev3/timesync data from `/private/var/db/diagnostics` and UUIDText/DSC
+/// support files from `/private/var/db/uuidtext`.
+pub fn visit_live_system(
+    callback: impl for<'a, 'b> FnMut(LogEntry<'a, 'b>),
+) -> Result<(), std::io::Error> {
+    let provider = LiveSystemProvider::new();
+    visit_provider(&provider, callback)
+}
+
+/// Process all tracev3 files from a rewrite filesystem provider.
 ///
-///    let cache = MemoryStringCache::default();
-///    for mut entry in provider.tracev3_files() {
-///      println!("TraceV3 file: {}", entry.source_path());
-///      let mut buf = Vec::new();
-///      entry.reader().read_to_end(&mut buf);
-///      let log_iterator = UnifiedLogIterator {
-///        data: buf,
-///        header: Vec::new(),
-///        evidence: entry.source_path().to_string(),
-///      };
-///      // If we exclude entries that are missing strings, we may find them in later log files
-///      let exclude = true;
-///      for mut chunk in log_iterator {
-///        chunk.oversize.append(&mut oversize_strings.oversize);
-///        let (results, _missing_logs) = build_log(
-///            &chunk,
-///            &provider,
-///            &cache,
-///            &timesync_data,
-///            exclude,
-///        );
-///        oversize_strings.oversize = chunk.oversize;
-///        println!("Got {} log entries", results.len());
-///         break;
-///      }
-///      break;
-///    }
-/// ```
-pub fn build_log(
-    unified_data: &UnifiedLogData,
+/// The callback receives each `LogEntry` as it is produced. Individual file or parse
+/// failures are logged as warnings and skipped — only a missing timesync directory
+/// is a hard error.
+pub fn visit_provider(
     provider: &impl FileProvider,
-    cache: &impl StringCache,
-    timesync_data: &HashMap<String, TimesyncBoot>,
-    exclude_missing: bool,
-) -> (Vec<LogData>, UnifiedLogData) {
-    LogData::build_log(
-        unified_data,
-        provider,
-        cache,
-        timesync_data,
-        exclude_missing,
-    )
-}
+    mut callback: impl for<'a, 'b> FnMut(LogEntry<'a, 'b>),
+) -> Result<(), std::io::Error> {
+    // 1. Timesync → TimestampResolver
+    let timesync_data = load_timesync_data(&provider.timesync_dir())?;
+    let resolver = TimestampResolver::new(timesync_data);
 
-/// Parse all UUID files in provided directory. The directory should follow the same layout as the live system (ex: path/to/files/\<two character UUID\>/\<remaining UUID name\>)
-pub fn collect_strings(provider: &impl FileProvider) -> Result<Vec<UUIDText>, ParserError> {
-    let mut uuidtext_vec: Vec<UUIDText> = Vec::new();
-    // Start process to read a directory containing subdirectories that contain the uuidtext files
-    for mut source in provider.uuidtext_files() {
-        let mut buf = Vec::new();
-        let path = source.source_path().to_owned();
-        if let Err(e) = source.reader().read_to_end(&mut buf) {
-            error!("[macos-unifiedlogs] Failed to read uuidfile {path}: {e:?}");
-            continue;
-        };
+    // 2. DSC and UUIDText support files
+    let dsc_buffers = load_file_buffers_by_uuid(&provider.dsc_dir());
+    let dsc_files = parse_dsc_buffers(&dsc_buffers);
+    let uuidtext_buffers = load_uuidtext_buffers(&provider.uuidtext_root());
+    let uuidtext_files = parse_uuidtext_buffers(&uuidtext_buffers);
 
-        info!("Read {} bytes for file {path}", buf.len());
+    // 4. Collect and process all tracev3 files
+    let tracev3_paths = provider.tracev3_paths();
+    let mut oversize_cache = OversizeCache::new();
 
-        let uuid_results = UUIDText::parse_uuidtext(&buf);
-        let mut uuidtext_data = match uuid_results {
-            Ok((_, results)) => results,
-            Err(err) => {
-                error!("[macos-unifiedlogs] Failed to parse UUID file {path}: {err:?}");
+    for tracev3_path in &tracev3_paths {
+        let data = match std::fs::read(tracev3_path) {
+            Ok(d) => d,
+            Err(e) => {
+                warn!("Failed to read {}: {e}", tracev3_path.display());
                 continue;
             }
         };
 
-        uuidtext_data.uuid = PathBuf::from(path)
-            .file_name()
-            .map(|f| f.to_string_lossy())
-            .unwrap_or_default()
-            .to_string();
-        uuidtext_vec.push(uuidtext_data)
-    }
-    Ok(uuidtext_vec)
-}
-
-/// Parse all dsc uuid files in provided directory
-pub fn collect_shared_strings(
-    provider: &impl FileProvider,
-) -> Result<Vec<SharedCacheStrings>, ParserError> {
-    let mut shared_strings_vec: Vec<SharedCacheStrings> = Vec::new();
-    // Start process to read and parse uuid files related to dsc
-    for mut source in provider.dsc_files() {
-        let mut buf = Vec::new();
-        if let Err(err) = source.reader().read_to_end(&mut buf) {
-            error!("[macos-unifiedlogs] Failed to read dsc file: {err:?}");
-            continue;
+        if let Err(e) = visit_tracev3(
+            &data,
+            &resolver,
+            &dsc_files,
+            &uuidtext_files,
+            &mut oversize_cache,
+            Rc::new(tracev3_path.clone()),
+            |entry| {
+                callback(entry);
+            },
+        ) {
+            warn!("Failed to process {}: {e}", tracev3_path.display());
         }
-
-        match SharedCacheStrings::parse_dsc(&buf) {
-            Ok((_, mut results)) => {
-                results.dsc_uuid = PathBuf::from(source.source_path())
-                    .file_name()
-                    .map(|fname| fname.to_string_lossy())
-                    .unwrap_or_default()
-                    .to_string();
-                shared_strings_vec.push(results);
-            }
-            Err(err) => {
-                error!("[macos-unifiedlogs] Failed to parse dsc file: {err:?}");
-            }
-        };
     }
-    Ok(shared_strings_vec)
+
+    Ok(())
 }
 
-/// Parse all timesync files in provided directory
-/// # Example
-/// ```rust
-///    use macos_unifiedlogs::filesystem::LogarchiveProvider;
-///    use macos_unifiedlogs::parser::collect_timesync;
-///    use std::path::PathBuf;
+/// Helper function to process one tracev3 file from a logarchive, emitting log entries via callback.
 ///
-///    let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-///    test_path.push("tests/test_data/system_logs_big_sur.logarchive");
-///    let provider = LogarchiveProvider::new(test_path.as_path());
-///    let timesync_data = collect_timesync(&provider).unwrap();
-/// ```
-pub fn collect_timesync(
-    provider: &impl FileProvider,
-) -> Result<HashMap<String, TimesyncBoot>, ParserError> {
-    let mut timesync_data: HashMap<String, TimesyncBoot> = HashMap::new();
-    // Start process to read and parse all timesync files
-    for mut source in provider.timesync_files() {
-        let mut buffer = Vec::new();
-        if let Err(err) = source.reader().read_to_end(&mut buffer) {
-            error!("[macos-unifiedlogs] Failed to read timesync file: {err:?}");
+/// The tracev3 path is resolved relative to `logarchive_path`. This helper loads
+/// the logarchive's timesync, DSC, and `UUIDText` support files before visiting the
+/// selected tracev3 file.
+pub fn visit_logarchive_tracev3_file(
+    logarchive_path: &Path,
+    tracev3_path: impl AsRef<Path>,
+    mut callback: impl for<'a, 'b> FnMut(LogEntry<'a, 'b>),
+) -> Result<(), VisitTracev3FileError> {
+    visit_logarchive_tracev3_files(logarchive_path, &[tracev3_path], |_, entry| {
+        callback(entry);
+    })
+}
+
+/// Helper function to process selected tracev3 files from a logarchive in the provided order.
+///
+/// Tracev3 paths are resolved relative to `logarchive_path`. A single oversize
+/// cache is shared across all files, so callers can visit neighboring Persist,
+/// Special, and `LiveData` files when oversize payloads are referenced across files.
+/// The callback receives the zero-based index of the tracev3 path that produced
+/// each entry.
+pub fn visit_logarchive_tracev3_files<P: AsRef<Path>>(
+    logarchive_path: &Path,
+    tracev3_paths: &[P],
+    mut callback: impl for<'a, 'b> FnMut(usize, LogEntry<'a, 'b>),
+) -> Result<(), VisitTracev3FileError> {
+    let timesync_data = load_timesync_data(&logarchive_path.join("timesync"))?;
+    let resolver = TimestampResolver::new(timesync_data);
+    let dsc_buffers = load_file_buffers_by_uuid(&logarchive_path.join("dsc"));
+    let dsc_files = parse_dsc_buffers(&dsc_buffers);
+    let uuidtext_buffers = load_uuidtext_buffers(logarchive_path);
+    let uuidtext_files = parse_uuidtext_buffers(&uuidtext_buffers);
+    let mut oversize_cache = OversizeCache::new();
+
+    for (index, tracev3_path) in tracev3_paths.iter().enumerate() {
+        let evidence = logarchive_path.join(tracev3_path);
+        let data = std::fs::read(&evidence)?;
+        visit_tracev3(
+            &data,
+            &resolver,
+            &dsc_files,
+            &uuidtext_files,
+            &mut oversize_cache,
+            Rc::new(evidence),
+            |entry| callback(index, entry),
+        )?;
+    }
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Private helpers
+// ---------------------------------------------------------------------------
+
+/// Load and merge all `.timesync` files from the timesync directory.
+pub fn load_timesync_data(dir: &Path) -> Result<HashMap<Uuid, RawTimesyncBoot>, std::io::Error> {
+    let mut all_data: HashMap<Uuid, RawTimesyncBoot> = HashMap::new();
+    let mut paths = Vec::new();
+
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("timesync") {
             continue;
         }
+        paths.push(path);
+    }
 
-        let timesync_map = match TimesyncBoot::parse_timesync_data(&buffer) {
-            Ok((_, result)) => result,
-            Err(err) => {
-                error!("[macos-unifiedlogs] Failed to parse timesync file: {err:?}");
+    for path in sorted_paths(paths.into_iter()) {
+        let buffer = match std::fs::read(&path) {
+            Ok(b) => b,
+            Err(e) => {
+                warn!("Failed to read timesync {}: {e}", path.display());
                 continue;
             }
         };
-
-        /*
-         * If a macOS system has been online for a long time. macOS will create a new timesync file with the same boot UUID
-         * So we check if we already have an existing UUID and if we do, we just add the data to the existing data we have
-         */
-        for (key, mut value) in timesync_map {
-            if let Some(exiting_boot) = timesync_data.get_mut(&key) {
-                exiting_boot.timesync.append(&mut value.timesync);
+        let (_, file_data) = match parse_timesync_file(&buffer) {
+            Ok(r) => r,
+            Err(e) => {
+                warn!("Failed to parse timesync {}: {e}", path.display());
                 continue;
             }
-            timesync_data.insert(key, value);
+        };
+        for (uuid, mut boot) in file_data {
+            if let Some(existing) = all_data.get_mut(&uuid) {
+                existing.records.append(&mut boot.records);
+            } else {
+                all_data.insert(uuid, boot);
+            }
         }
     }
-    Ok(timesync_data)
+
+    Ok(all_data)
 }
+
+/// Load files from a directory where filenames are UUIDs (e.g. `dsc/`).
+pub fn load_file_buffers_by_uuid(dir: &Path) -> Vec<(Uuid, Vec<u8>)> {
+    let mut buffers = Vec::new();
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return buffers,
+    };
+    let paths = sorted_paths(entries.filter_map(|entry| entry.ok().map(|e| e.path())));
+
+    for path in paths {
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        let Ok(uuid) = Uuid::parse_str(name) else {
+            continue;
+        };
+        match std::fs::read(&path) {
+            Ok(buffer) => buffers.push((uuid, buffer)),
+            Err(e) => warn!("Failed to read DSC {}: {e}", path.display()),
+        }
+    }
+    buffers
+}
+
+/// Parse DSC support buffers keyed by UUID.
+pub fn parse_dsc_buffers(buffers: &[(Uuid, Vec<u8>)]) -> HashMap<Uuid, RawSharedCacheStrings<'_>> {
+    buffers
+        .iter()
+        .filter_map(|(uuid, buffer)| {
+            let (_, dsc) = RawSharedCacheStrings::parse(buffer)
+                .inspect_err(|e| warn!("Failed to parse DSC {uuid}: {e}"))
+                .ok()?;
+            Some((*uuid, dsc))
+        })
+        .collect()
+}
+
+/// Load `UUIDText` files from 2-char hex directories at the logarchive root.
+///
+/// Directory layout: `{XX}/{YYYYYYYYYYYYYYYYYYYYYYYYYYYYYY}`
+/// Full UUID = `XX` + `YYYYYYYYYYYYYYYYYYYYYYYYYYYYYY` (32 hex chars).
+pub fn load_uuidtext_buffers(base: &Path) -> Vec<(Uuid, Vec<u8>)> {
+    let mut buffers = Vec::new();
+    let entries = match std::fs::read_dir(base) {
+        Ok(e) => e,
+        Err(_) => return buffers,
+    };
+    let dir_paths = sorted_paths(entries.filter_map(|entry| entry.ok().map(|e| e.path())));
+
+    for dir_path in dir_paths {
+        let Some(dir_name_str) = dir_path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        // Only 2-char hex directories
+        if dir_name_str.len() != 2 || !dir_name_str.chars().all(|c| c.is_ascii_hexdigit()) {
+            continue;
+        }
+        if !dir_path.is_dir() {
+            continue;
+        }
+        let file_entries = match std::fs::read_dir(&dir_path) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        let file_paths =
+            sorted_paths(file_entries.filter_map(|entry| entry.ok().map(|e| e.path())));
+
+        for file_path in file_paths {
+            if !file_path.is_file() {
+                continue;
+            }
+            let Some(file_name_str) = file_path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            let uuid_str = format!("{dir_name_str}{file_name_str}");
+            let Ok(uuid) = Uuid::parse_str(&uuid_str) else {
+                continue;
+            };
+            match std::fs::read(&file_path) {
+                Ok(buffer) => buffers.push((uuid, buffer)),
+                Err(e) => warn!("Failed to read UUIDText {}: {e}", file_path.display()),
+            }
+        }
+    }
+    buffers
+}
+
+/// Parse `UUIDText` support buffers keyed by UUID.
+pub fn parse_uuidtext_buffers(buffers: &[(Uuid, Vec<u8>)]) -> HashMap<Uuid, RawUUIDText<'_>> {
+    buffers
+        .iter()
+        .filter_map(|(uuid, buffer)| {
+            let (_, uuidtext) = RawUUIDText::parse(buffer)
+                .inspect_err(|e| warn!("Failed to parse UUIDText {uuid}: {e}"))
+                .ok()?;
+            Some((*uuid, uuidtext))
+        })
+        .collect()
+}
+
+/// Sort paths to keep parser output deterministic across filesystems.
+fn sorted_paths(paths: impl Iterator<Item = PathBuf>) -> Vec<PathBuf> {
+    let mut paths = paths.collect::<Vec<_>>();
+    paths.sort();
+    paths
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
-    use crate::filesystem::LogarchiveProvider;
-    use crate::parser::{
-        build_log, collect_shared_strings, collect_strings, collect_timesync, parse_log,
-    };
-    use crate::unified_log::{EventType, LogType};
-    use std::path::PathBuf;
+    use super::*;
+    use crate::filesystem::collect_tracev3_paths;
+    use crate::helpers::tests::test_data_path;
 
     #[test]
-    #[cfg(target_os = "macos")]
-    fn test_collect_strings_system() {
-        use crate::filesystem::LiveSystemProvider;
-        let system_provider = LiveSystemProvider::default();
-        let uuidtext_results = collect_strings(&system_provider).unwrap();
-        assert!(uuidtext_results.len() > 100);
+    fn test_visit_logarchive_big_sur() {
+        use crate::log_entry::{EventType, LogType};
+
+        let base = test_data_path().join("system_logs_big_sur.logarchive");
+
+        let mut count = 0_usize;
+        visit_logarchive(&base, |entry| {
+            // Regression assertions on the first entry (from Persist/0000000000000001.tracev3)
+            if count == 0 {
+                assert_eq!(
+                    entry.process,
+                    Some("/usr/libexec/lightsoutmanagementRecoveryOSd")
+                );
+                assert_eq!(
+                    entry.library,
+                    Some("/usr/libexec/lightsoutmanagementRecoveryOSd")
+                );
+                assert_eq!(entry.subsystem, None);
+                assert_eq!(entry.category, None);
+                assert_eq!(entry.pid, 50);
+                assert_eq!(entry.euid, 0);
+                assert_eq!(entry.thread_id, 663);
+                assert_eq!(entry.activity_id, 0);
+                assert_eq!(entry.event_type, EventType::Log);
+                assert_eq!(entry.log_type, LogType::Default);
+                assert_eq!(entry.time, 1_642_302_211_489_633_000.0);
+                assert_eq!(
+                    entry.boot_uuid,
+                    Uuid::parse_str("9a6a3124-274a-44b2-9abf-2bc9e4599b3b").unwrap()
+                );
+                assert_eq!(entry.timezone_name, "Pacific");
+                assert_eq!(entry.format_string, Some("%s"));
+                assert_eq!(entry.message().as_str(), "main");
+            }
+            count += 1;
+        })
+        .unwrap();
+
+        assert_eq!(
+            count, 747_616,
+            "expected 747,616 entries from full logarchive, got {count}"
+        );
     }
 
     #[test]
-    #[cfg(target_os = "macos")]
-    fn test_collect_timesync_system() {
-        use crate::filesystem::LiveSystemProvider;
-        let system_provider = LiveSystemProvider::default();
-        let timesync_results = collect_timesync(&system_provider).unwrap();
-        assert!(timesync_results.len() > 1);
-    }
+    fn test_collect_tracev3_paths_order() {
+        let base = test_data_path().join("system_logs_big_sur.logarchive");
+        let paths = collect_tracev3_paths(&base);
 
-    #[test]
-    #[cfg(target_os = "macos")]
-    fn test_collect_timesync_archive() {
-        let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        // Should have files from Persist, Special, Signpost (HighVolume is empty in test data)
+        // plus logdata.LiveData.tracev3
+        assert!(!paths.is_empty(), "should find at least one tracev3 file");
 
-        test_path.push("tests/test_data/system_logs_big_sur.logarchive");
+        // Persist files should come first
+        let first = paths[0].to_string_lossy();
+        assert!(
+            first.contains("Persist"),
+            "first tracev3 should be from Persist/, got: {first}"
+        );
 
-        let provider = LogarchiveProvider::new(test_path.as_path());
-
-        let timesync_data = collect_timesync(&provider).unwrap();
-        assert_eq!(timesync_data.len(), 5);
-        assert_eq!(
-            timesync_data
-                .get("9A6A3124274A44B29ABF2BC9E4599B3B")
-                .unwrap()
-                .signature,
-            48048
-        );
-        assert_eq!(
-            timesync_data
-                .get("9A6A3124274A44B29ABF2BC9E4599B3B")
-                .unwrap()
-                .unknown,
-            0
-        );
-        assert_eq!(
-            timesync_data
-                .get("9A6A3124274A44B29ABF2BC9E4599B3B")
-                .unwrap()
-                .boot_uuid,
-            "9A6A3124274A44B29ABF2BC9E4599B3B"
-        );
-        assert_eq!(
-            timesync_data
-                .get("9A6A3124274A44B29ABF2BC9E4599B3B")
-                .unwrap()
-                .timesync
-                .len(),
-            5
-        );
-        assert_eq!(
-            timesync_data
-                .get("9A6A3124274A44B29ABF2BC9E4599B3B")
-                .unwrap()
-                .daylight_savings,
-            0
-        );
-        assert_eq!(
-            timesync_data
-                .get("9A6A3124274A44B29ABF2BC9E4599B3B")
-                .unwrap()
-                .boot_time,
-            1642302206000000000
-        );
-        assert_eq!(
-            timesync_data
-                .get("9A6A3124274A44B29ABF2BC9E4599B3B")
-                .unwrap()
-                .header_size,
-            48
-        );
-        assert_eq!(
-            timesync_data
-                .get("9A6A3124274A44B29ABF2BC9E4599B3B")
-                .unwrap()
-                .timebase_denominator,
-            1
-        );
-        assert_eq!(
-            timesync_data
-                .get("9A6A3124274A44B29ABF2BC9E4599B3B")
-                .unwrap()
-                .timebase_numerator,
-            1
-        );
-        assert_eq!(
-            timesync_data
-                .get("9A6A3124274A44B29ABF2BC9E4599B3B")
-                .unwrap()
-                .timezone_offset_mins,
-            0
+        // LiveData should be last
+        let last = paths.last().unwrap().to_string_lossy();
+        assert!(
+            last.contains("LiveData"),
+            "last tracev3 should be LiveData, got: {last}"
         );
     }
 
     #[test]
     #[cfg(target_os = "macos")]
-    fn test_collect_shared_strings_system() {
-        use crate::filesystem::LiveSystemProvider;
-        let system_provider = LiveSystemProvider::default();
-        let shared_strings_results = collect_shared_strings(&system_provider).unwrap();
-        assert!(shared_strings_results[0].ranges.len() > 1);
-        assert!(shared_strings_results[0].uuids.len() > 1);
-        assert!(shared_strings_results[0].number_ranges > 1);
-        assert!(shared_strings_results[0].number_uuids > 1);
+    fn test_visit_live_system() {
+        visit_live_system(|entry| {
+            assert_ne!(
+                entry.event_type,
+                EventType::Unknown,
+                "Got unknown event type for {entry:?}"
+            );
+
+            assert!(
+                !entry
+                    .timestamp()
+                    .to_rfc3339_opts(SecondsFormat::Nanos, true)
+                    .starts_with("1970-")
+            );
+        })
+        .unwrap();
     }
 
     #[test]
-    fn test_shared_strings_archive() {
-        let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        test_path.push("tests/test_data/system_logs_big_sur.logarchive");
-        let provider = LogarchiveProvider::new(test_path.as_path());
-        let shared_strings_results = collect_shared_strings(&provider).unwrap();
-
-        assert_eq!(shared_strings_results[0].number_uuids, 532);
-        assert_eq!(shared_strings_results[0].number_ranges, 788);
-        assert_eq!(
-            shared_strings_results[0].dsc_uuid,
-            "522F6217CB113F8FB845C2A1B784C7C2"
-        );
-        assert_eq!(shared_strings_results[0].minor_version, 0);
-        assert_eq!(shared_strings_results[0].major_version, 1);
-        assert_eq!(shared_strings_results[0].ranges.len(), 788);
-        assert_eq!(shared_strings_results[0].uuids.len(), 532);
-
-        assert_eq!(shared_strings_results.len(), 2);
-        assert_eq!(shared_strings_results[1].number_uuids, 1976);
-        assert_eq!(shared_strings_results[1].number_ranges, 2993);
-        assert_eq!(
-            shared_strings_results[1].dsc_uuid,
-            "80896B329EB13A10A7C5449B15305DE2"
-        );
-        assert_eq!(shared_strings_results[1].minor_version, 0);
-        assert_eq!(shared_strings_results[1].major_version, 1);
-        assert_eq!(shared_strings_results[1].ranges.len(), 2993);
-        assert_eq!(shared_strings_results[1].uuids.len(), 1976);
+    fn test_load_timsync_data() {
+        let base = test_data_path().join("system_logs_big_sur.logarchive");
+        let times = load_timesync_data(&base.join("timesync").as_path()).unwrap();
+        assert_eq!(times.len(), 5);
     }
 
     #[test]
-    fn test_collect_strings_archive() {
-        let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        test_path.push("tests/test_data/system_logs_big_sur.logarchive");
-        let provider = LogarchiveProvider::new(test_path.as_path());
+    fn test_load_file_buffers_uuid() {
+        let base = test_data_path().join("system_logs_tahoe.logarchive");
+        let cache = load_file_buffers_by_uuid(&base.join("dsc").as_path());
+        assert_eq!(cache.len(), 1);
 
-        let mut strings_results = collect_strings(&provider).unwrap();
-        assert_eq!(strings_results.len(), 536);
-
-        strings_results.sort_by(|a, b| a.uuid.cmp(&b.uuid));
-
-        assert_eq!(strings_results[0].signature, 1719109785);
-        assert_eq!(strings_results[0].uuid, "004EAF1C2B310DA0383BE3D60B80E8");
-        assert_eq!(strings_results[0].entry_descriptors.len(), 1);
-        assert_eq!(strings_results[0].footer_data.len(), 2847);
-        assert_eq!(strings_results[0].number_entries, 1);
-        assert_eq!(strings_results[0].minor_version, 1);
-        assert_eq!(strings_results[0].major_version, 2);
-
-        assert_eq!(strings_results[1].uuid, "00B3D870FB3AE8BDC1BA3A60D0B9A0");
-        assert_eq!(strings_results[1].footer_data.len(), 2164);
-
-        assert_eq!(strings_results[2].uuid, "014C44534A3A748476ABD88D376918");
-        assert_eq!(strings_results[2].footer_data.len(), 19011);
+        let cache_files = parse_dsc_buffers(&cache);
+        assert_eq!(cache_files.len(), 1);
     }
 
     #[test]
-    fn test_parse_log() {
-        let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        test_path.push("tests/test_data/system_logs_big_sur.logarchive");
+    fn test_load_uuidtext_buffers() {
+        let base = test_data_path().join("system_logs_tahoe.logarchive");
+        let provider = LogarchiveProvider::new(&base);
 
-        test_path.push("Persist/0000000000000002.tracev3");
-        let handle = std::fs::File::open(&test_path).unwrap();
-        let log_data = parse_log(handle, test_path.to_str().unwrap()).unwrap();
+        let result = load_uuidtext_buffers(&provider.uuidtext_root());
+        assert_eq!(result.len(), 876);
 
-        assert_eq!(log_data.catalog_data[0].firehose.len(), 99);
-        assert_eq!(log_data.catalog_data[0].simpledump.len(), 0);
-        assert_eq!(log_data.header.len(), 1);
-        assert_eq!(
-            log_data.catalog_data[0]
-                .catalog
-                .catalog_process_info_entries
-                .len(),
-            46
-        );
-        assert_eq!(log_data.catalog_data[0].statedump.len(), 0);
-    }
-
-    #[test]
-    fn test_build_log() {
-        let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        test_path.push("tests/test_data/system_logs_big_sur.logarchive");
-        let provider = LogarchiveProvider::new(test_path.as_path());
-        let cache = crate::cache::MemoryStringCache::default();
-
-        test_path.push("Persist/0000000000000002.tracev3");
-        let handle = std::fs::File::open(&test_path).unwrap();
-        let log_data = parse_log(handle, test_path.to_str().unwrap()).unwrap();
-
-        let timesync_data = collect_timesync(&provider).unwrap();
-
-        let exclude_missing = false;
-        let (results, _) = build_log(
-            &log_data,
-            &provider,
-            &cache,
-            &timesync_data,
-            exclude_missing,
-        );
-        assert_eq!(results.len(), 207366);
-        assert_eq!(results[10].process, "/usr/libexec/lightsoutmanagementd");
-        assert_eq!(results[10].subsystem, "com.apple.lom");
-        assert_eq!(results[10].time, 1642302327364384800.0);
-        assert_eq!(results[10].activity_id, 0);
-        assert_eq!(
-            results[10].library,
-            "/System/Library/PrivateFrameworks/AppleLOM.framework/Versions/A/AppleLOM"
-        );
-        assert_eq!(results[10].message, "<private> LOM isSupported : No");
-        assert_eq!(results[10].pid, 45);
-        assert_eq!(results[10].thread_id, 588);
-        assert_eq!(results[10].category, "device");
-        assert_eq!(results[10].log_type, LogType::Default);
-        assert_eq!(results[10].event_type, EventType::Log);
-        assert_eq!(results[10].euid, 0);
-        assert_eq!(results[10].boot_uuid, "80D194AF56A34C54867449D2130D41BB");
-        assert_eq!(results[10].timezone_name, "Pacific");
-        assert_eq!(results[10].library_uuid, "D8E5AF1CAF4F3CEB8731E6F240E8EA7D");
-        assert_eq!(results[10].process_uuid, "6C3ADF991F033C1C96C4ADFAA12D8CED");
-        assert_eq!(results[10].raw_message, "%@ LOM isSupported : %s");
+        let files = parse_uuidtext_buffers(&result);
+        assert_eq!(files.len(), 876);
     }
 }

@@ -1,238 +1,53 @@
-// Copyright 2022 Mandiant, Inc. All Rights Reserved
-// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at
-// http://www.apache.org/licenses/LICENSE-2.0
-// Unless required by applicable law or agreed to in writing, software distributed under the License
-// is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and limitations under the License.
+use nom::number::complete::le_u32;
 
-use crate::catalog::CatalogChunk;
-use crate::chunks::firehose::firehose_log::{FirehoseItemData, FirehoseItemType};
-use crate::chunks::firehose::message::MessageData;
-use crate::traits::{FileProvider, StringCache};
-use log::{error, warn};
-use nom::bytes::complete::take;
-use nom::number::complete::{be_u8, be_u16, be_u32, be_u64, le_u8, le_u32};
+use super::item::{RawFirehoseItem, parse_trace_items};
 
-#[derive(Debug, Clone, Default)]
-pub struct FirehoseTrace {
-    pub unknown_pc_id: u32, // Appears to be used to calculate string offset for firehose events with Absolute flag
-    pub message_data: FirehoseItemData,
+/// Parsed Trace entry body.
+#[derive(Debug, Clone, Copy)]
+pub struct RawTraceBody<'a> {
+    pub pc_id: u32,
+    /// Raw message data — interpretation requires reversal (trace stores data backwards).
+    pub items_data: &'a [u8],
 }
 
-impl FirehoseTrace {
-    /// Parse Trace Firehose log entry.
-    //  Ex: tp 504 + 34: trace default (main_exe)
-    pub fn parse_firehose_trace(data: &[u8]) -> nom::IResult<&[u8], FirehoseTrace> {
-        let mut firehose_trace = FirehoseTrace::default();
-
-        let (input, firehose_unknown_pc_id) = le_u32(data)?;
-        firehose_trace.unknown_pc_id = firehose_unknown_pc_id;
-
-        // Trace logs only have message values if more than 4 bytes remaining in log entry
-        let minimum_message_size = 4;
-        if input.len() < minimum_message_size {
-            let (input, _unknown_data) = take(input.len())(input)?;
-
-            return Ok((input, firehose_trace));
-        }
-
-        let mut message_data = input.to_vec();
-        // The rest of the trace log entry appears to be related to log message values
-        // But the data is stored differently from other log entries
-        // The data appears to be stored backwards? Ex: Data value, Data size, number of data entries, instead normal: number of data entries, data size, data value
-        message_data.reverse();
-        let message = FirehoseTrace::get_message(&message_data);
-        firehose_trace.message_data = message;
-
-        Ok((&[], firehose_trace))
+impl<'a> RawTraceBody<'a> {
+    /// Parse items from this trace body's `items_data`.
+    pub fn parse_items(&self) -> Vec<RawFirehoseItem<'static>> {
+        parse_trace_items(self.items_data)
     }
 
-    /// Get the Trace message
-    fn get_message(data: &[u8]) -> FirehoseItemData {
-        let message_result = FirehoseTrace::parse_trace_message(data);
-        match message_result {
-            Ok((_, result)) => result,
-            Err(err) => {
-                error!("[macos-unifiedlogs] Could not get Trace message data: {err:?}");
-                FirehoseItemData {
-                    item_info: Vec::new(),
-                    backtrace_strings: Vec::new(),
-                }
-            }
-        }
-    }
-
-    /// Parse the data associated with the trace message
-    fn parse_trace_message(data: &[u8]) -> nom::IResult<&[u8], FirehoseItemData> {
-        let mut item_data = FirehoseItemData {
-            item_info: Vec::new(),
-            backtrace_strings: Vec::new(),
-        };
-        let minimum_message_size = 4;
-        if data.len() < minimum_message_size {
-            return Ok((data, item_data));
-        }
-
-        let (mut remaining_input, entries) = le_u8(data)?;
-
-        let mut count = 0;
-        let mut sizes_count = Vec::new();
-        // based on number of entries get the size for each entry
-        while count < entries {
-            let (input, size) = le_u8(remaining_input)?;
-            sizes_count.push(size);
-            count += 1;
-            remaining_input = input;
-        }
-
-        for entry_size in sizes_count {
-            let mut item_info = FirehoseItemType::default();
-            // So far all entries appears to be numbers. Using Big Endian because we reversed the data above
-            let (input, message_data) = take(entry_size as usize)(remaining_input)?;
-            match entry_size {
-                1 => {
-                    let (_, value) = be_u8(message_data)?;
-                    item_info.message_strings = format!("{value}")
-                }
-                2 => {
-                    let (_, value) = be_u16(message_data)?;
-                    item_info.message_strings = format!("{value}")
-                }
-                4 => {
-                    let (_, value) = be_u32(message_data)?;
-                    item_info.message_strings = format!("{value}")
-                }
-                8 => {
-                    let (_, value) = be_u64(message_data)?;
-                    item_info.message_strings = format!("{value}")
-                }
-                _ => {
-                    warn!(
-                        "[macos-unifiedlogs] Unhandled size of trace data: {entry_size}. Defaulting to size of one"
-                    );
-                    let (_, unknown_size) = le_u8(message_data)?;
-                    item_info.message_strings = format!("{unknown_size}")
-                }
-            }
-            remaining_input = input;
-            item_data.item_info.push(item_info)
-        }
-        // Reverse the data back to expected format
-        item_data.item_info.reverse();
-
-        Ok((remaining_input, item_data))
-    }
-
-    /// Get base log message string formatter from shared cache strings (dsc) or UUID text file for firehose trace log entries (chunks)
-    pub(crate) fn get_firehose_trace_strings(
-        provider: &impl FileProvider,
-        cache: &impl StringCache,
-        string_offset: u64,
-        first_proc_id: u64,
-        second_proc_id: u32,
-        catalogs: &CatalogChunk,
-    ) -> nom::IResult<&'static [u8], MessageData> {
-        // Only main_exe flag has been seen for format strings
-        MessageData::extract_format_strings(
-            provider,
-            cache,
-            string_offset,
-            first_proc_id,
-            second_proc_id,
-            catalogs,
-            0,
-        )
+    /// Parse a Trace entry body from raw entry data.
+    pub fn parse(data: &'a [u8]) -> nom::IResult<&'a [u8], Self> {
+        let (items_data, pc_id) = le_u32(data)?;
+        Ok((&[], Self { pc_id, items_data }))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        chunks::firehose::trace::FirehoseTrace, filesystem::LogarchiveProvider, parser::parse_log,
-    };
-    use std::path::PathBuf;
+    use super::super::body::RawFirehoseBody;
+    use super::super::entry::{FirehoseActivityType, FirehoseLogType};
+    use super::super::flags::FirehoseFlags;
 
     #[test]
-    fn test_parse_firehose_trace() {
-        let test_data = [106, 139, 3, 0, 0];
-        let (_, results) = FirehoseTrace::parse_firehose_trace(&test_data).unwrap();
-        assert_eq!(results.unknown_pc_id, 232298);
+    fn test_trace_body() -> anyhow::Result<()> {
+        // From src/chunks/firehose/trace.rs test_parse_firehose_trace
+        let test_data: &[u8] = &[106, 139, 3, 0, 0];
 
-        let test_data = [248, 145, 3, 0, 200, 0, 0, 0, 0, 0, 0, 0, 8, 1];
-        let (_, results) = FirehoseTrace::parse_firehose_trace(&test_data).unwrap();
-        assert_eq!(results.unknown_pc_id, 233976);
-        assert_eq!(results.message_data.item_info.len(), 1);
-    }
+        let body = RawFirehoseBody::parse(
+            test_data,
+            FirehoseActivityType::Trace,
+            FirehoseFlags::empty(),
+            FirehoseLogType::Default,
+        )
+        .unwrap();
+        let trace = match body {
+            RawFirehoseBody::Trace(t) => t,
+            other => panic!("expected Trace, got {other:?}"),
+        };
 
-    #[test]
-    fn test_parse_trace_message() {
-        let mut test_message = vec![200, 0, 0, 0, 0, 0, 0, 0, 8, 1];
-        test_message.reverse();
-        let (_, results) = FirehoseTrace::parse_trace_message(&test_message).unwrap();
-        assert_eq!(results.item_info[0].message_strings, "200");
-    }
-
-    #[test]
-    fn test_parse_trace_message_multiple() {
-        let test_message = [
-            2, 8, 8, 0, 0, 0, 0, 0, 0, 0, 200, 0, 0, 127, 251, 75, 225, 96, 176,
-        ];
-        let (_, results) = FirehoseTrace::parse_trace_message(&test_message).unwrap();
-
-        assert_eq!(results.item_info[0].message_strings, "140717286580400");
-        assert_eq!(results.item_info[1].message_strings, "200");
-    }
-
-    #[test]
-    fn test_get_message() {
-        let mut test_message = vec![200, 0, 0, 0, 0, 0, 0, 0, 8, 1];
-        test_message.reverse();
-        let results = FirehoseTrace::get_message(&test_message);
-        assert_eq!(results.item_info[0].message_strings, "200");
-    }
-
-    #[test]
-    fn test_get_firehose_trace_strings() {
-        let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        test_path.push("tests/test_data/system_logs_high_sierra.logarchive");
-        let provider = LogarchiveProvider::new(test_path.as_path());
-        let cache = crate::cache::MemoryStringCache::default();
-
-        test_path.push("logdata.LiveData.tracev3");
-        let handle = std::fs::File::open(&test_path).unwrap();
-
-        let log_data = parse_log(handle, test_path.to_str().unwrap()).unwrap();
-
-        let activity_type = 0x3;
-
-        for catalog_data in log_data.catalog_data {
-            for preamble in catalog_data.firehose {
-                for firehose in preamble.public_data {
-                    if firehose.log_activity_type == activity_type {
-                        let (_, message_data) = FirehoseTrace::get_firehose_trace_strings(
-                            &provider,
-                            &cache,
-                            u64::from(firehose.format_string_location),
-                            preamble.first_number_proc_id,
-                            preamble.second_number_proc_id,
-                            &catalog_data.catalog,
-                        )
-                        .unwrap();
-                        assert_eq!(message_data.format_string, "starting metadata download");
-                        assert_eq!(message_data.library, "/usr/libexec/mobileassetd");
-                        assert_eq!(message_data.process, "/usr/libexec/mobileassetd");
-                        assert_eq!(
-                            message_data.process_uuid,
-                            "CC6C867B44D63D0ABAA7598659629484"
-                        );
-                        assert_eq!(
-                            message_data.library_uuid,
-                            "CC6C867B44D63D0ABAA7598659629484"
-                        );
-                        return;
-                    }
-                }
-            }
-        }
+        assert_eq!(trace.pc_id, 232298);
+        assert_eq!(trace.items_data, &[0]);
+        Ok(())
     }
 }

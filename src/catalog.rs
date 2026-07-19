@@ -1,14 +1,4 @@
-// Copyright 2022 Mandiant, Inc. All Rights Reserved
-// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at
-// http://www.apache.org/licenses/LICENSE-2.0
-// Unless required by applicable law or agreed to in writing, software distributed under the License
-// is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and limitations under the License.
-
-use std::collections::HashMap;
-
-use crate::{preamble::LogPreamble, util::*};
-use log::error;
+use super::helpers::{anticipated_padding_size_8, u64_to_usize, utf8_str_from_cstring};
 use nom::{
     IResult, Parser,
     bytes::complete::take,
@@ -17,12 +7,11 @@ use nom::{
     multi::many_m_n,
     number::complete::{be_u128, le_u16, le_u32, le_u64},
 };
+use std::collections::HashMap;
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Default)]
-pub struct CatalogChunk {
-    pub chunk_tag: u32,
-    pub chunk_sub_tag: u32,
-    pub chunk_data_size: u64,
+pub struct RawCatalogChunk<'a> {
     /// offset relative to start of catalog UUIDs
     pub catalog_subsystem_strings_offset: u16,
     /// offset relative to start of catalog UUIDs
@@ -32,15 +21,164 @@ pub struct CatalogChunk {
     pub catalog_offset_sub_chunks: u16,
     pub number_sub_chunks: u16,
     /// unknown 6 bytes, padding? alignment?
-    pub unknown: Vec<u8>,
+    pub unknown: [u8; 6],
     pub earliest_firehose_timestamp: u64,
     /// array of UUIDs in big endian
-    pub catalog_uuids: Vec<String>,
+    pub catalog_uuids: Vec<Uuid>,
     /// array of strings with end-of-string character
-    pub catalog_subsystem_strings: Vec<u8>,
-    pub catalog_process_info_entries: HashMap<String, ProcessInfoEntry>,
+    pub catalog_subsystem_strings: &'a [u8],
+    pub catalog_process_info_entries: HashMap<CatalogProcessInfoKey, ProcessInfoEntry>,
     pub catalog_subchunks: Vec<CatalogSubchunk>,
+    /// subsystems lookups, keyed by `(subsystem_value, first_proc_id, second_proc_id)`
+    pub subsystems_strings: HashMap<(u16, u64, u32), (&'a str, &'a str)>,
 }
+
+#[derive(Debug)]
+pub struct SubsystemInfo<'a> {
+    pub subsystem: &'a str,
+    pub category: &'a str,
+}
+
+impl<'a> RawCatalogChunk<'a> {
+    /// Parse log Catalog data. The log Catalog contains metadata related to log entries such as Process info, Subsystem info, and the compressed log entries
+    pub fn parse(input: &'a [u8]) -> IResult<&'a [u8], Self> {
+        let mut tup = (le_u16, le_u16, le_u16, le_u16, le_u16);
+        let (
+            input,
+            (
+                catalog_subsystem_strings_offset,
+                catalog_process_info_entries_offset,
+                number_process_information_entries,
+                catalog_offset_sub_chunks,
+                number_sub_chunks,
+            ),
+        ) = tup.parse(input)?;
+
+        const UNKNOWN_LENGTH: u8 = 6;
+        let (input, unknown_slice) = take(UNKNOWN_LENGTH)(input)?;
+        let mut unknown = [0u8; 6];
+        unknown.copy_from_slice(unknown_slice);
+        let (input, earliest_firehose_timestamp) = le_u64(input)?;
+
+        const UUID_LENGTH: usize = 16;
+        let number_catalog_uuids = catalog_subsystem_strings_offset as usize / UUID_LENGTH;
+
+        let (input, catalog_uuids) = many_m_n(
+            number_catalog_uuids,
+            number_catalog_uuids,
+            map(be_u128, Uuid::from_u128),
+        )
+        .parse(input)?;
+
+        let subsystems_strings_length =
+            catalog_process_info_entries_offset - catalog_subsystem_strings_offset;
+        let (input, catalog_subsystem_strings) = take(subsystems_strings_length)(input)?;
+
+        let (input, catalog_process_info_entries_vec) = many_m_n(
+            number_process_information_entries as usize,
+            number_process_information_entries as usize,
+            |input| ProcessInfoEntry::parse(input, &catalog_uuids),
+        )
+        .parse(input)?;
+
+        let mut catalog_process_info_entries = HashMap::new();
+        for entry in catalog_process_info_entries_vec {
+            catalog_process_info_entries.insert(
+                CatalogProcessInfoKey(entry.first_number_proc_id, entry.second_number_proc_id),
+                entry,
+            );
+        }
+        let (input, catalog_subchunks) = many_m_n(
+            number_sub_chunks as usize,
+            number_sub_chunks as usize,
+            CatalogSubchunk::parse,
+        )
+        .parse(input)?;
+
+        let mut subsystems_strings = HashMap::with_capacity(catalog_process_info_entries.len());
+        for entry in catalog_process_info_entries.values() {
+            for subsystem in &entry.subsystem_entries {
+                let (input, _) = take(subsystem.subsystem_offset)(catalog_subsystem_strings)?;
+                let (_, subsystem_string) = utf8_str_from_cstring(input)?;
+
+                let (input, _) = take(subsystem.category_offset)(catalog_subsystem_strings)?;
+                let (_, category_string) = utf8_str_from_cstring(input)?;
+
+                subsystems_strings.insert(
+                    (
+                        subsystem.identifer,
+                        entry.first_number_proc_id,
+                        entry.second_number_proc_id,
+                    ),
+                    (subsystem_string, category_string),
+                );
+            }
+        }
+
+        Ok((
+            input,
+            Self {
+                catalog_subsystem_strings_offset,
+                catalog_process_info_entries_offset,
+                number_process_information_entries,
+                catalog_offset_sub_chunks,
+                number_sub_chunks,
+                unknown,
+                earliest_firehose_timestamp,
+                catalog_uuids,
+                catalog_subsystem_strings,
+                catalog_process_info_entries,
+                catalog_subchunks,
+                subsystems_strings,
+            },
+        ))
+    }
+
+    /// Get subsystem and category based on the log entry `first_proc_id`, `second_proc_id`, log entry subsystem id and the associated Catalog.
+    /// Results are cached so repeated lookups for the same key return cheap `Rc` clones.
+    pub fn get_subsystem(
+        &self,
+        subsystem_value: u16,
+        first_proc_id: u64,
+        second_proc_id: u32,
+    ) -> Option<SubsystemInfo<'a>> {
+        let cache_key = (subsystem_value, first_proc_id, second_proc_id);
+        self.subsystems_strings
+            .get(&cache_key)
+            .map(|(subsystem, category)| SubsystemInfo {
+                subsystem,
+                category,
+            })
+    }
+
+    /// Get the full process info entry for a log entry's proc IDs.
+    pub fn get_process_info(
+        &self,
+        first_proc_id: u64,
+        second_proc_id: u32,
+    ) -> Option<&ProcessInfoEntry> {
+        self.catalog_process_info_entries
+            .get(&CatalogProcessInfoKey(first_proc_id, second_proc_id))
+    }
+
+    /// Get the actual Process ID associated with log entry
+    pub fn get_pid(&self, first_proc_id: u64, second_proc_id: u32) -> Option<u64> {
+        self.catalog_process_info_entries
+            .get(&CatalogProcessInfoKey(first_proc_id, second_proc_id))
+            .map(|entry| u64::from(entry.pid))
+    }
+
+    /// Get the effictive user id associated with log entry. Can be mapped to an account name
+    pub fn get_euid(&self, first_proc_id: u64, second_proc_id: u32) -> Option<u32> {
+        self.catalog_process_info_entries
+            .get(&CatalogProcessInfoKey(first_proc_id, second_proc_id))
+            .map(|entry| entry.effective_user_id)
+    }
+}
+
+/// First & Second Proc Ids
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+pub struct CatalogProcessInfoKey(pub u64, pub u32);
 
 #[derive(Debug, Clone)]
 pub struct ProcessInfoEntry {
@@ -64,137 +202,14 @@ pub struct ProcessInfoEntry {
     /// Catalog process information sub system
     pub subsystem_entries: Vec<ProcessInfoSubsystem>,
     /// main UUID from `catalog_uuids`. Points to `UUIDinfo` file that contains strings
-    pub main_uuid: String,
+    pub main_uuid: Uuid,
     /// dsc UUID from `catalog_uuids`. Points to dsc shared string file that contains strings
-    pub dsc_uuid: String,
+    pub dsc_uuid: Option<Uuid>,
 }
 
-/// Part of `ProcessInfoEntry`
-#[derive(Debug, Clone)]
-pub struct ProcessUUIDEntry {
-    pub size: u32,
-    pub unknown: u32,
-    pub catalog_uuid_index: u16,
-    pub load_address: u64,
-    pub uuid: String,
-}
-
-/// Part of `ProcessInfoEntry`
-#[derive(Debug, Clone)]
-pub struct ProcessInfoSubsystem {
-    pub identifer: u16,
-    /// Represents the offset to the subsystem from the start of the subsystem entries
-    pub subsystem_offset: u16,
-    /// Represents the offset to the subsystem category from the start of the subsystem entries
-    pub category_offset: u16,
-}
-
-/// Part of `CatalogChunk`, possible 64-bit alignment padding at end
-#[derive(Debug, Clone)]
-pub struct CatalogSubchunk {
-    pub start: u64,
-    pub end: u64,
-    pub uncompressed_size: u32,
-    /// Should always be LZ4 (value 0x100)
-    pub compression_algorithm: u32,
-    pub number_index: u32,
-    /// indexes size = `number_index` * u16
-    pub indexes: Vec<u16>,
-    pub number_string_offsets: u32,
-    /// `string_offsets` size = `number_string_offsets` * u16
-    pub string_offsets: Vec<u16>,
-}
-
-#[derive(Debug)]
-pub struct SubsystemInfo {
-    pub subsystem: String,
-    pub category: String,
-}
-
-impl CatalogChunk {
-    /// Parse log Catalog data. The log Catalog contains metadata related to log entries such as Process info, Subsystem info, and the compressed log entries
-    pub fn parse_catalog(input: &[u8]) -> IResult<&[u8], Self> {
-        let (input, preamble) = LogPreamble::parse(input)?;
-        let mut tup = (le_u16, le_u16, le_u16, le_u16, le_u16);
-        let (
-            input,
-            (
-                catalog_subsystem_strings_offset,
-                catalog_process_info_entries_offset,
-                number_process_information_entries,
-                catalog_offset_sub_chunks,
-                number_sub_chunks,
-            ),
-        ) = tup.parse(input)?;
-
-        const UNKNOWN_LENGTH: u8 = 6;
-        let (input, unknown) = map(take(UNKNOWN_LENGTH), |v: &[u8]| v.to_vec()).parse(input)?;
-        let (input, earliest_firehose_timestamp) = le_u64(input)?;
-
-        const UUID_LENGTH: usize = 16;
-        let number_catalog_uuids = catalog_subsystem_strings_offset as usize / UUID_LENGTH;
-
-        let (input, catalog_uuids) = many_m_n(
-            number_catalog_uuids,
-            number_catalog_uuids,
-            map(be_u128, |x| format!("{x:032X}")),
-        )
-        .parse(input)?;
-
-        let subsystems_strings_length =
-            catalog_process_info_entries_offset - catalog_subsystem_strings_offset;
-        let (input, subsystem_strings_data) = take(subsystems_strings_length)(input)?;
-        let catalog_subsystem_strings = subsystem_strings_data.to_vec();
-
-        let (input, catalog_process_info_entries_vec) = many_m_n(
-            number_process_information_entries as usize,
-            number_process_information_entries as usize,
-            |input| Self::parse_catalog_process_entry(input, &catalog_uuids),
-        )
-        .parse(input)?;
-
-        let mut catalog_process_info_entries = HashMap::new();
-        for entry in catalog_process_info_entries_vec {
-            catalog_process_info_entries.insert(
-                format!(
-                    "{}_{}",
-                    entry.first_number_proc_id, entry.second_number_proc_id
-                ),
-                entry,
-            );
-        }
-        let (input, catalog_subchunks) = many_m_n(
-            number_sub_chunks as usize,
-            number_sub_chunks as usize,
-            Self::parse_catalog_subchunk,
-        )
-        .parse(input)?;
-        Ok((
-            input,
-            CatalogChunk {
-                chunk_tag: preamble.chunk_tag,
-                chunk_sub_tag: preamble.chunk_sub_tag,
-                chunk_data_size: preamble.chunk_data_size,
-                catalog_subsystem_strings_offset,
-                catalog_process_info_entries_offset,
-                number_process_information_entries,
-                catalog_offset_sub_chunks,
-                number_sub_chunks,
-                unknown,
-                earliest_firehose_timestamp,
-                catalog_uuids,
-                catalog_subsystem_strings,
-                catalog_process_info_entries,
-                catalog_subchunks,
-            },
-        ))
-    }
-
+impl ProcessInfoEntry {
     /// Parse the Catalog Process Information entry
-    fn parse_catalog_process_entry<'a>(
-        input: &'a [u8],
-        uuids: &[String],
-    ) -> IResult<&'a [u8], ProcessInfoEntry> {
+    fn parse<'a>(input: &'a [u8], uuids: &[Uuid]) -> IResult<&'a [u8], Self> {
         let mut catlog_tup = (le_u16, le_u16);
         let (input, (index, unknown)) = catlog_tup.parse(input)?;
         let (input, (catalog_main_uuid_index, catalog_dsc_uuid_index)) = catlog_tup.parse(input)?;
@@ -207,7 +222,7 @@ impl CatalogChunk {
 
         let (input, uuid_info_entries) =
             many_m_n(number_uuids_entries as _, number_uuids_entries as _, |s| {
-                Self::parse_process_info_uuid_entry(s, uuids)
+                ProcessUUIDEntry::parse(s, uuids)
             })
             .parse(input)?;
 
@@ -217,33 +232,27 @@ impl CatalogChunk {
         let (input, subsystem_entries) = many_m_n(
             number_subsystems as _,
             number_subsystems as _,
-            Self::parse_process_info_subystem,
+            ProcessInfoSubsystem::parse,
         )
         .parse(input)?;
 
         // Grab parsed UUIDs from Catalag array based on process entry uuid index
         let main_uuid = uuids
             .get(catalog_main_uuid_index as usize)
-            .map(ToString::to_string)
+            .copied()
             .unwrap_or_else(|| {
                 log::warn!("[macos-unifiedlogs] Could not find main UUID in catalog");
-                String::new()
+                Uuid::nil()
             });
 
-        let dsc_uuid = uuids
-            .get(catalog_dsc_uuid_index as usize)
-            .map(ToString::to_string)
-            .unwrap_or_else(|| {
-                //log::warn!("[macos-unifiedlogs] Could not find DSC UUID in catalog");
-                String::new()
-            });
+        let dsc_uuid = uuids.get(catalog_dsc_uuid_index as usize).copied();
 
         const SUBSYSTEM_SIZE: u64 = 6;
         let padding = anticipated_padding_size_8(number_subsystems.into(), SUBSYSTEM_SIZE);
         let padding = match u64_to_usize(padding) {
             Some(p) => p,
             None => {
-                error!("[macos-unifiedlogs] u64 is bigger than system usize");
+                log::error!("[macos-unifiedlogs] u64 is bigger than system usize");
                 return Err(nom::Err::Error(nom::error::Error::new(
                     input,
                     nom::error::ErrorKind::TooLarge,
@@ -275,12 +284,20 @@ impl CatalogChunk {
             },
         ))
     }
+}
+/// Part of `ProcessInfoEntry`
+#[derive(Debug, Clone)]
+pub struct ProcessUUIDEntry {
+    pub size: u32,
+    pub unknown: u32,
+    pub catalog_uuid_index: u16,
+    pub load_address: u64,
+    pub uuid: Uuid,
+}
 
+impl ProcessUUIDEntry {
     /// Parse the UUID metadata in the Catalog Process Entry (the Catalog Process Entry references the UUIDs array parsed in `parse_catalog` by index value)
-    fn parse_process_info_uuid_entry<'a>(
-        input: &'a [u8],
-        uuids: &[String],
-    ) -> IResult<&'a [u8], ProcessUUIDEntry> {
+    fn parse<'a>(input: &'a [u8], uuids: &[Uuid]) -> IResult<&'a [u8], Self> {
         let mut tup = (le_u32, le_u32, le_u16);
         let (input, (size, unknown, catalog_uuid_index)) = tup.parse(input)?;
 
@@ -294,14 +311,13 @@ impl CatalogChunk {
             Err(_) => return Err(nom::Err::Error(make_error(input, ErrorKind::Eof))),
         };
 
-        let uuid: String = uuids
+        let uuid: Uuid = *uuids
             .get(catalog_uuid_index as usize)
-            .ok_or_else(|| nom::Err::Error(make_error(input, ErrorKind::Eof)))?
-            .to_string();
+            .ok_or_else(|| nom::Err::Error(make_error(input, ErrorKind::Eof)))?;
 
         Ok((
             input,
-            ProcessUUIDEntry {
+            Self {
                 size,
                 unknown,
                 catalog_uuid_index,
@@ -310,23 +326,53 @@ impl CatalogChunk {
             },
         ))
     }
+}
 
+/// Part of `ProcessInfoEntry`
+#[derive(Debug, Clone)]
+pub struct ProcessInfoSubsystem {
+    pub identifer: u16,
+    /// Represents the offset to the subsystem from the start of the subsystem entries
+    pub subsystem_offset: u16,
+    /// Represents the offset to the subsystem category from the start of the subsystem entries
+    pub category_offset: u16,
+}
+
+impl ProcessInfoSubsystem {
     /// Parse the Catalog Subsystem metadata. This helps get the subsystem (App Bundle ID) and the log entry category
-    fn parse_process_info_subystem(input: &[u8]) -> IResult<&[u8], ProcessInfoSubsystem> {
+    fn parse(input: &[u8]) -> IResult<&[u8], Self> {
         let mut tup = (le_u16, le_u16, le_u16);
         let (input, (identifer, subsystem_offset, category_offset)) = tup.parse(input)?;
         Ok((
             input,
-            ProcessInfoSubsystem {
+            Self {
                 identifer,
                 subsystem_offset,
                 category_offset,
             },
         ))
     }
+}
 
+/// Part of `CatalogChunk`, possible 64-bit alignment padding at end
+#[derive(Debug, Clone)]
+pub struct CatalogSubchunk {
+    pub start: u64,
+    pub end: u64,
+    pub uncompressed_size: u32,
+    /// Should always be LZ4 (value 0x100)
+    pub compression_algorithm: u32,
+    pub number_index: u32,
+    /// indexes size = `number_index` * u16
+    pub indexes: Vec<u16>,
+    pub number_string_offsets: u32,
+    /// `string_offsets` size = `number_string_offsets` * u16
+    pub string_offsets: Vec<u16>,
+}
+
+impl CatalogSubchunk {
     /// Parse the Catalog Subchunk metadata. This metadata is related to the compressed (typically) Chunkset data
-    fn parse_catalog_subchunk(input: &[u8]) -> IResult<&[u8], CatalogSubchunk> {
+    fn parse(input: &[u8]) -> IResult<&[u8], Self> {
         let mut tup = (le_u64, le_u64, le_u32, le_u32, le_u32);
         let (input, (start, end, uncompressed_size, compression_algorithmn, number_index)) =
             tup.parse(input)?;
@@ -356,7 +402,7 @@ impl CatalogChunk {
         let padding = match u64_to_usize(padding) {
             Some(p) => p,
             None => {
-                error!("[macos-unifiedlogs] u64 is bigger than system usize");
+                log::error!("[macos-unifiedlogs] u64 is bigger than system usize");
                 return Err(nom::Err::Error(nom::error::Error::new(
                     input,
                     nom::error::ErrorKind::TooLarge,
@@ -379,79 +425,18 @@ impl CatalogChunk {
             },
         ))
     }
-
-    /// Get subsystem and category based on the log entry `first_proc_id`, `second_proc_id`, log entry subsystem id and the associated Catalog
-    pub fn get_subsystem(
-        &self,
-        subsystem_value: u16,
-        first_proc_id: u64,
-        second_proc_id: u32,
-    ) -> nom::IResult<&[u8], SubsystemInfo> {
-        let mut subsystem_info = SubsystemInfo {
-            subsystem: String::new(),
-            category: String::new(),
-        };
-
-        if let Some(entry) = self
-            .catalog_process_info_entries
-            .get(&format!("{first_proc_id}_{second_proc_id}"))
-        {
-            for subsystems in &entry.subsystem_entries {
-                if subsystem_value == subsystems.identifer {
-                    let subsystem_data: &[u8] = &self.catalog_subsystem_strings;
-                    let (input, _) = take(subsystems.subsystem_offset)(subsystem_data)?;
-                    let (_, subsystem_string) = extract_string(input)?;
-
-                    let (input, _) = take(subsystems.category_offset)(subsystem_data)?;
-                    let (_, category_string) = extract_string(input)?;
-                    subsystem_info.subsystem = subsystem_string;
-                    subsystem_info.category = category_string;
-                    return Ok((input, subsystem_info));
-                }
-            }
-        }
-
-        //log::warn!("[macos-unifiedlogs] Did not find subsystem in log entry");
-        subsystem_info.subsystem = String::from("Unknown subsystem");
-        Ok((&[], subsystem_info))
-    }
-
-    /// Get the actual Process ID associated with log entry
-    pub fn get_pid(&self, first_proc_id: u64, second_proc_id: u32) -> u64 {
-        if let Some(entry) = self
-            .catalog_process_info_entries
-            .get(&format!("{first_proc_id}_{second_proc_id}"))
-        {
-            return u64::from(entry.pid);
-        }
-
-        log::warn!("[macos-unifiedlogs] Did not find PID in log Catalog");
-        0
-    }
-
-    /// Get the effictive user id associated with log entry. Can be mapped to an account name
-    pub fn get_euid(&self, first_proc_id: u64, second_proc_id: u32) -> u32 {
-        if let Some(entry) = self
-            .catalog_process_info_entries
-            .get(&format!("{first_proc_id}_{second_proc_id}"))
-        {
-            return entry.effective_user_id;
-        }
-
-        log::warn!("[macos-unifiedlogs] Did not find EUID in log Catalog");
-        0
-    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::CatalogChunk;
-    use std::fs;
-    use std::path::PathBuf;
+    use super::super::*;
+    use super::*;
+    use chunks::{ChunkPreamble, ChunkTag};
+    use helpers::tests::test_data_path;
 
     #[test]
-    fn test_parse_catalog() {
-        let test_chunk_catalog = [
+    fn test_parse_catalog() -> anyhow::Result<()> {
+        let input = &[
             11, 96, 0, 0, 17, 0, 0, 0, 208, 1, 0, 0, 0, 0, 0, 0, 32, 0, 96, 0, 1, 0, 160, 0, 7, 0,
             0, 0, 0, 0, 0, 0, 20, 165, 44, 35, 253, 233, 2, 0, 43, 239, 210, 12, 24, 236, 56, 56,
             129, 79, 43, 78, 90, 243, 188, 236, 61, 5, 132, 95, 63, 101, 53, 143, 158, 191, 34, 54,
@@ -475,27 +460,28 @@ mod tests {
             0, 0, 0, 3, 0, 0, 0, 0, 0, 19, 0, 47, 0,
         ];
 
-        let (_, catalog_data) = CatalogChunk::parse_catalog(&test_chunk_catalog).unwrap();
+        let (input, preamble) = ChunkPreamble::parse(input)?;
+        let (_, catalog) = RawCatalogChunk::parse(input)?;
 
-        assert_eq!(catalog_data.chunk_tag, 0x600b);
-        assert_eq!(catalog_data.chunk_sub_tag, 17);
-        assert_eq!(catalog_data.chunk_data_size, 464);
-        assert_eq!(catalog_data.catalog_subsystem_strings_offset, 32);
-        assert_eq!(catalog_data.catalog_process_info_entries_offset, 96);
-        assert_eq!(catalog_data.number_process_information_entries, 1);
-        assert_eq!(catalog_data.catalog_offset_sub_chunks, 160);
-        assert_eq!(catalog_data.number_sub_chunks, 7);
-        assert_eq!(catalog_data.unknown, [0, 0, 0, 0, 0, 0]);
-        assert_eq!(catalog_data.earliest_firehose_timestamp, 820223379547412);
+        assert_eq!(preamble.tag, ChunkTag::Catalog);
+        assert_eq!(preamble.sub_tag, 17);
+        assert_eq!(preamble.data_size, 464);
+        assert_eq!(catalog.catalog_subsystem_strings_offset, 32);
+        assert_eq!(catalog.catalog_process_info_entries_offset, 96);
+        assert_eq!(catalog.number_process_information_entries, 1);
+        assert_eq!(catalog.catalog_offset_sub_chunks, 160);
+        assert_eq!(catalog.number_sub_chunks, 7);
+        assert_eq!(catalog.unknown, [0, 0, 0, 0, 0, 0]);
+        assert_eq!(catalog.earliest_firehose_timestamp, 820223379547412);
         assert_eq!(
-            catalog_data.catalog_uuids,
+            catalog.catalog_uuids,
             [
-                "2BEFD20C18EC3838814F2B4E5AF3BCEC",
-                "3D05845F3F65358F9EBF2236E772AC01"
+                Uuid::parse_str("2BEFD20C18EC3838814F2B4E5AF3BCEC")?,
+                Uuid::parse_str("3D05845F3F65358F9EBF2236E772AC01")?
             ]
         );
         assert_eq!(
-            catalog_data.catalog_subsystem_strings,
+            catalog.catalog_subsystem_strings,
             [
                 99, 111, 109, 46, 97, 112, 112, 108, 101, 46, 83, 107, 121, 76, 105, 103, 104, 116,
                 0, 112, 101, 114, 102, 111, 114, 109, 97, 110, 99, 101, 95, 105, 110, 115, 116,
@@ -503,30 +489,31 @@ mod tests {
                 110, 103, 46, 115, 116, 97, 108, 108, 115, 0, 0, 0
             ]
         );
-        assert_eq!(catalog_data.catalog_process_info_entries.len(), 1);
+        assert_eq!(catalog.catalog_process_info_entries.len(), 1);
         assert_eq!(
-            catalog_data
+            catalog
                 .catalog_process_info_entries
-                .get("158_311")
+                .get(&CatalogProcessInfoKey(158, 311))
                 .unwrap()
                 .main_uuid,
-            "2BEFD20C18EC3838814F2B4E5AF3BCEC"
+            Uuid::parse_str("2BEFD20C18EC3838814F2B4E5AF3BCEC").unwrap()
         );
         assert_eq!(
-            catalog_data
+            catalog
                 .catalog_process_info_entries
-                .get("158_311")
+                .get(&CatalogProcessInfoKey(158, 311))
                 .unwrap()
                 .dsc_uuid,
-            "3D05845F3F65358F9EBF2236E772AC01"
+            Uuid::parse_str("3D05845F3F65358F9EBF2236E772AC01").ok()
         );
 
-        assert_eq!(catalog_data.catalog_subchunks.len(), 7)
+        assert_eq!(catalog.catalog_subchunks.len(), 7);
+        Ok(())
     }
 
     #[test]
-    fn test_parse_catalog_process_entry() {
-        let subsystem_data = &[
+    fn test_parse_catalog_process_entry() -> anyhow::Result<()> {
+        let input = &[
             0, 0, 0, 0, 0, 0, 1, 0, 158, 0, 0, 0, 0, 0, 0, 0, 55, 1, 0, 0, 158, 0, 0, 0, 88, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 87, 0, 0, 0, 19, 0, 78,
             0, 0, 0, 47, 0, 0, 0, 0, 0, 246, 113, 118, 43, 250, 233, 2, 0, 62, 195, 90, 26, 9, 234,
@@ -543,14 +530,14 @@ mod tests {
             254, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 19, 0, 47, 0,
         ];
 
-        let test_data = vec![
-            String::from("MAIN"),
-            String::from("DSC"),
-            String::from("OTHER"),
+        let test_uuids = vec![
+            Uuid::parse_str("2BEFD20C18EC3838814F2B4E5AF3BCEC")?, // MAIN
+            Uuid::parse_str("3D05845F3F65358F9EBF2236E772AC01")?, // DSC
+            Uuid::parse_str("3D05845F3F65358F9EBF2236E772AC02")?, // OTHER
         ];
 
-        let (_, process_entry) =
-            CatalogChunk::parse_catalog_process_entry(subsystem_data, &test_data).unwrap();
+        // let (_, process_entry) = CatalogChunk::parse_catalog_process_entry(subsystem_data, &test_data).unwrap();
+        let (_, process_entry) = ProcessInfoEntry::parse(input, &test_uuids)?;
         assert_eq!(process_entry.index, 0);
         assert_eq!(process_entry.unknown, 0);
         assert_eq!(process_entry.catalog_main_uuid_index, 0);
@@ -566,13 +553,14 @@ mod tests {
         assert_eq!(process_entry.number_subsystems, 2);
         assert_eq!(process_entry.unknown4, 0);
         assert_eq!(process_entry.subsystem_entries.len(), 2);
-        assert_eq!(process_entry.main_uuid, "MAIN");
-        assert_eq!(process_entry.dsc_uuid, "DSC");
+        assert_eq!(process_entry.main_uuid, test_uuids[0]);
+        assert_eq!(process_entry.dsc_uuid, Some(test_uuids[1]));
+        Ok(())
     }
 
     #[test]
-    fn test_parse_process_info_uuid_entry() {
-        let test_subsystem_data = &[
+    fn test_parse_process_info_uuid_entry() -> anyhow::Result<()> {
+        let input = &[
             87, 0, 0, 0, 19, 0, 78, 0, 0, 0, 47, 0, 0, 0, 0, 0, 246, 113, 118, 43, 250, 233, 2, 0,
             62, 195, 90, 26, 9, 234, 2, 0, 120, 255, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 3, 0, 0,
             0, 0, 0, 19, 0, 47, 0, 48, 89, 60, 28, 9, 234, 2, 0, 99, 50, 207, 40, 18, 234, 2, 0,
@@ -588,21 +576,22 @@ mod tests {
             0, 47, 0,
         ];
 
-        let (data, subsystems) =
-            CatalogChunk::parse_process_info_subystem(test_subsystem_data).unwrap();
+        let (input, subsystems) = ProcessInfoSubsystem::parse(input)?;
         assert_eq!(subsystems.identifer, 87);
         assert_eq!(subsystems.subsystem_offset, 0);
         assert_eq!(subsystems.category_offset, 19);
 
-        let (_, subsystems) = CatalogChunk::parse_process_info_subystem(data).unwrap();
+        let (_, subsystems) = ProcessInfoSubsystem::parse(input)?;
         assert_eq!(subsystems.identifer, 78);
         assert_eq!(subsystems.subsystem_offset, 0);
         assert_eq!(subsystems.category_offset, 47);
+
+        Ok(())
     }
 
     #[test]
-    fn test_parse_catalog_subchunk() {
-        let test_subchunks = &[
+    fn test_parse_catalog_subchunk() -> anyhow::Result<()> {
+        let input = &[
             246, 113, 118, 43, 250, 233, 2, 0, 62, 195, 90, 26, 9, 234, 2, 0, 120, 255, 0, 0, 0, 1,
             0, 0, 1, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 19, 0, 47, 0, 48, 89, 60, 28, 9, 234, 2, 0,
             99, 50, 207, 40, 18, 234, 2, 0, 112, 240, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 3, 0, 0,
@@ -617,7 +606,7 @@ mod tests {
             0, 0, 0, 3, 0, 0, 0, 0, 0, 19, 0, 47, 0,
         ];
 
-        let (data, subchunk) = CatalogChunk::parse_catalog_subchunk(test_subchunks).unwrap();
+        let (data, subchunk) = CatalogSubchunk::parse(input)?;
         assert_eq!(subchunk.start, 820210633699830);
         assert_eq!(subchunk.end, 820274771182398);
         assert_eq!(subchunk.uncompressed_size, 65400);
@@ -627,7 +616,7 @@ mod tests {
         assert_eq!(subchunk.number_string_offsets, 3);
         assert_eq!(subchunk.string_offsets, [0, 19, 47]);
 
-        let (data, subchunk) = CatalogChunk::parse_catalog_subchunk(data).unwrap();
+        let (data, subchunk) = CatalogSubchunk::parse(data)?;
         assert_eq!(subchunk.start, 820274802743600);
         assert_eq!(subchunk.end, 820313668399715);
         assert_eq!(subchunk.uncompressed_size, 61552);
@@ -637,7 +626,7 @@ mod tests {
         assert_eq!(subchunk.number_string_offsets, 3);
         assert_eq!(subchunk.string_offsets, [0, 19, 47]);
 
-        let (_, subchunk) = CatalogChunk::parse_catalog_subchunk(data).unwrap();
+        let (_, subchunk) = CatalogSubchunk::parse(data)?;
         assert_eq!(subchunk.start, 820313685231257);
         assert_eq!(subchunk.end, 820374429029888);
         assert_eq!(subchunk.uncompressed_size, 65536);
@@ -646,10 +635,12 @@ mod tests {
         assert_eq!(subchunk.indexes, [0]);
         assert_eq!(subchunk.number_string_offsets, 3);
         assert_eq!(subchunk.string_offsets, [0, 19, 47]);
+
+        Ok(())
     }
 
     #[test]
-    fn test_parse_catalog_subchunk_bad_compression() {
+    fn test_parse_catalog_subchunk_bad_compression() -> anyhow::Result<()> {
         let test_bad_compression = &[
             246, 113, 118, 43, 250, 233, 2, 0, 62, 195, 90, 26, 9, 234, 2, 0, 120, 255, 0, 0, 0, 2,
             0, 0, 1, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 19, 0, 47, 0, 48, 89, 60, 28, 9, 234, 2, 0,
@@ -664,25 +655,51 @@ mod tests {
             68, 234, 2, 0, 119, 171, 170, 119, 76, 234, 2, 0, 240, 254, 0, 0, 0, 1, 0, 0, 1, 0, 0,
             0, 0, 0, 3, 0, 0, 0, 0, 0, 19, 0, 47, 0,
         ];
-        assert!(CatalogChunk::parse_catalog_subchunk(test_bad_compression).is_err());
+
+        assert!(CatalogSubchunk::parse(test_bad_compression).is_err());
+        Ok(())
     }
 
     #[test]
-    fn test_get_big_sur_subsystem() {
+    fn test_get_process_info() -> anyhow::Result<()> {
+        let input = std::fs::read(test_data_path().join("Catalog Tests/big_sur_catalog.raw"))?;
+        let (input, _preamble) = ChunkPreamble::parse(&input).unwrap();
+        let (_, catalog) = RawCatalogChunk::parse(input).unwrap();
+
+        let entry = catalog.get_process_info(165, 406).unwrap();
+        assert_eq!(entry.first_number_proc_id, 165);
+        assert_eq!(entry.second_number_proc_id, 406);
+        assert!(!entry.main_uuid.is_nil());
+        assert!(entry.dsc_uuid.is_some());
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_process_info_missing() -> anyhow::Result<()> {
+        let input = std::fs::read(test_data_path().join("Catalog Tests/big_sur_catalog.raw"))?;
+        let (input, _preamble) = ChunkPreamble::parse(&input).unwrap();
+        let (_, catalog) = RawCatalogChunk::parse(input).unwrap();
+
+        assert!(catalog.get_process_info(999, 999).is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_big_sur_subsystem() -> anyhow::Result<()> {
         let subsystem_value = 4;
         let first_proc_id = 165;
         let second_proc_id = 406;
 
-        let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        test_path.push("tests/test_data/Catalog Tests/big_sur_catalog.raw");
-        let buffer = fs::read(test_path).unwrap();
+        let input = std::fs::read(test_data_path().join("Catalog Tests/big_sur_catalog.raw"))?;
 
-        let (_, catalog) = CatalogChunk::parse_catalog(&buffer).unwrap();
+        let (input, _preamble) = ChunkPreamble::parse(&input).unwrap();
+        let (_, catalog) = RawCatalogChunk::parse(input).unwrap();
 
-        let (_, results) = catalog
+        let results = catalog
             .get_subsystem(subsystem_value, first_proc_id, second_proc_id)
             .unwrap();
         assert_eq!(results.subsystem, "com.apple.containermanager");
         assert_eq!(results.category, "xpc");
+        Ok(())
     }
 }

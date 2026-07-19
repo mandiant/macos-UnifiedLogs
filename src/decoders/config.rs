@@ -6,16 +6,16 @@
 // See the License for the specific language governing permissions and limitations under the License.
 
 use super::network::{get_ip_four, get_ip_six};
-use crate::util::{encode_standard, extract_string};
+use crate::helpers::{encode_standard, extract_string, join_strs};
 use log::warn;
 use nom::{
     bytes::complete::take,
     number::complete::{be_u32, be_u64, le_i32, le_u32, le_u64},
 };
-use std::collections::HashSet;
+use std::{collections::HashSet, fmt::Display};
 
 /// Parse DNS configuration. Can view live data with macOS command `scutil --dns`. This info is also logged to the Unified Log
-pub(crate) fn get_dns_config(data: &[u8]) -> nom::IResult<&[u8], String> {
+pub(crate) fn get_dns_config(data: &[u8]) -> nom::IResult<&[u8], FullDnsConfigStr<'_>> {
     let (input, resolver_count) = be_u32(data)?;
 
     // Seen only zero
@@ -39,21 +39,56 @@ pub(crate) fn get_dns_config(data: &[u8]) -> nom::IResult<&[u8], String> {
     let (input, _unknown) = take(4_u8)(input)?;
 
     let total_count = resolver_count + scope_count;
-    let (_, message) = parse_dns_config(input, &total_count)?;
+    let (_, message) = parse_dns_config(input, total_count)?;
 
     Ok((input, message))
+}
+
+pub type FullDnsConfigStr<'a> = FullDnsConfig<&'a str>;
+
+pub struct FullDnsConfig<S>
+where
+    S: Display,
+{
+    resolvers: Vec<DnsConfig<S>>,
+    scopes: Vec<DnsConfig<S>>,
+}
+
+impl<S> Display for FullDnsConfig<S>
+where
+    S: Display + AsRef<str>,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut message = String::from("DNS Configuration\n");
+        message += &assemble_dns_message(&message, &self.resolvers);
+        message += "DNS configuration (for scoped queries)\n\n";
+        message += &assemble_dns_message(&message, &self.scopes);
+        write!(f, "{message}")
+    }
+}
+
+fn assemble_dns_message<S>(log_message: &str, configs: &[DnsConfig<S>]) -> String
+where
+    S: Display + AsRef<str>,
+{
+    let mut message = log_message.to_string();
+    for (key, entry) in configs.iter().enumerate() {
+        message += &format!("resolver #{key}\n{entry}");
+    }
+    message
 }
 
 /// Parse the DNS config data and assemble message
 fn parse_dns_config<'a>(
     data: &'a [u8],
-    resolver_scope_count: &u32,
-) -> nom::IResult<&'a [u8], String> {
+    resolver_scope_count: u32,
+) -> nom::IResult<&'a [u8], FullDnsConfigStr<'a>> {
     let mut count = 0;
     let mut remaining = data;
     let mut resolvers = Vec::new();
     let mut scopes = Vec::new();
-    while count < *resolver_scope_count {
+
+    while count < resolver_scope_count {
         // 1 = DNS Resolver. 2 = DNS Scope. Both appear to have same format
         let (input, resolver_or_scope) = be_u32(remaining)?;
         let (input, size) = be_u32(input)?;
@@ -75,94 +110,92 @@ fn parse_dns_config<'a>(
                 );
                 return Ok((
                     remaining,
-                    format!(
-                        "Unknown DNS config type. Neither resolver or scope: {resolver_or_scope}: {}",
-                        encode_standard(data)
-                    ),
+                    // format!(
+                    //     "Unknown DNS config type. Neither resolver or scope: {resolver_or_scope}: {}",
+                    //     encode_standard(data)
+                    // ),
+                    FullDnsConfig { resolvers, scopes },
                 ));
             }
         };
         count += 1;
     }
 
-    // Now assemble our message!
-    let mut message = String::from("DNS Configuration\n");
-    message += &assemble_message(&message, &resolvers);
-
-    message += "DNS configuration (for scoped queries)\n\n";
-    message += &assemble_message(&message, &scopes);
-
-    Ok((remaining, message))
+    Ok((remaining, FullDnsConfig { resolvers, scopes }))
 }
 
-/// Combine our `DnsConfigs` into single message
-fn assemble_message(log_message: &str, configs: &[DnsConfig]) -> String {
-    let mut message = log_message.to_string();
-    for (key, entry) in configs.iter().enumerate() {
-        let mut resolver_message = format!("resolver #{key}\n");
-        for (index, value) in entry.search_domains.iter().enumerate() {
-            resolver_message += &format!("  search domain[{index}] : {value}\n");
-        }
-        for (index, value) in entry.nameservers.iter().enumerate() {
-            resolver_message += &format!("  nameserver[{index}] : {value}\n");
-        }
+type DnsConfigStr<'a> = DnsConfig<&'a str>;
 
-        if entry.if_index != 0 && !entry.if_index_value.is_empty() {
-            resolver_message += &format!(
-                "  if_index : {} ({})\n",
-                entry.if_index, entry.if_index_value
-            );
-        }
-
-        if !entry.domain.is_empty() {
-            resolver_message += &format!("  domain   : {}\n", entry.domain);
-        }
-        if !entry.options.is_empty() {
-            resolver_message += &format!("  options  : {}\n", entry.options);
-        }
-        if entry.timeout != 0 {
-            resolver_message += &format!("  timeout  : {}\n", entry.timeout);
-        }
-
-        resolver_message += &format!(
-            "  flags    : {:#010x?} {}\n",
-            entry.dns_flags, entry.dns_flags_string
-        );
-        resolver_message += &format!(
-            "  reach    : {:#010x?} {}\n",
-            entry.reach, entry.reach_string
-        );
-        if entry.order != 0 {
-            resolver_message += &format!("  order    : {}\n", entry.order);
-        }
-        resolver_message += &format!("  config id: {}\n\n", entry.config_id);
-
-        message += &resolver_message;
-    }
-
-    message
-}
-
-#[derive(Debug, Default)]
-struct DnsConfig {
-    nameservers: Vec<String>,
-    search_domains: Vec<String>,
+#[derive(Debug)]
+struct DnsConfig<S>
+where
+    S: Display,
+{
+    nameservers: Vec<String>, // todo : turn to IP ?
+    search_domains: Vec<S>,
     timeout: u32,
     order: u32,
     if_index: u32,
-    if_index_value: String,
+    if_index_value: S,
     dns_flags: u32,
-    dns_flags_string: String,
+    dns_flags_string: S,
     reach: u32,
-    reach_string: String,
-    config_id: String,
-    options: String,
-    domain: String,
-    unknown: String,
+    reach_string: S,
+    config_id: S,
+    options: S,
+    domain: S,
+}
+
+impl<S> Display for DnsConfig<S>
+where
+    S: Display + AsRef<str>,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (index, value) in self.search_domains.iter().enumerate() {
+            writeln!(f, "  search domain[{index}] : {value}")?;
+        }
+        for (index, value) in self.nameservers.iter().enumerate() {
+            writeln!(f, "  nameserver[{index}] : {value}")?;
+        }
+
+        if self.if_index != 0 && !self.if_index_value.as_ref().is_empty() {
+            writeln!(
+                f,
+                "  if_index : {} ({})",
+                self.if_index, self.if_index_value
+            )?;
+        }
+
+        if !self.domain.as_ref().is_empty() {
+            writeln!(f, "  domain   : {}", self.domain)?;
+        }
+        if !self.options.as_ref().is_empty() {
+            writeln!(f, "  options  : {}", self.options)?;
+        }
+        if self.timeout != 0 {
+            writeln!(f, "  timeout  : {}", self.timeout)?;
+        }
+
+        writeln!(
+            f,
+            "  flags    : {:#010x?} {}",
+            self.dns_flags, self.dns_flags_string
+        )?;
+        writeln!(
+            f,
+            "  reach    : {:#010x?} {}",
+            self.reach, self.reach_string
+        )?;
+        if self.order != 0 {
+            writeln!(f, "  order    : {}", self.order)?;
+        }
+        write!(f, "  config id: {}\n\n", self.config_id)?;
+        Ok(())
+    }
 }
 
 /// Parse DNS resolver data
-fn parse_dns_resolver(data: &[u8]) -> nom::IResult<&[u8], DnsConfig> {
+fn parse_dns_resolver<'a>(data: &'a [u8]) -> nom::IResult<&'a [u8], DnsConfigStr<'a>> {
     // Seen 0x0
     let (input, _unknown) = take(8_u8)(data)?;
     let (input, _nameserver_count) = be_u32(input)?;
@@ -188,22 +221,26 @@ fn parse_dns_resolver(data: &[u8]) -> nom::IResult<&[u8], DnsConfig> {
     // remaining bytes is variety of config options
     let min_size = 10;
     let mut remaining = input;
-    let mut config = DnsConfig {
-        timeout,
-        order,
-        if_index,
-        dns_flags,
-        reach,
-        ..Default::default()
+
+    let dns_flags_string = if dns_flags == 6 {
+        "(Request A records, Request AAAA records)"
+    } else {
+        ""
     };
-    if dns_flags == 6 {
-        config.dns_flags_string = String::from("(Request A records, Request AAAA records)");
-    }
-    if reach == 0 {
-        config.reach_string = String::from("(Not Reachable)")
-    } else if reach == 0x00020002 {
-        config.reach_string = String::from("(Reachable, Directly Reachable Address)")
-    }
+
+    let reach_string = match reach {
+        0 => "(Not Reachable)",
+        0x00020002 => "(Reachable, Directly Reachable Address)",
+        _ => "",
+    };
+
+    let mut nameservers = Vec::new();
+    let mut search_domains = Vec::new();
+    let mut if_index_value = "";
+    let mut config_id = "";
+    let mut options = "";
+    let mut domain = "";
+
     while remaining.len() > min_size {
         // Option types:
         // 0xc - search domain
@@ -223,22 +260,34 @@ fn parse_dns_resolver(data: &[u8]) -> nom::IResult<&[u8], DnsConfig> {
         let (input, option_data) = take(option_size - adjust)(input)?;
         remaining = input;
         match option_type {
-            0xc => config.search_domains.push(extract_string(option_data)?.1),
-            0x10 => config.if_index_value = extract_string(option_data)?.1,
-            0xb => config.nameservers.push(parse_nameserver(option_data)?.1),
-            0xf => config.config_id = extract_string(option_data)?.1,
-            0xa => config.domain = extract_string(option_data)?.1,
-            0xe => config.options = extract_string(option_data)?.1,
+            0xc => search_domains.push(extract_string(option_data)?.1),
+            0x10 => if_index_value = extract_string(option_data)?.1,
+            0xb => nameservers.push(parse_nameserver(option_data)?.1),
+            0xf => config_id = extract_string(option_data)?.1,
+            0xa => domain = extract_string(option_data)?.1,
+            0xe => options = extract_string(option_data)?.1,
             _ => {
                 warn!("[macos-unifiedlogs] Unknown DNS option type: {option_type}");
-                config.unknown = format!(
-                    "Unknown DNS option type: {option_type}: {}",
-                    encode_standard(data)
-                );
-                return Ok((remaining, config));
+                break;
             }
         }
     }
+
+    let config = DnsConfigStr::<'a> {
+        timeout,
+        order,
+        if_index,
+        dns_flags,
+        reach,
+        nameservers,
+        search_domains,
+        if_index_value,
+        dns_flags_string,
+        reach_string,
+        config_id,
+        options,
+        domain,
+    };
 
     Ok((input, config))
 }
@@ -268,8 +317,44 @@ fn parse_nameserver(data: &[u8]) -> nom::IResult<&[u8], String> {
     Ok((input, value))
 }
 
+pub type FullNetworkInterfacesStr<'a> = FullNetworkInterfaces<&'a str>;
+
+pub struct FullNetworkInterfaces<S>
+where
+    S: Display + AsRef<str>,
+{
+    pub generation_count: u64,
+    pub size: usize,
+    pub ip4_interfaces: Vec<NetworkInterface<S>>,
+    pub ip6_interfaces: Vec<NetworkInterface<S>>,
+}
+
+impl<S> Display for FullNetworkInterfaces<S>
+where
+    S: Display + AsRef<str>,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let message = assemble_network_interface(
+            &self.ip4_interfaces,
+            &self.ip6_interfaces,
+            &self.generation_count,
+            &self.size,
+        );
+        write!(f, "{message}")
+
+        // let message = assemble_network_interface(
+        //     &ip4_interfaces,
+        //     &ip6_interfaces,
+        //     &generation_count,
+        //     &data.len(),
+        // );
+    }
+}
+
 /// Parse `Network Interface` structures. The format is open source at <https://github.com/apple-oss-distributions/configd/blob/main/nwi/network_state_information_priv.h>
-pub(crate) fn get_network_interface(data: &[u8]) -> nom::IResult<&[u8], String> {
+pub(crate) fn get_network_interface(
+    data: &[u8],
+) -> nom::IResult<&[u8], FullNetworkInterfacesStr<'_>> {
     let (input, _version) = le_u32(data)?;
 
     // Max number of IPv4 and IPv6 that that can be in the interface list
@@ -292,19 +377,24 @@ pub(crate) fn get_network_interface(data: &[u8]) -> nom::IResult<&[u8], String> 
     let (input, ip6_interface_data) = take(interface_size * max_protocol_count)(input)?;
     let (_, ip6_interfaces) = parse_interface(ip6_interface_data, &ipv6_count)?;
 
-    let message = assemble_network_interface(
-        &ip4_interfaces,
-        &ip6_interfaces,
-        &generation_count,
-        &data.len(),
-    );
+    let full_interfaces = FullNetworkInterfacesStr {
+        generation_count,
+        size: data.len(),
+        ip4_interfaces,
+        ip6_interfaces,
+    };
 
-    Ok((input, message))
+    Ok((input, full_interfaces))
 }
 
+type NetworkInterfaceStr<'a> = NetworkInterface<&'a str>;
+
 #[derive(Debug)]
-struct NetworkInterface {
-    name: String,
+pub struct NetworkInterface<S>
+where
+    S: Display,
+{
+    name: S,
     ip: String,
     rank: u32,
     rank_flag: RankFlag,
@@ -321,7 +411,7 @@ struct NetworkInterface {
 fn parse_interface<'a>(
     data: &'a [u8],
     interface_count: &u32,
-) -> nom::IResult<&'a [u8], Vec<NetworkInterface>> {
+) -> nom::IResult<&'a [u8], Vec<NetworkInterfaceStr<'a>>> {
     let mut remaining = data;
     let mut count = 0;
 
@@ -459,12 +549,15 @@ fn get_rank(rank: &u32) -> (RankFlag, u32) {
 }
 
 /// Assemble our log message
-fn assemble_network_interface(
-    ip4: &[NetworkInterface],
-    ip6: &[NetworkInterface],
+fn assemble_network_interface<S>(
+    ip4: &[NetworkInterface<S>],
+    ip6: &[NetworkInterface<S>],
     generation_count: &u64,
     size: &usize,
-) -> String {
+) -> String
+where
+    S: Display + AsRef<str>,
+{
     let mut message = format!(
         "Network information (generation {generation_count} size={size})\nIPv4 network interface information\n"
     );
@@ -482,31 +575,31 @@ fn assemble_network_interface(
         if entry.rank_flag == RankFlag::Never {
             continue;
         }
-        names.insert(entry.name.clone());
+        names.insert(entry.name.as_ref());
     }
     for entry in ip6 {
         if entry.rank_flag == RankFlag::Never {
             continue;
         }
-        names.insert(entry.name.clone());
+        names.insert(entry.name.as_ref());
     }
 
-    message += &format!(
-        "Network interfaces: {}\n",
-        names.into_iter().collect::<Vec<_>>().join(", ")
-    );
+    message += &format!("Network interfaces: {}\n", join_strs(names, ", ", None));
 
     message
 }
 
 /// Combine interface log data
-fn combine_data(
+fn combine_data<S>(
     log_message: &str,
-    interfaces: &[NetworkInterface],
+    interfaces: &[NetworkInterface<S>],
     ip4_count: &i32,
     ip6_count: &i32,
     is_ip4: &bool,
-) -> String {
+) -> String
+where
+    S: Display + AsRef<str>,
+{
     let mut message = log_message.to_string();
     for entry in interfaces {
         let (flag, values) = get_flags(
@@ -675,6 +768,7 @@ mod tests {
         ];
 
         let (_, result) = get_dns_config(&test_data).unwrap();
+        let result = result.to_string();
         assert!(result.contains("  domain   : 254.169.in-addr.arpa\n"));
         assert!(result.contains("config id: Scoped: 44F8CC2D-CAB3-49EA-B2C0-EB33D9295CCA 0"))
     }
@@ -770,8 +864,8 @@ mod tests {
         ];
 
         let count = 8;
-        let (_, result) = parse_dns_config(&test_data, &count).unwrap();
-        assert!(result.contains("  order    : 300800"))
+        let (_, result) = parse_dns_config(&test_data, count).unwrap();
+        assert!(result.to_string().contains("  order    : 300800"))
     }
 
     #[test]
@@ -825,6 +919,7 @@ mod tests {
         ];
 
         let (_, result) = get_network_interface(&test_data).unwrap();
+        let result = result.to_string();
         assert!(result.contains("utun2 : flags      : 0x2a (IPv6,NOT-IN-LIST,NOT-IN-IFLIST)"));
         assert!(result.contains("Network information (generation 1480586985 size=1180)"));
         assert!(result.contains("           signature  : {length = 20, bytes = 0x4fbc10c583230625d1e54cf00f8d51a12b9f20a3}"));

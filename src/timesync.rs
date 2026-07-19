@@ -1,383 +1,334 @@
-// Copyright 2022 Mandiant, Inc. All Rights Reserved
-// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at
-// http://www.apache.org/licenses/LICENSE-2.0
-// Unless required by applicable law or agreed to in writing, software distributed under the License
-// is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and limitations under the License.
-
-use log::error;
-use nom::Needed;
 use nom::number::complete::{be_u128, le_i64, le_u16, le_u32, le_u64};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::collections::HashMap;
+use uuid::Uuid;
 
-#[derive(Debug, Serialize, Deserialize, Default)]
-pub struct TimesyncBoot {
-    pub signature: u16,
-    pub header_size: u16,
-    pub unknown: u32,
-    pub boot_uuid: String,
+const TIMESYNC_BOOT_SIGNATURE: u16 = 0xbbb0;
+const TIMESYNC_RECORD_SIGNATURE: u32 = 0x0020_7354;
+
+/// A single timesync calibration record (40 bytes on disk).
+///
+/// Maps Mach continuous timestamps to wall-clock time (nanoseconds since UNIX epoch).
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct RawTimesyncRecord {
+    pub kernel_time: u64,
+    pub walltime: i64,
+    pub timezone: u32,
+    pub daylight_savings: u32,
+}
+
+impl RawTimesyncRecord {
+    /// Parse a single 40-byte timesync record.
+    ///
+    /// Validates the 4-byte signature (`0x0020_7354`), skips the 4-byte unknown flags,
+    /// then reads the time fields.
+    pub fn parse(input: &[u8]) -> nom::IResult<&[u8], Self> {
+        let (input, signature) = le_u32(input)?;
+        if signature != TIMESYNC_RECORD_SIGNATURE {
+            return Err(nom::Err::Error(nom::error::Error::new(
+                input,
+                nom::error::ErrorKind::Tag,
+            )));
+        }
+        let (input, _unknown_flags) = le_u32(input)?;
+        let (input, kernel_time) = le_u64(input)?;
+        let (input, walltime) = le_i64(input)?;
+        let (input, timezone) = le_u32(input)?;
+        let (input, daylight_savings) = le_u32(input)?;
+
+        Ok((
+            input,
+            RawTimesyncRecord {
+                kernel_time,
+                walltime,
+                timezone,
+                daylight_savings,
+            },
+        ))
+    }
+}
+
+/// A boot session header with its associated timesync records.
+#[derive(Debug, Clone, Serialize)]
+pub struct RawTimesyncBoot {
+    pub boot_uuid: Uuid,
     pub timebase_numerator: u32,
     pub timebase_denominator: u32,
-    pub boot_time: i64, // Number of nanoseconds since UNIXEPOCH
+    pub boot_time: i64,
     pub timezone_offset_mins: u32,
-    pub daylight_savings: u32, // 0 is no DST, 1 is DST
-    pub timesync: Vec<Timesync>,
+    pub daylight_savings: u32,
+    pub records: Vec<RawTimesyncRecord>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
-pub struct Timesync {
-    // Timestamps are in UTC
-    pub signature: u32,
-    pub flags: u32,
-    pub kernel_time: u64, // Mach continuous timestamp
-    pub walltime: i64,    // Number of nanoseconds since UNIXEPOCH
-    pub timezone: u32,
-    pub daylight_savings: u32, // 0 is no DST, 1 is DST
-}
-
-impl TimesyncBoot {
-    /// Parse the Unified Log timesync files
-    pub fn parse_timesync_data(data: &[u8]) -> nom::IResult<&[u8], HashMap<String, TimesyncBoot>> {
-        let mut timesync_data: HashMap<String, TimesyncBoot> = HashMap::new();
-        let mut input = data;
-
-        let mut timesync_boot = TimesyncBoot::default();
-
-        while !input.is_empty() {
-            let (_, timesync_signature) = le_u32(input)?;
-
-            let timesync_sig: u32 = 0x207354;
-            if timesync_signature == timesync_sig {
-                let (timesync_input, timesync) = TimesyncBoot::parse_timesync(input)?;
-                timesync_boot.timesync.push(timesync);
-                input = timesync_input;
-            } else {
-                if timesync_boot.signature != 0 {
-                    if let Some(existing_boot) = timesync_data.get_mut(&timesync_boot.boot_uuid) {
-                        existing_boot.timesync.append(&mut timesync_boot.timesync);
-                    } else {
-                        timesync_data.insert(timesync_boot.boot_uuid.clone(), timesync_boot);
-                    }
-                }
-                let (timesync_input, timesync_boot_data) =
-                    TimesyncBoot::parse_timesync_boot(input)?;
-                timesync_boot = timesync_boot_data;
-                input = timesync_input;
-            }
+impl RawTimesyncBoot {
+    /// Parse a 48-byte boot session header.
+    ///
+    /// Validates the 2-byte signature (`0xbbb0`), skips header size and unknown fields,
+    /// then reads the boot session fields.
+    /// The `records` vec starts empty — records are appended by [`parse_timesync_file`].
+    pub fn parse(input: &[u8]) -> nom::IResult<&[u8], Self> {
+        let (input, signature) = le_u16(input)?;
+        if signature != TIMESYNC_BOOT_SIGNATURE {
+            return Err(nom::Err::Error(nom::error::Error::new(
+                input,
+                nom::error::ErrorKind::Tag,
+            )));
         }
-        if let Some(existing_boot) = timesync_data.get_mut(&timesync_boot.boot_uuid) {
-            existing_boot.timesync.append(&mut timesync_boot.timesync);
+        let (input, _header_size) = le_u16(input)?;
+        let (input, _unknown) = le_u32(input)?;
+        let (input, boot_uuid_raw) = be_u128(input)?;
+        let (input, timebase_numerator) = le_u32(input)?;
+        let (input, timebase_denominator) = le_u32(input)?;
+        let (input, boot_time) = le_i64(input)?;
+        let (input, timezone_offset_mins) = le_u32(input)?;
+        let (input, daylight_savings) = le_u32(input)?;
+
+        Ok((
+            input,
+            RawTimesyncBoot {
+                boot_uuid: Uuid::from_u128(boot_uuid_raw),
+                timebase_numerator,
+                timebase_denominator,
+                boot_time,
+                timezone_offset_mins,
+                daylight_savings,
+                records: Vec::new(),
+            },
+        ))
+    }
+}
+
+/// Parse an entire timesync file into a map of boot UUID → boot session.
+///
+/// A timesync file is a sequence of boot headers interleaved with records.
+/// Multiple boots can share a UUID — records are merged in that case.
+pub fn parse_timesync_file(data: &[u8]) -> nom::IResult<&[u8], HashMap<Uuid, RawTimesyncBoot>> {
+    let mut result: HashMap<Uuid, RawTimesyncBoot> = HashMap::new();
+    let mut input = data;
+    let mut current_boot = RawTimesyncBoot {
+        boot_uuid: Uuid::nil(),
+        timebase_numerator: 0,
+        timebase_denominator: 0,
+        boot_time: 0,
+        timezone_offset_mins: 0,
+        daylight_savings: 0,
+        records: Vec::new(),
+    };
+    let mut has_boot = false;
+
+    while !input.is_empty() {
+        // Peek at the first 4 bytes to distinguish record vs boot header.
+        // Record signature is a u32; boot signature is a u16 in the first 2 bytes.
+        let (_, peek_u32) = le_u32(input)?;
+
+        if peek_u32 == TIMESYNC_RECORD_SIGNATURE {
+            let (remaining, record) = RawTimesyncRecord::parse(input)?;
+            current_boot.records.push(record);
+            input = remaining;
         } else {
-            timesync_data.insert(timesync_boot.boot_uuid.clone(), timesync_boot);
+            // Flush current boot before starting a new one
+            if has_boot {
+                if let Some(existing) = result.get_mut(&current_boot.boot_uuid) {
+                    existing.records.append(&mut current_boot.records);
+                } else {
+                    result.insert(current_boot.boot_uuid, current_boot);
+                }
+            }
+            let (remaining, boot) = RawTimesyncBoot::parse(input)?;
+            current_boot = boot;
+            has_boot = true;
+            input = remaining;
         }
-        Ok((input, timesync_data))
     }
 
-    fn parse_timesync_boot(data: &[u8]) -> nom::IResult<&[u8], TimesyncBoot> {
-        let (input, timesync_signature) = le_u16(data)?;
-
-        let expected_boot_signature = 0xbbb0;
-        if expected_boot_signature != timesync_signature {
-            error!(
-                "[macos-unifiedlogs] Incorrect Timesync boot header signature. Expected {expected_boot_signature}. Got: {timesync_signature}",
-            );
-            return Err(nom::Err::Incomplete(Needed::Unknown));
+    // Flush the last boot
+    if has_boot {
+        if let Some(existing) = result.get_mut(&current_boot.boot_uuid) {
+            existing.records.append(&mut current_boot.records);
+        } else {
+            result.insert(current_boot.boot_uuid, current_boot);
         }
-
-        let (input, timesync_header_size) = le_u16(input)?;
-        let (input, timesync_unknown) = le_u32(input)?;
-        let (input, timesync_boot_uuid) = be_u128(input)?;
-        let (input, timesync_timebase_numerator) = le_u32(input)?;
-        let (input, timesync_timebase_denominator) = le_u32(input)?;
-        let (input, timesync_boot_time) = le_i64(input)?;
-        let (input, timesync_timezone_offset_mins) = le_u32(input)?;
-        let (input, timesync_daylight_savings) = le_u32(input)?;
-
-        let timesync_boot = TimesyncBoot {
-            signature: timesync_signature,
-            header_size: timesync_header_size,
-            unknown: timesync_unknown,
-            boot_uuid: format!("{timesync_boot_uuid:032X}"),
-            timebase_numerator: timesync_timebase_numerator,
-            timebase_denominator: timesync_timebase_denominator,
-            boot_time: timesync_boot_time,
-            timezone_offset_mins: timesync_timezone_offset_mins,
-            daylight_savings: timesync_daylight_savings,
-            timesync: Vec::new(),
-        };
-        Ok((input, timesync_boot))
     }
 
-    fn parse_timesync(data: &[u8]) -> nom::IResult<&[u8], Timesync> {
-        let mut timesync = Timesync {
-            signature: 0,
-            flags: 0,
-            kernel_time: 0,
-            walltime: 0,
-            timezone: 0,
-            daylight_savings: 0,
-        };
-        let (input, timesync_signature) = le_u32(data)?;
+    Ok((input, result))
+}
 
-        let expected_record_signature = 0x207354;
-        if expected_record_signature != timesync_signature {
-            error!(
-                "[macos-unifiedlogs] Incorrect Timesync record header signature. Expected {expected_record_signature}. Got: {timesync_signature}",
-            );
-            return Err(nom::Err::Incomplete(Needed::Unknown));
-        }
+/// Resolves continuous timestamps to wall-clock nanoseconds.
+///
+/// Wraps a `HashMap<Uuid, RawTimesyncBoot>` and provides the same
+/// calculation as `TimesyncBoot::get_timestamp()`.
+pub struct TimestampResolver {
+    timesync_data: HashMap<Uuid, RawTimesyncBoot>,
+}
 
-        let (input, timesync_flags) = le_u32(input)?;
-        let (input, timesync_kernel_time) = le_u64(input)?;
-        let (input, timesync_walltime) = le_i64(input)?;
-        let (input, timesync_timezone) = le_u32(input)?;
-        let (input, timesync_daylight_savings) = le_u32(input)?;
-
-        timesync.signature = timesync_signature;
-        timesync.flags = timesync_flags;
-        timesync.kernel_time = timesync_kernel_time;
-        timesync.walltime = timesync_walltime;
-        timesync.timezone = timesync_timezone;
-        timesync.daylight_savings = timesync_daylight_savings;
-
-        Ok((input, timesync))
+impl TimestampResolver {
+    pub fn new(timesync_data: HashMap<Uuid, RawTimesyncBoot>) -> Self {
+        Self { timesync_data }
     }
 
-    /// Calculate timestamp for firehose log entry
-    pub fn get_timestamp(
-        timesync_data: &HashMap<String, TimesyncBoot>,
-        boot_uuid: &str,
-        firehose_log_delta_time: u64,
-        firehose_preamble_time: u64,
+    /// Convert an absolute continuous time to wall-clock nanoseconds (f64).
+    ///
+    /// - `boot_uuid`: from the tracev3 header
+    /// - `absolute_continuous_time`: firehose base + entry delta
+    /// - `preamble_time`: firehose chunk's `base_continuous_time` (0 = use boot time)
+    pub fn resolve(
+        &self,
+        boot_uuid: &Uuid,
+        absolute_continuous_time: u64,
+        preamble_time: u64,
     ) -> f64 {
-        /*  Timestamp calculation logic:
-            Firehose Log entry timestamp is calculated by using firehose_preamble_time, firehose.continous_time_delta, and timesync timestamps
-            Firehose log header/preample contains a base timestamp
-              Ex: Firehose header base time is 2022-01-01 00:00:00
-            All log entries following the header are continous from that base. EXCEPT when the base time is zero. If the base time is zero the TimeSync boot record boot time is used (boot time)
-              Ex: Firehose log entry time is +60 seconds
-            Timestamp would be 2022-01-01 00:01:00
+        let mut timesync_continuous_time: u64 = 0;
+        let mut timesync_walltime: i64 = 0;
+        let mut timebase_adjustment: f64 = 1.0;
 
-            (firehose_log_entry_continous_time = firehose.continous_time_delta | ((firehose.continous_time_delta_upper) << 32))
-            firehose_log_delta_time = firehose_preamble_time + firehose_log_entry_continous_time
-
-            Get all timesync boot records if timesync uuid equals boot uuid in tracev3 header data
-
-            Loop through all timesync records from matching boot uuid until timesync cont_time/kernel time is greater than firehose_preamble_time
-            If firehose_header_time equals zero. Then the Timesync header walltime is used (the Timesync header cont_time/kernel time is then always zero)
-            Subtract timesync_cont_time/kernel time from firehose_log_delta_time
-            IF APPLE SILICON (ARM) is the architecture, then we need to mupltiple timesync_cont_time and firehose_log_delta_time by the timebase 125.0/3.0 to get the nanocsecond representation
-
-           Add results to timesync_walltime (unix epoch in nanoseconds)
-           Final results is unix epoch timestamp in nano seconds
-        */
-
-        let mut timesync_continous_time = 0;
-        let mut timesync_walltime = 0;
-
-        // Apple Intel uses 1/1 as the timebase
-        let mut timebase_adjustment = 1.0;
-        if let Some(timesync) = timesync_data.get(boot_uuid) {
-            if timesync.timebase_numerator == 125 && timesync.timebase_denominator == 3 {
-                // For Apple Silicon (ARM) we need to adjust the mach time by multiplying by 125.0/3.0 to get the accurate nanosecond count
+        if let Some(boot) = self.timesync_data.get(boot_uuid) {
+            if boot.timebase_numerator == 125 && boot.timebase_denominator == 3 {
                 timebase_adjustment = 125.0 / 3.0;
             }
 
-            // A preamble time of 0 means we need to use the timesync header boot time as our minimum value.
-            // We also set the timesync_continous_time to  zero
-            if firehose_preamble_time == 0 {
-                timesync_continous_time = 0;
-                timesync_walltime = timesync.boot_time;
+            if preamble_time == 0 {
+                timesync_continuous_time = 0;
+                timesync_walltime = boot.boot_time;
             }
-            for timesync_record in &timesync.timesync {
-                if timesync_record.kernel_time > firehose_log_delta_time {
-                    if timesync_continous_time == 0 && timesync_walltime == 0 {
-                        timesync_continous_time = timesync_record.kernel_time;
-                        timesync_walltime = timesync_record.walltime;
+
+            for record in &boot.records {
+                if record.kernel_time > absolute_continuous_time {
+                    if timesync_continuous_time == 0 && timesync_walltime == 0 {
+                        timesync_continuous_time = record.kernel_time;
+                        timesync_walltime = record.walltime;
                     }
                     break;
                 }
-
-                timesync_continous_time = timesync_record.kernel_time;
-                timesync_walltime = timesync_record.walltime;
+                timesync_continuous_time = record.kernel_time;
+                timesync_walltime = record.walltime;
             }
         }
 
-        let continous_time = (firehose_log_delta_time as f64).mul_add(
+        let continuous_time = (absolute_continuous_time as f64).mul_add(
             timebase_adjustment,
-            -(timesync_continous_time as f64) * timebase_adjustment,
+            -(timesync_continuous_time as f64) * timebase_adjustment,
         );
-        continous_time + timesync_walltime as f64
+        continuous_time + timesync_walltime as f64
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::filesystem::LogarchiveProvider;
-    use crate::parser::collect_timesync;
-    use crate::timesync::TimesyncBoot;
-    use std::path::PathBuf;
+    use super::*;
+    use crate::helpers::tests::test_data_path;
 
     #[test]
-    fn test_parse_timesync_data() {
-        let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        test_path.push(
-            "tests/test_data/system_logs_big_sur.logarchive/timesync/0000000000000002.timesync",
-        );
-
-        let buffer = std::fs::read(test_path).unwrap();
-
-        let (_, timesync_data) = TimesyncBoot::parse_timesync_data(&buffer).unwrap();
-        assert_eq!(timesync_data.len(), 5);
-        assert_eq!(
-            timesync_data
-                .get("9A6A3124274A44B29ABF2BC9E4599B3B")
-                .unwrap()
-                .timesync
-                .len(),
-            5
-        );
-    }
-
-    #[test]
-    #[should_panic(expected = "Incomplete(Unknown)")]
-    fn test_timesync_bad_boot_header() {
-        let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        test_path
-            .push("tests/test_data/Bad Data/Timesync/Bad_Boot_header_0000000000000002.timesync");
-
-        let buffer = std::fs::read(test_path).unwrap();
-
-        let (_, _) = TimesyncBoot::parse_timesync_data(&buffer).unwrap();
-    }
-
-    #[test]
-    #[should_panic(expected = "Incomplete(Unknown)")]
-    fn test_timesync_bad_record_header() {
-        let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        test_path
-            .push("tests/test_data/Bad Data/Timesync/Bad_Record_header_0000000000000002.timesync");
-
-        let buffer = std::fs::read(test_path).unwrap();
-
-        let (_, _) = TimesyncBoot::parse_timesync_data(&buffer).unwrap();
-    }
-
-    #[test]
-    #[should_panic(expected = "Incomplete(Unknown)")]
-    fn test_timesync_bad_content() {
-        let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        test_path.push("tests/test_data/Bad Data/Timesync/Bad_content_0000000000000002.timesync");
-
-        let buffer = std::fs::read(test_path).unwrap();
-
-        let (_, _) = TimesyncBoot::parse_timesync_data(&buffer).unwrap();
-    }
-
-    #[test]
-    #[should_panic(expected = "Incomplete(Unknown)")]
-    fn test_timesync_bad_file() {
-        let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        test_path.push("tests/test_data/Bad Data/Timesync/BadFile.timesync");
-
-        let buffer = std::fs::read(test_path).unwrap();
-
-        let (_, _) = TimesyncBoot::parse_timesync_data(&buffer).unwrap();
-    }
-
-    #[test]
-    fn test_timesync() {
-        let test_data = [
+    fn test_parse_timesync_record() -> anyhow::Result<()> {
+        let test_data: [u8; 32] = [
             84, 115, 32, 0, 0, 0, 0, 0, 165, 196, 104, 252, 1, 0, 0, 0, 216, 189, 100, 108, 116,
             158, 131, 22, 0, 0, 0, 0, 0, 0, 0, 0,
         ];
-        let (_, timesync) = TimesyncBoot::parse_timesync(&test_data).unwrap();
-        assert_eq!(timesync.signature, 0x207354);
-        assert_eq!(timesync.flags, 0);
-        assert_eq!(timesync.kernel_time, 8529691813);
-        assert_eq!(timesync.walltime, 1622314513655447000);
-        assert_eq!(timesync.timezone, 0);
-        assert_eq!(timesync.daylight_savings, 0);
+        let (remaining, record) = RawTimesyncRecord::parse(&test_data).unwrap();
+        assert!(remaining.is_empty());
+        assert_eq!(record.kernel_time, 8529691813);
+        assert_eq!(record.walltime, 1622314513655447000);
+        assert_eq!(record.timezone, 0);
+        assert_eq!(record.daylight_savings, 0);
+        Ok(())
     }
 
     #[test]
-    fn test_timesync_boot() {
-        let test_data = [
+    fn test_parse_timesync_boot() -> anyhow::Result<()> {
+        let test_data: [u8; 48] = [
             176, 187, 48, 0, 0, 0, 0, 0, 132, 91, 13, 213, 1, 96, 69, 62, 172, 224, 56, 118, 12,
             123, 92, 29, 1, 0, 0, 0, 1, 0, 0, 0, 168, 167, 19, 176, 114, 158, 131, 22, 0, 0, 0, 0,
             0, 0, 0, 0,
         ];
-        let (_, timesync_boot) = TimesyncBoot::parse_timesync_boot(&test_data).unwrap();
-        assert_eq!(timesync_boot.signature, 0xbbb0);
-        assert_eq!(timesync_boot.header_size, 48);
-        assert_eq!(timesync_boot.unknown, 0);
-        assert_eq!(timesync_boot.boot_uuid, "845B0DD50160453EACE038760C7B5C1D");
-        assert_eq!(timesync_boot.timebase_numerator, 1);
-        assert_eq!(timesync_boot.timebase_denominator, 1);
-        assert_eq!(timesync_boot.boot_time, 1622314506201049000);
-        assert_eq!(timesync_boot.timezone_offset_mins, 0);
-        assert_eq!(timesync_boot.daylight_savings, 0);
+        let (remaining, boot) = RawTimesyncBoot::parse(&test_data).unwrap();
+        assert!(remaining.is_empty());
+        assert_eq!(
+            boot.boot_uuid,
+            Uuid::parse_str("845B0DD50160453EACE038760C7B5C1D")?
+        );
+        assert_eq!(boot.timebase_numerator, 1);
+        assert_eq!(boot.timebase_denominator, 1);
+        assert_eq!(boot.boot_time, 1622314506201049000);
+        assert_eq!(boot.timezone_offset_mins, 0);
+        assert_eq!(boot.daylight_savings, 0);
+        assert!(boot.records.is_empty());
+        Ok(())
     }
 
     #[test]
-    fn test_get_timestamp() {
-        let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        test_path.push("tests/test_data/system_logs_big_sur.logarchive");
-        let provider = LogarchiveProvider::new(test_path.as_path());
+    fn test_parse_timesync_file() -> anyhow::Result<()> {
+        let test_path = test_data_path()
+            .join("system_logs_big_sur.logarchive/timesync/0000000000000002.timesync");
+        let buffer = std::fs::read(test_path)?;
 
-        let timesync_data = collect_timesync(&provider).unwrap();
-
-        let boot_uuid = "A2A9017676CF421C84DC9BBD6263FEE7";
-        let firehose_preamble_continous_time = 2818326118;
-
-        let results = TimesyncBoot::get_timestamp(
-            &timesync_data,
-            boot_uuid,
-            firehose_preamble_continous_time,
-            1,
+        let (_, timesync_data) = parse_timesync_file(&buffer).unwrap();
+        assert_eq!(timesync_data.len(), 5);
+        assert_eq!(
+            timesync_data
+                .get(&Uuid::parse_str("9A6A3124274A44B29ABF2BC9E4599B3B")?)
+                .unwrap()
+                .records
+                .len(),
+            5
         );
-        assert_eq!(results, 1_642_304_803_060_379_000.0);
+        Ok(())
+    }
+
+    /// Helper: collect timesync data from all .timesync files in a logarchive directory.
+    fn collect_timesync_data(logarchive_path: &std::path::Path) -> HashMap<Uuid, RawTimesyncBoot> {
+        let timesync_dir = logarchive_path.join("timesync");
+        let mut all_data: HashMap<Uuid, RawTimesyncBoot> = HashMap::new();
+
+        for entry in std::fs::read_dir(&timesync_dir).unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("timesync") {
+                let buffer = std::fs::read(&path).unwrap();
+                let (_, file_data) = parse_timesync_file(&buffer).unwrap();
+                for (uuid, mut boot) in file_data {
+                    if let Some(existing) = all_data.get_mut(&uuid) {
+                        existing.records.append(&mut boot.records);
+                    } else {
+                        all_data.insert(uuid, boot);
+                    }
+                }
+            }
+        }
+        all_data
     }
 
     #[test]
-    fn test_get_arm_timestamp() {
-        let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        test_path.push("tests/test_data/system_logs_monterey.logarchive");
-        let provider = LogarchiveProvider::new(test_path.as_path());
+    fn test_resolve_timestamp() -> anyhow::Result<()> {
+        let test_path = test_data_path().join("system_logs_big_sur.logarchive");
+        let timesync_data = collect_timesync_data(&test_path);
+        let resolver = TimestampResolver::new(timesync_data);
 
-        let timesync_data = collect_timesync(&provider).unwrap();
-
-        let boot_uuid = "3E12B435814B4C62918CEBC0826F06B8";
-        let firehose_preamble_continous_time = 2818326118;
-
-        let results = TimesyncBoot::get_timestamp(
-            &timesync_data,
-            boot_uuid,
-            firehose_preamble_continous_time,
-            1,
-        );
-        assert_eq!(results, 1650767519086487000.0);
+        let boot_uuid = Uuid::parse_str("A2A9017676CF421C84DC9BBD6263FEE7")?;
+        let result = resolver.resolve(&boot_uuid, 2818326118, 1);
+        assert_eq!(result, 1_642_304_803_060_379_000.0);
+        Ok(())
     }
 
     #[test]
-    fn test_get_arm_timestamp_use_boot_time() {
-        let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        test_path.push("tests/test_data/system_logs_monterey.logarchive/timesync");
+    fn test_resolve_arm_timestamp() -> anyhow::Result<()> {
+        let test_path = test_data_path().join("system_logs_monterey.logarchive");
+        let timesync_data = collect_timesync_data(&test_path);
+        let resolver = TimestampResolver::new(timesync_data);
 
-        let provider = LogarchiveProvider::new(test_path.as_path());
+        let boot_uuid = Uuid::parse_str("3E12B435814B4C62918CEBC0826F06B8")?;
+        let result = resolver.resolve(&boot_uuid, 2818326118, 1);
+        assert_eq!(result, 1650767519086487000.0);
+        Ok(())
+    }
 
-        let timesync_data = collect_timesync(&provider).unwrap();
+    #[test]
+    fn test_resolve_arm_boot_time() -> anyhow::Result<()> {
+        let test_path = test_data_path().join("system_logs_monterey.logarchive");
+        let timesync_data = collect_timesync_data(&test_path);
+        let resolver = TimestampResolver::new(timesync_data);
 
-        let boot_uuid = "3E12B435814B4C62918CEBC0826F06B8";
-        let firehose_preamble_continous_time = 9898326118;
-
-        let results = TimesyncBoot::get_timestamp(
-            &timesync_data,
-            boot_uuid,
-            firehose_preamble_continous_time,
-            0,
-        );
-        assert_eq!(results, 1_650_767_813_342_574_600.0);
+        let boot_uuid = Uuid::parse_str("3E12B435814B4C62918CEBC0826F06B8")?;
+        let result = resolver.resolve(&boot_uuid, 9898326118, 0);
+        assert_eq!(result, 1_650_767_813_342_574_600.0);
+        Ok(())
     }
 }

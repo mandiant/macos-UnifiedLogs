@@ -1,146 +1,180 @@
-// Copyright 2022 Mandiant, Inc. All Rights Reserved
-// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at
-// http://www.apache.org/licenses/LICENSE-2.0
-// Unless required by applicable law or agreed to in writing, software distributed under the License
-// is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and limitations under the License.
-
-use log::error;
-use nom::Needed;
 use nom::number::complete::le_u32;
-use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize, Default)]
-pub struct UUIDText {
-    pub uuid: String,
-    pub signature: u32,
-    pub major_version: u32,
-    pub minor_version: u32,
-    pub number_entries: u32,
-    pub entry_descriptors: Vec<UUIDTextEntry>,
-    pub footer_data: Vec<u8>, // Collection of strings containing sender process/library with end of string characters
-}
-#[derive(Debug, Serialize, Deserialize, Default)]
-pub struct UUIDTextEntry {
+use super::helpers::utf8_str_from_cstring;
+
+const UUIDTEXT_SIGNATURE: u32 = 0x6677_8899;
+
+#[derive(Debug, Clone, Copy)]
+pub struct RawUUIDTextEntry {
     pub range_start_offset: u32,
     pub entry_size: u32,
 }
-impl UUIDText {
-    /// Parse the UUID files in uuidinfo directory. Contains the base log message string
-    pub fn parse_uuidtext(data: &[u8]) -> nom::IResult<&[u8], UUIDText> {
-        let mut uuidtext_data = UUIDText::default();
 
-        let expected_uuidtext_signature = 0x66778899;
-        let (input, uuidtext_signature) = le_u32(data)?;
+#[derive(Debug, Clone)]
+pub struct RawUUIDText<'a> {
+    pub major_version: u32,
+    pub minor_version: u32,
+    pub entries: Vec<RawUUIDTextEntry>,
+    pub footer_data: &'a [u8],
+}
 
-        if expected_uuidtext_signature != uuidtext_signature {
-            error!(
-                "[macos-unifiedlogs] Incorrect UUIDText header signature. Expected {expected_uuidtext_signature}. Got: {uuidtext_signature}"
-            );
-            return Err(nom::Err::Incomplete(Needed::Unknown));
+impl<'a> RawUUIDText<'a> {
+    pub fn parse(data: &'a [u8]) -> nom::IResult<&'a [u8], Self> {
+        let (input, signature) = le_u32(data)?;
+        if signature != UUIDTEXT_SIGNATURE {
+            return Err(nom::Err::Error(nom::error::Error::new(
+                data,
+                nom::error::ErrorKind::Tag,
+            )));
         }
 
-        let (input, uuidtext_major_version) = le_u32(input)?;
-        let (input, uuidtext_minor_version) = le_u32(input)?;
-        let (mut input, uuidtext_number_entries) = le_u32(input)?;
+        let (input, major_version) = le_u32(input)?;
+        let (input, minor_version) = le_u32(input)?;
+        let (mut input, number_entries) = le_u32(input)?;
 
-        uuidtext_data.signature = uuidtext_signature;
-        uuidtext_data.major_version = uuidtext_major_version;
-        uuidtext_data.minor_version = uuidtext_minor_version;
-        uuidtext_data.number_entries = uuidtext_number_entries;
-
-        let mut count = 0;
-        while count < uuidtext_number_entries {
-            let (entry_input, uuidtext_range_start_offset) = le_u32(input)?;
-            let (entry_input, uuidtext_entry_size) = le_u32(entry_input)?;
-
-            let entry_data = UUIDTextEntry {
-                range_start_offset: uuidtext_range_start_offset,
-                entry_size: uuidtext_entry_size,
-            };
-            uuidtext_data.entry_descriptors.push(entry_data);
-
-            input = entry_input;
-            count += 1;
+        let mut entries = Vec::with_capacity(number_entries as usize);
+        for _ in 0..number_entries {
+            let (next, range_start_offset) = le_u32(input)?;
+            let (next, entry_size) = le_u32(next)?;
+            entries.push(RawUUIDTextEntry {
+                range_start_offset,
+                entry_size,
+            });
+            input = next;
         }
-        uuidtext_data.footer_data = input.to_vec();
-        Ok((input, uuidtext_data))
+
+        let footer_data = input;
+
+        Ok((
+            &[],
+            RawUUIDText {
+                major_version,
+                minor_version,
+                entries,
+                footer_data,
+            },
+        ))
+    }
+
+    /// Image path at the end of `footer_data`, after all format string ranges.
+    pub fn image_path(&self) -> Option<&'a str> {
+        let total: u32 = self.entries.iter().map(|e| e.entry_size).sum();
+        let start = total as usize;
+        if start >= self.footer_data.len() {
+            return None;
+        }
+        let (_, path) = utf8_str_from_cstring(&self.footer_data[start..]).ok()?;
+        Some(path)
+    }
+
+    /// Extract format string at a given virtual offset.
+    ///
+    /// Iterates entries to find which range contains `offset`, then extracts
+    /// the null-terminated string from `footer_data` at the corresponding position.
+    pub fn format_string(&self, offset: u64) -> Option<&'a str> {
+        let mut footer_pos: u32 = 0;
+        for entry in &self.entries {
+            if u64::from(entry.range_start_offset) > offset {
+                footer_pos += entry.entry_size;
+                continue;
+            }
+
+            let local_offset = (offset - u64::from(entry.range_start_offset)) as u32;
+            let data_start = (local_offset + footer_pos) as usize;
+
+            if data_start >= self.footer_data.len() || local_offset > entry.entry_size {
+                footer_pos += entry.entry_size;
+                continue;
+            }
+
+            let (_, s) = utf8_str_from_cstring(&self.footer_data[data_start..]).ok()?;
+            return Some(s);
+        }
+        None
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::uuidtext::UUIDText;
-    use std::fs;
-    use std::path::PathBuf;
+    use super::*;
+    use crate::helpers::tests::test_data_path;
 
     #[test]
-    fn test_parse_uuidtext_big_sur() {
-        let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        test_path.push("tests/test_data/UUIDText/Big Sur/1FE459BBDC3E19BBF82D58415A2AE9");
+    fn test_parse_uuidtext_big_sur() -> anyhow::Result<()> {
+        let path = test_data_path().join("UUIDText/Big Sur/1FE459BBDC3E19BBF82D58415A2AE9");
+        let buffer = std::fs::read(path)?;
 
-        let buffer = fs::read(test_path).unwrap();
+        let (_, result) = RawUUIDText::parse(&buffer).unwrap();
 
-        let (_, uuidtext_data) = UUIDText::parse_uuidtext(&buffer).unwrap();
-        assert_eq!(uuidtext_data.signature, 0x66778899);
-        assert_eq!(uuidtext_data.major_version, 2);
-        assert_eq!(uuidtext_data.minor_version, 1);
-        assert_eq!(uuidtext_data.number_entries, 2);
-        assert_eq!(uuidtext_data.entry_descriptors[0].entry_size, 617);
-        assert_eq!(uuidtext_data.entry_descriptors[1].entry_size, 2301);
-
-        assert_eq!(uuidtext_data.entry_descriptors[0].range_start_offset, 32048);
-        assert_eq!(uuidtext_data.entry_descriptors[1].range_start_offset, 29747);
-        assert_eq!(uuidtext_data.footer_data.len(), 2987);
+        assert_eq!(result.major_version, 2);
+        assert_eq!(result.minor_version, 1);
+        assert_eq!(result.entries.len(), 2);
+        assert_eq!(result.entries[0].entry_size, 617);
+        assert_eq!(result.entries[0].range_start_offset, 32048);
+        assert_eq!(result.entries[1].entry_size, 2301);
+        assert_eq!(result.entries[1].range_start_offset, 29747);
+        assert_eq!(result.footer_data.len(), 2987);
+        Ok(())
     }
 
     #[test]
-    fn test_parse_uuidtext_high_sierra() {
-        let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        test_path.push("tests/test_data/UUIDText/High Sierra/425A2E5B5531B98918411B4379EE5F");
+    fn test_parse_uuidtext_high_sierra() -> anyhow::Result<()> {
+        let path = test_data_path().join("UUIDText/High Sierra/425A2E5B5531B98918411B4379EE5F");
+        let buffer = std::fs::read(path)?;
 
-        let buffer = fs::read(test_path).unwrap();
+        let (_, result) = RawUUIDText::parse(&buffer).unwrap();
 
-        let (_, uuidtext_data) = UUIDText::parse_uuidtext(&buffer).unwrap();
-        assert_eq!(uuidtext_data.signature, 0x66778899);
-        assert_eq!(uuidtext_data.major_version, 2);
-        assert_eq!(uuidtext_data.minor_version, 1);
-        assert_eq!(uuidtext_data.number_entries, 1);
-        assert_eq!(uuidtext_data.entry_descriptors[0].entry_size, 2740);
-        assert_eq!(uuidtext_data.entry_descriptors[0].range_start_offset, 21132);
-
-        assert_eq!(uuidtext_data.footer_data.len(), 2951);
+        assert_eq!(result.major_version, 2);
+        assert_eq!(result.minor_version, 1);
+        assert_eq!(result.entries.len(), 1);
+        assert_eq!(result.entries[0].entry_size, 2740);
+        assert_eq!(result.entries[0].range_start_offset, 21132);
+        assert_eq!(result.footer_data.len(), 2951);
+        Ok(())
     }
 
     #[test]
-    #[should_panic(expected = "Incomplete(Unknown)")]
-    fn test_bad_header() {
-        let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        test_path
-            .push("tests/test_data/Bad Data/UUIDText/Bad_Header_1FE459BBDC3E19BBF82D58415A2AE9");
-
-        let buffer = fs::read(test_path).unwrap();
-        let (_, _) = UUIDText::parse_uuidtext(&buffer).unwrap();
+    fn test_bad_signature() -> anyhow::Result<()> {
+        let data = [0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00];
+        let result = RawUUIDText::parse(&data);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            nom::Err::Error(e) => assert_eq!(e.code, nom::error::ErrorKind::Tag),
+            other => panic!("Expected Error(Tag), got: {other:?}"),
+        }
+        Ok(())
     }
 
     #[test]
-    #[should_panic(expected = "Eof")]
-    fn test_bad_content() {
-        let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        test_path
-            .push("tests/test_data/Bad Data/UUIDText/Bad_Content_1FE459BBDC3E19BBF82D58415A2AE9");
+    fn test_image_path() -> anyhow::Result<()> {
+        let path = test_data_path().join("UUIDText/Big Sur/1FE459BBDC3E19BBF82D58415A2AE9");
+        let buffer = std::fs::read(path)?;
 
-        let buffer = fs::read(test_path).unwrap();
-        let (_, _) = UUIDText::parse_uuidtext(&buffer).unwrap();
+        let (_, result) = RawUUIDText::parse(&buffer).unwrap();
+        let image_path = result.image_path();
+
+        assert!(image_path.is_some());
+        let image_path = image_path.unwrap();
+        assert!(
+            image_path.starts_with('/'),
+            "Expected absolute path, got: {image_path}"
+        );
+        Ok(())
     }
 
     #[test]
-    #[should_panic(expected = "Incomplete(Unknown)")]
-    fn test_bad_file() {
-        let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        test_path.push("tests/test_data/Bad Data/UUIDText/Badfile.txt");
+    fn test_format_string() -> anyhow::Result<()> {
+        let path = test_data_path().join("UUIDText/Big Sur/1FE459BBDC3E19BBF82D58415A2AE9");
+        let buffer = std::fs::read(path)?;
 
-        let buffer = fs::read(test_path).unwrap();
-        let (_, _) = UUIDText::parse_uuidtext(&buffer).unwrap();
+        let (_, result) = RawUUIDText::parse(&buffer).unwrap();
+
+        // Use the first entry's range_start_offset as a valid offset
+        let offset = u64::from(result.entries[0].range_start_offset);
+        let s = result.format_string(offset);
+        assert!(s.is_some(), "Expected a format string at offset {offset}");
+        let s = s.unwrap();
+        assert!(!s.is_empty());
+        Ok(())
     }
 }

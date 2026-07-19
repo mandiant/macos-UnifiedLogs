@@ -1,215 +1,123 @@
-// Copyright 2022 Mandiant, Inc. All Rights Reserved
-// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at
-// http://www.apache.org/licenses/LICENSE-2.0
-// Unless required by applicable law or agreed to in writing, software distributed under the License
-// is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and limitations under the License.
-
-use crate::catalog::CatalogChunk;
-use crate::chunks::firehose::firehose_log::MessageFlags;
-use crate::chunks::firehose::flags::FirehoseFormatters;
-use crate::chunks::firehose::message::{MessageData, MessageParams};
-use crate::traits::{FileProvider, StringCache};
-use log::debug;
+use nom::Parser;
+use nom::combinator::cond;
 use nom::number::complete::{le_u32, le_u64};
+use super::entry::FirehoseLogType;
+use super::flags::{FirehoseFlags, RawFormatterFlags};
 
-#[derive(Debug, Clone, Default)]
-pub struct FirehoseActivity {
-    pub activity_id: u32,
-    pub sentinal: u32,      // always 0x80000000?
-    pub pid: u64,           // if flag 0x0010
-    pub activity_id_2: u32, // if flag 0x0001
-    pub sentinal_2: u32,    // always 0x80000000? only if flag 0x0001
-    pub activity_id_3: u32, // if flag 0x0200
-    pub sentinal_3: u32,    // always 0x80000000? only if flag 0x0200
-    pub message_string_ref: u32,
-    pub pc_id: u32, // Appears to be used to calculate string offset for firehose events with Absolute flag
-    pub firehose_formatters: FirehoseFormatters,
-    pub flags: Vec<MessageFlags>,
+/// Parsed Activity entry body.
+#[derive(Debug, Clone, Copy)]
+pub struct RawActivityBody<'a> {
+    /// Activity ID + sentinel (absent for `Useraction` `log_type`).
+    pub activity_id: Option<(u32, u32)>,
+    /// Unique PID — present if `HAS_UNIQUE_PID` (0x0010).
+    pub pid: Option<u64>,
+    /// Current activity ID — present if `HAS_CURRENT_AID` (0x0001).
+    pub current_aid: Option<(u32, u32)>,
+    /// Other activity ID — present if `HAS_SUBSYSTEM` (0x0200), reinterpreted for Activity.
+    pub other_aid: Option<(u32, u32)>,
+    pub pc_id: u32,
+    pub formatter: RawFormatterFlags,
+    pub items_data: &'a [u8],
 }
 
-impl FirehoseActivity {
-    /// Parse Activity Type Firehose log entry.
-    //  Ex: tp 3536 + 60: activity create (has_current_aid, has_unique_pid, shared_cache, has_other_aid)
-    pub fn parse_activity(
-        data: &[u8],
-        firehose_flags: u16,
-        firehose_log_type: u8,
-    ) -> nom::IResult<&[u8], FirehoseActivity> {
-        let mut activity = FirehoseActivity::default();
-        let mut input = data;
+impl<'a> RawActivityBody<'a> {
+    /// Parse an Activity entry body from raw entry data.
+    pub fn parse(
+        data: &'a [u8],
+        flags: FirehoseFlags,
+        log_type: FirehoseLogType,
+    ) -> nom::IResult<&'a [u8], Self> {
+        let input = data;
 
-        // Useraction activity type does not have first Activity ID or sentinel
-        let useraction = 0x3;
-        // Get first activity_id (if not useraction type)
-        if firehose_log_type != useraction {
-            let (firehose_input, firehose_activity_id) = le_u32(data)?;
-            let (firehose_input, firehose_sentinel) = le_u32(firehose_input)?;
-
-            activity.activity_id = firehose_activity_id;
-            activity.sentinal = firehose_sentinel;
-            input = firehose_input;
-        }
-
-        let unique_pid = 0x10; // has_unique_pid flag
-        if (firehose_flags & unique_pid) != 0 {
-            debug!("[macos-unifiedlogs] Activity Firehose log chunk has unique_pid flag");
-            let (firehose_input, firehose_unique_pid) = le_u64(input)?;
-            activity.pid = firehose_unique_pid;
-            activity.flags.push(MessageFlags::HasUniquePid);
-            input = firehose_input;
-        }
-
-        let activity_id_current = 0x1; // has_current_aid flag
-        if (firehose_flags & activity_id_current) != 0 {
-            debug!("[macos-unifiedlogs] Activity Firehose log chunk has has_current_aid flag");
-            let (firehose_input, firehose_activity_id) = le_u32(input)?;
-            let (firehose_input, firehose_sentinel) = le_u32(firehose_input)?;
-
-            activity.activity_id_2 = firehose_activity_id;
-            activity.sentinal_2 = firehose_sentinel;
-            activity.flags.push(MessageFlags::HasCurrentAid);
-
-            input = firehose_input;
-        }
-
-        let activity_id_other = 0x200; // has_other_current_aid flag. In Activity log entries this is another activity id flag
-        if (firehose_flags & activity_id_other) != 0 {
-            debug!(
-                "[macos-unifiedlogs] Activity Firehose log chunk has has_other_current_aid flag"
-            );
-            let (firehose_input, firehose_activity_id) = le_u32(input)?;
-            let (firehose_input, firehose_sentinel) = le_u32(firehose_input)?;
-
-            activity.activity_id_3 = firehose_activity_id;
-            activity.sentinal_3 = firehose_sentinel;
-            activity.flags.push(MessageFlags::HasOtherAid);
-
-            input = firehose_input;
-        }
-        let (input, firehose_pc_id) = le_u32(input)?;
-        activity.pc_id = firehose_pc_id; // Message string reference?
-
-        // Check for flags related to base string format location (shared string file (dsc) or UUID file)
-        let (input, formatters) = FirehoseFormatters::firehose_formatter_flags(
-            input,
-            firehose_flags,
-            &mut activity.flags,
-        )?;
-        activity.firehose_formatters = formatters;
-        Ok((input, activity))
-    }
-
-    /// Get base log message string formatter from shared cache strings (dsc) or UUID text file for firehose activity log entries (chunks)
-    pub(crate) fn get_firehose_activity_strings(
-        firehose: &FirehoseActivity,
-        provider: &impl FileProvider,
-        cache: &impl StringCache,
-        string_offset: u64,
-        first_proc_id: u64,
-        second_proc_id: u32,
-        catalogs: &CatalogChunk,
-    ) -> nom::IResult<&'static [u8], MessageData> {
-        let params = MessageParams {
-            pc_id: firehose.pc_id,
-            string_offset,
-            first_proc_id,
-            second_proc_id,
-            supports_large_offset: true,
-        };
-
-        MessageData::get_message(
-            &firehose.firehose_formatters,
-            provider,
-            cache,
-            &params,
-            catalogs,
+        // Useraction activity type does not have the first Activity ID or sentinel
+        let (input, activity_id) =
+            cond(log_type != FirehoseLogType::Useraction, (le_u32, le_u32)).parse(input)?;
+        let (input, pid) =
+            cond(flags.contains(FirehoseFlags::HAS_UNIQUE_PID), le_u64).parse(input)?;
+        let (input, current_aid) = cond(
+            flags.contains(FirehoseFlags::HAS_CURRENT_AID),
+            (le_u32, le_u32),
         )
+        .parse(input)?;
+        // In Activity entries, HAS_SUBSYSTEM means "has other activity ID"
+        let (input, other_aid) = cond(
+            flags.contains(FirehoseFlags::HAS_SUBSYSTEM),
+            (le_u32, le_u32),
+        )
+        .parse(input)?;
+
+        let (input, pc_id) = le_u32(input)?;
+        let (items_data, formatter) = RawFormatterFlags::parse(input, flags)?;
+
+        Ok((
+            &[],
+            Self {
+                activity_id,
+                pid,
+                current_aid,
+                other_aid,
+                pc_id,
+                formatter,
+                items_data,
+            },
+        ))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::FirehoseActivity;
-    use crate::filesystem::LogarchiveProvider;
-    use crate::parser::parse_log;
-    use std::path::PathBuf;
+    use super::super::body::RawFirehoseBody;
+    use super::super::entry::FirehoseActivityType;
+    use super::*;
 
     #[test]
-    fn test_parse_activity() {
-        let test_data = [
+    fn test_activity_body() -> anyhow::Result<()> {
+        // From src/chunks/firehose/activity.rs test_parse_activity
+        let test_data: &[u8] = &[
             178, 251, 0, 0, 0, 0, 0, 128, 236, 0, 0, 0, 0, 0, 0, 0, 178, 251, 0, 0, 0, 0, 0, 128,
             179, 251, 0, 0, 0, 0, 0, 128, 64, 63, 24, 18, 1, 0, 2, 0,
         ];
-        let test_flags = 573;
-        let log_type: u8 = 0x1;
-        let (_, results) =
-            FirehoseActivity::parse_activity(&test_data, test_flags, log_type).unwrap();
-        assert_eq!(results.activity_id, 64434);
-        assert_eq!(results.sentinal, 2147483648);
-        assert_eq!(results.pid, 236);
-        assert_eq!(results.activity_id_2, 64434);
-        assert_eq!(results.sentinal_2, 2147483648);
-        assert_eq!(results.activity_id_3, 64435);
-        assert_eq!(results.sentinal_3, 2147483648);
-        assert_eq!(results.message_string_ref, 0);
-        assert!(!results.firehose_formatters.main_exe);
-        assert!(!results.firehose_formatters.absolute);
-        assert!(!results.firehose_formatters.shared_cache);
-        assert!(!results.firehose_formatters.main_plugin);
-        assert!(!results.firehose_formatters.pc_style);
-        assert_eq!(results.firehose_formatters.main_exe_alt_index, 0);
-        assert_eq!(results.firehose_formatters.uuid_relative, "");
-        assert_eq!(results.pc_id, 303578944);
-        assert_eq!(results.firehose_formatters.has_large_offset, 1);
-        assert_eq!(results.firehose_formatters.large_shared_cache, 2);
+        let flags = FirehoseFlags::from_bits_retain(573);
+        let log_type = FirehoseLogType::Info;
+
+        let body =
+            RawFirehoseBody::parse(test_data, FirehoseActivityType::Activity, flags, log_type)
+                .unwrap();
+        let activity = match body {
+            RawFirehoseBody::Activity(a) => a,
+            other => panic!("expected Activity, got {other:?}"),
+        };
+
+        assert_eq!(activity.activity_id, Some((64434, 0x80000000)));
+        assert_eq!(activity.pid, Some(236));
+        assert_eq!(activity.current_aid, Some((64434, 0x80000000)));
+        assert_eq!(activity.other_aid, Some((64435, 0x80000000)));
+        assert_eq!(activity.pc_id, 303578944);
+        assert_eq!(activity.formatter.has_large_offset, 1);
+        assert_eq!(activity.formatter.large_shared_cache, 2);
+        assert!(!activity.formatter.main_exe);
+        assert!(!activity.formatter.shared_cache);
+        assert!(!activity.formatter.absolute);
+        assert_eq!(activity.formatter.alt_index, 0);
+        assert_eq!(activity.formatter.uuid_relative, [0; 16]);
+        assert!(activity.items_data.is_empty());
+        Ok(())
     }
 
     #[test]
-    fn test_get_firehose_activity_big_sur() {
-        let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        test_path.push("tests/test_data/system_logs_big_sur.logarchive");
-        let provider = LogarchiveProvider::new(test_path.as_path());
-        let cache = crate::cache::MemoryStringCache::default();
+    fn test_activity_parse_items() -> anyhow::Result<()> {
+        let test_data: &[u8] = &[
+            178, 251, 0, 0, 0, 0, 0, 128, 236, 0, 0, 0, 0, 0, 0, 0, 178, 251, 0, 0, 0, 0, 0, 128,
+            179, 251, 0, 0, 0, 0, 0, 128, 64, 63, 24, 18, 1, 0, 2, 0,
+        ];
+        let flags = FirehoseFlags::from_bits_retain(573);
+        let log_type = FirehoseLogType::Info;
 
-        test_path.push("Persist/0000000000000004.tracev3");
-        let handle = std::fs::File::open(&test_path).unwrap();
-        let log_data = parse_log(handle, test_path.to_str().unwrap()).unwrap();
-
-        let activity_type = 0x2;
-
-        for catalog_data in log_data.catalog_data {
-            for preamble in catalog_data.firehose {
-                for firehose in preamble.public_data {
-                    if firehose.log_activity_type == activity_type {
-                        let (_, message_data) = FirehoseActivity::get_firehose_activity_strings(
-                            &firehose.firehose_activity,
-                            &provider,
-                            &cache,
-                            u64::from(firehose.format_string_location),
-                            preamble.first_number_proc_id,
-                            preamble.second_number_proc_id,
-                            &catalog_data.catalog,
-                        )
-                        .unwrap();
-                        assert_eq!(
-                            message_data.format_string,
-                            "Internal: Check the state of a node"
-                        );
-                        assert_eq!(message_data.library, "/usr/libexec/opendirectoryd");
-                        assert_eq!(message_data.process, "/usr/libexec/opendirectoryd");
-                        assert_eq!(
-                            message_data.process_uuid,
-                            "B736DF1625F538248E9527A8CEC4991E"
-                        );
-                        assert_eq!(
-                            message_data.library_uuid,
-                            "B736DF1625F538248E9527A8CEC4991E"
-                        );
-                        return;
-                    }
-                }
-            }
-        }
+        let body =
+            RawFirehoseBody::parse(test_data, FirehoseActivityType::Activity, flags, log_type)
+                .unwrap();
+        let result = body.parse_items(flags).unwrap();
+        assert_eq!(result.items.len(), 0);
+        Ok(())
     }
 }
