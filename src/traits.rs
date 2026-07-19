@@ -2,7 +2,7 @@ use std::borrow::Borrow;
 use std::sync::Arc;
 use std::{hash::Hash, io::Error};
 
-use crate::{dsc::SharedCacheStrings, uuidtext::UUIDText};
+use crate::{dsc::RawSharedCacheStrings as SharedCacheStrings, uuidtext::RawUUIDText as UUIDText};
 
 /// Implementing this trait allows library consumers to provide the files required by the parser in
 /// arbitrary formats, as long as they are provided as an iterator of items that implement \[Read\].

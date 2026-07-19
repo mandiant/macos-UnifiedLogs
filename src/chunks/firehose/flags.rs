@@ -1,230 +1,222 @@
-// Copyright 2022 Mandiant, Inc. All Rights Reserved
-// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at
-// http://www.apache.org/licenses/LICENSE-2.0
-// Unless required by applicable law or agreed to in writing, software distributed under the License
-// is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and limitations under the License.
-
-use log::{debug, error};
-use nom::Needed;
+use nom::Parser;
+use nom::combinator::cond;
 use nom::number::complete::{be_u128, le_u16};
 
-use crate::chunks::firehose::firehose_log::MessageFlags;
+// --- Entry-level flags (independent bits) ---
 
-#[derive(Debug, Clone, Default)]
-pub struct FirehoseFormatters {
-    pub main_exe: bool,
-    pub shared_cache: bool,
-    pub has_large_offset: u16,
-    pub large_shared_cache: u16,
-    pub absolute: bool,
-    pub uuid_relative: String,
-    pub main_plugin: bool,       // Not seen yet
-    pub pc_style: bool,          // Not seen yet
-    pub main_exe_alt_index: u16, // If log entry uses an alternative uuid file index (ex: absolute). This value gets prepended to the pc_id/offset
+bitflags::bitflags! {
+  /// Firehose entry flags — independent bit flags parsed from the entry header.
+  ///
+  /// Controls which optional fields are present in the entry body.
+  /// Bits 1–3 (mask 0x000E) are extracted as [`FormatterType`].
+  /// Bit 5 (0x0020) is `HAS_LARGE_OFFSET`, an independent modifier for formatter parsing.
+  #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+  pub struct FirehoseFlags: u16 {
+    const HAS_CURRENT_AID   = 0x0001;
+    const HAS_LARGE_OFFSET  = 0x0020;
+    const HAS_UNIQUE_PID    = 0x0010;
+    const HAS_PRIVATE_DATA  = 0x0100;
+    const HAS_SUBSYSTEM     = 0x0200;
+    const HAS_RULES         = 0x0400;
+    const HAS_OVERSIZE      = 0x0800;
+    const HAS_CONTEXT_DATA  = 0x1000;
+    const HAS_NAME          = 0x8000;
+  }
 }
 
-impl FirehoseFormatters {
-    /// Identify formatter flags associated with the log entry. Formatter flags determine the file where the base format string is located
-    pub fn firehose_formatter_flags<'a>(
-        data: &'a [u8],
-        firehose_flags: u16,
-        flags: &mut Vec<MessageFlags>,
-    ) -> nom::IResult<&'a [u8], FirehoseFormatters> {
-        let mut formatter_flags = FirehoseFormatters::default();
+// --- Formatter type enum (bits 1–3 of entry flags) ---
 
-        let message_strings_uuid = 0x2; // main_exe flag
-        let large_shared_cache = 0xc; // large_shared_cache flag
-        let shared_cache = 0x4; // shared_cache flag
-        let large_offset = 0x20; // has_large_offset flag
+/// Mask for extracting [`FormatterType`] from entry flags (bits 1–3).
+const FORMATTER_TYPE_MASK: u16 = 0x000E;
 
-        let flag_check = 0xe;
-        let mut input = data;
+/// Formatter type — identifies where the format string is located.
+///
+/// Extracted from bits 1–3 of the entry flags (mask `0x000E`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, num_enum::IntoPrimitive, num_enum::FromPrimitive)]
+#[repr(u8)]
+pub enum FormatterType {
+    MainExe = 0x2,
+    SharedCache = 0x4,
+    Absolute = 0x8,
+    UuidRelative = 0xa,
+    LargeSharedCache = 0xc,
+    #[num_enum(default)]
+    Unknown,
+}
 
-        /*
-        0x20 - has_large_offset flag. Offset to format string is larger than normal
-        0xc - has_large_shared_cache flag. Offset to format string is larger than normal
-        0x8 - absolute flag. The log uses an alterantive index number that points to the UUID file name in the Catalog which contains the format string
-        0x2 - main_exe flag. A UUID file contains the format string
-        0x4 - shared_cache flag. DSC file contains the format string
-        0xa - uuid_relative flag. The UUID file name is in the log data (instead of the Catalog)
-         */
-        match firehose_flags & flag_check {
-            0x20 => {
-                debug!("[macos-unifiedlogs] Firehose flag: has_large_offset");
-                let (firehose_input, firehose_large_offset) = le_u16(input)?;
-                formatter_flags.has_large_offset = firehose_large_offset;
-                input = firehose_input;
-                flags.push(MessageFlags::HasLargeOffset);
-                if (firehose_flags & large_shared_cache) != 0 {
-                    debug!(
-                        "[macos-unifiedlogs] Firehose flag: large_shared_cache and has_large_offset"
-                    );
-                    let (firehose_input, firehose_large_shared_cache) = le_u16(firehose_input)?;
-                    formatter_flags.large_shared_cache = firehose_large_shared_cache;
-                    flags.push(MessageFlags::LargeSharedCache);
-                    input = firehose_input;
-                } else if (firehose_flags & shared_cache) != 0 {
-                    formatter_flags.shared_cache = true;
-                    flags.push(MessageFlags::SharedCache);
-                }
+// --- Formatter flags ---
+
+/// Zero-copy formatter flags — replaces `FirehoseFormatters` without heap allocation.
+///
+/// `uuid_relative` is stored as raw `[u8; 16]` (big-endian) instead of `Uuid`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RawFormatterFlags {
+    pub main_exe: bool,
+    pub shared_cache: bool,
+    pub absolute: bool,
+    pub has_large_offset: u16,
+    pub large_shared_cache: u16,
+    pub alt_index: u16,
+    pub uuid_relative: [u8; 16],
+}
+
+impl RawFormatterFlags {
+    /// Parse formatter flags from entry data.
+    ///
+    /// Direct translation of `FirehoseFormatters::firehose_formatter_flags`
+    /// from `src/chunks/firehose/flags.rs`.
+    pub(super) fn parse(input: &[u8], flags: FirehoseFlags) -> nom::IResult<&[u8], Self> {
+        let mut result = Self::default();
+        let has_large_offset = flags.contains(FirehoseFlags::HAS_LARGE_OFFSET);
+
+        match FormatterType::from((flags.bits() & FORMATTER_TYPE_MASK) as u8) {
+            FormatterType::LargeSharedCache => {
+                let (input, large_offset) = cond(has_large_offset, le_u16).parse(input)?;
+                result.has_large_offset = large_offset.unwrap_or(0);
+                let (input, val) = le_u16(input)?;
+                result.large_shared_cache = val;
+                Ok((input, result))
             }
-            0xc => {
-                debug!("[macos-unifiedlogs] Firehose flag: large_shared_cache");
-                if (firehose_flags & large_offset) != 0 {
-                    let (firehose_input, firehose_large_offset) = le_u16(input)?;
-                    formatter_flags.has_large_offset = firehose_large_offset;
-                    input = firehose_input;
-                    flags.push(MessageFlags::HasLargeOffset);
-                }
-                let (firehose_input, firehose_large_shared_cache) = le_u16(input)?;
-                formatter_flags.large_shared_cache = firehose_large_shared_cache;
-                flags.push(MessageFlags::LargeSharedCache);
-                input = firehose_input;
+            FormatterType::Absolute => {
+                result.absolute = true;
+                let (input, val) = le_u16(input)?;
+                result.alt_index = val;
+                Ok((input, result))
             }
-            0x8 => {
-                debug!("[macos-unifiedlogs] Firehose flag: absolute");
-                formatter_flags.absolute = true;
-                flags.push(MessageFlags::Absolute);
-                if (firehose_flags & message_strings_uuid) == 0 {
-                    debug!("[macos-unifiedlogs] Firehose flag: alt index absolute flag");
-                    let (firehose_input, firehose_uuid_file_index) = le_u16(input)?;
-                    formatter_flags.main_exe_alt_index = firehose_uuid_file_index;
-                    input = firehose_input;
-                    flags.push(MessageFlags::AltIndex);
-                }
+            FormatterType::MainExe => {
+                result.main_exe = true;
+                Ok((input, result))
             }
-            0x2 => {
-                debug!("[macos-unifiedlogs] Firehose flag: main_exe");
-                formatter_flags.main_exe = true;
-                flags.push(MessageFlags::MainExe);
+            FormatterType::SharedCache => {
+                result.shared_cache = true;
+                let (input, large_offset) = cond(has_large_offset, le_u16).parse(input)?;
+                result.has_large_offset = large_offset.unwrap_or(0);
+                Ok((input, result))
             }
-            0x4 => {
-                debug!("[macos-unifiedlogs] Firehose flag: shared_cache");
-                formatter_flags.shared_cache = true;
-                flags.push(MessageFlags::SharedCache);
-                if (firehose_flags & large_offset) != 0 {
-                    let (firehose_input, firehose_large_offset) = le_u16(input)?;
-                    formatter_flags.has_large_offset = firehose_large_offset;
-                    input = firehose_input;
-                    flags.push(MessageFlags::HasLargeOffset);
-                }
+            FormatterType::UuidRelative => {
+                let (input, val) = be_u128(input)?;
+                result.uuid_relative = val.to_be_bytes();
+                Ok((input, result))
             }
-            0xa => {
-                debug!("[macos-unifiedlogs] Firehose flag: uuid_relative");
-                let (firehose_input, firehose_uuid_relative) = be_u128(input)?;
-                formatter_flags.uuid_relative = format!("{firehose_uuid_relative:032X}");
-                input = firehose_input;
-                flags.push(MessageFlags::UuidRelative);
-            }
-            _ => {
-                error!("[macos-unifiedlogs] Unknown Firehose formatter flag: {firehose_flags:?}");
-                debug!("[macos-unifiedlogs] Firehose data: {data:X?}");
-                flags.push(MessageFlags::Unknown);
-                return Err(nom::Err::Incomplete(Needed::Unknown));
-            }
+            FormatterType::Unknown => Err(nom::Err::Failure(nom::error::Error::new(
+                input,
+                nom::error::ErrorKind::Switch,
+            ))),
         }
-        Ok((input, formatter_flags))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::chunks::firehose::{firehose_log::MessageFlags, flags::FirehoseFormatters};
+    use super::*;
 
     #[test]
-    fn test_firehose_formatter_flags_has_large_offset() {
+    fn test_formatter_has_large_offset() {
+        // From src/chunks/firehose/flags.rs test_firehose_formatter_flags_has_large_offset
         let test_data = [
-            1, 0, 2, 0, 14, 0, 34, 2, 0, 4, 135, 16, 0, 0, 34, 4, 0, 0, 5, 0, 100, 101, 110, 121, 0,
+            1, 0, 2, 0, 14, 0, 34, 2, 0, 4, 135, 16, 0, 0, 34, 4, 0, 0, 5, 0, 100, 101, 110, 121,
+            0,
         ];
-        let test_flags = 557;
-        let mut flags = Vec::new();
-        let (_, results) =
-            FirehoseFormatters::firehose_formatter_flags(&test_data, test_flags, &mut flags)
-                .unwrap();
-        assert_eq!(results.has_large_offset, 1);
-        assert_eq!(results.large_shared_cache, 2);
-        assert_eq!(
-            flags,
-            vec![MessageFlags::HasLargeOffset, MessageFlags::LargeSharedCache]
-        );
+        let flags = FirehoseFlags::from_bits_retain(557);
+        let (_, result) = RawFormatterFlags::parse(&test_data, flags).unwrap();
+        assert_eq!(result.has_large_offset, 1);
+        assert_eq!(result.large_shared_cache, 2);
+        assert!(!result.main_exe);
+        assert!(!result.shared_cache);
+        assert!(!result.absolute);
+        assert_eq!(result.alt_index, 0);
+        assert_eq!(result.uuid_relative, [0; 16]);
     }
 
     #[test]
-    fn test_firehose_formatter_flags_message_strings_uuid_message_alt_index() {
+    fn test_formatter_absolute_alt_index_small() {
+        // From test_firehose_formatter_flags_message_strings_uuid_message_alt_index
         let test_data = [8, 0, 17, 166, 251, 2, 128, 255, 0, 0];
-        let test_flags = 8;
-        let mut flags = Vec::new();
-
-        let (_, results) =
-            FirehoseFormatters::firehose_formatter_flags(&test_data, test_flags, &mut flags)
-                .unwrap();
-        assert_eq!(results.main_exe_alt_index, 8);
-        assert_eq!(flags, vec![MessageFlags::Absolute, MessageFlags::AltIndex]);
+        let flags = FirehoseFlags::from_bits_retain(8);
+        let (_, result) = RawFormatterFlags::parse(&test_data, flags).unwrap();
+        assert!(result.absolute);
+        assert_eq!(result.alt_index, 8);
+        assert!(!result.main_exe);
+        assert!(!result.shared_cache);
+        assert_eq!(result.has_large_offset, 0);
+        assert_eq!(result.large_shared_cache, 0);
+        assert_eq!(result.uuid_relative, [0; 16]);
     }
 
     #[test]
-    fn test_firehose_formatter_flags_message_strings_uuid() {
+    fn test_formatter_main_exe() {
+        // From test_firehose_formatter_flags_message_strings_uuid
         let test_data = [186, 0, 0, 0];
-        let test_flags = 514;
-        let mut flags = Vec::new();
-        let (_, results) =
-            FirehoseFormatters::firehose_formatter_flags(&test_data, test_flags, &mut flags)
-                .unwrap();
-        assert!(results.main_exe);
-        assert_eq!(flags, vec![MessageFlags::MainExe]);
+        let flags = FirehoseFlags::from_bits_retain(514);
+        let (_, result) = RawFormatterFlags::parse(&test_data, flags).unwrap();
+        assert!(result.main_exe);
+        assert!(!result.shared_cache);
+        assert!(!result.absolute);
+        assert_eq!(result.has_large_offset, 0);
+        assert_eq!(result.large_shared_cache, 0);
+        assert_eq!(result.alt_index, 0);
+        assert_eq!(result.uuid_relative, [0; 16]);
     }
 
     #[test]
-    fn test_firehose_formatter_flags_shared_cache_dsc_uuid() {
+    fn test_formatter_shared_cache() {
+        // From test_firehose_formatter_flags_shared_cache_dsc_uuid
         let test_data = [
             23, 1, 34, 1, 66, 4, 0, 0, 35, 0, 83, 65, 83, 83, 101, 115, 115, 105, 111, 110, 83,
             116, 97, 116, 101, 70, 111, 114, 85, 115, 101, 114, 58, 49, 50, 52, 54, 58, 32, 101,
             110, 116, 101, 114, 0,
         ];
-        let test_flags = 516;
-        let mut flags = Vec::new();
-
-        let (_, results) =
-            FirehoseFormatters::firehose_formatter_flags(&test_data, test_flags, &mut flags)
-                .unwrap();
-        assert!(results.shared_cache);
-        assert_eq!(flags, vec![MessageFlags::SharedCache]);
+        let flags = FirehoseFlags::from_bits_retain(516);
+        let (_, result) = RawFormatterFlags::parse(&test_data, flags).unwrap();
+        assert!(result.shared_cache);
+        assert!(!result.main_exe);
+        assert!(!result.absolute);
+        assert_eq!(result.has_large_offset, 0);
+        assert_eq!(result.large_shared_cache, 0);
+        assert_eq!(result.alt_index, 0);
+        assert_eq!(result.uuid_relative, [0; 16]);
     }
 
     #[test]
-    fn test_firehose_formatter_flags_absolute_message_alt_uuid() {
+    fn test_formatter_absolute_alt_index_large() {
+        // From test_firehose_formatter_flags_absolute_message_alt_uuid
         let test_data = [
-            128, 255, 2, 13, 34, 4, 0, 0, 6, 0, 34, 4, 6, 0, 11, 0, 34, 4, 17, 0, 7, 0, 2, 4, 8, 0,
-            0, 0, 2, 8, 0, 0, 0, 0, 0, 0, 0, 0, 2, 4, 0, 0, 0, 0, 2, 8, 0, 0, 0, 0, 0, 0, 0, 0, 34,
-            4, 24, 0, 3, 0, 34, 4, 27, 0, 3, 0, 2, 8, 156, 17, 7, 98, 0, 0, 0, 0, 2, 8, 156, 17, 7,
-            98, 0, 0, 0, 0, 2, 4, 0, 0, 0, 0, 34, 4, 30, 0, 3, 0, 65, 67, 77, 82, 77, 0, 95, 108,
-            111, 103, 80, 111, 108, 105, 99, 121, 0, 83, 65, 86, 73, 78, 71, 0, 78, 79, 0, 78, 79,
-            0, 78, 79, 0,
+            128, 255, 2, 13, 34, 4, 0, 0, 6, 0, 34, 4, 6, 0, 11, 0, 34, 4, 17, 0, 7, 0, 2, 4, 8,
+            0, 0, 0, 2, 8, 0, 0, 0, 0, 0, 0, 0, 0, 2, 4, 0, 0, 0, 0, 2, 8, 0, 0, 0, 0, 0, 0, 0,
+            0, 34, 4, 24, 0, 3, 0, 34, 4, 27, 0, 3, 0, 2, 8, 156, 17, 7, 98, 0, 0, 0, 0, 2, 8,
+            156, 17, 7, 98, 0, 0, 0, 0, 2, 4, 0, 0, 0, 0, 34, 4, 30, 0, 3, 0, 65, 67, 77, 82, 77,
+            0, 95, 108, 111, 103, 80, 111, 108, 105, 99, 121, 0, 83, 65, 86, 73, 78, 71, 0, 78,
+            79, 0, 78, 79, 0, 78, 79, 0,
         ];
-        let test_flags = 8;
-        let mut flags = Vec::new();
-
-        let (_, results) =
-            FirehoseFormatters::firehose_formatter_flags(&test_data, test_flags, &mut flags)
-                .unwrap();
-        assert!(results.absolute);
-        assert_eq!(results.main_exe_alt_index, 65408);
-        assert_eq!(flags, vec![MessageFlags::Absolute, MessageFlags::AltIndex]);
+        let flags = FirehoseFlags::from_bits_retain(8);
+        let (_, result) = RawFormatterFlags::parse(&test_data, flags).unwrap();
+        assert!(result.absolute);
+        assert_eq!(result.alt_index, 65408);
+        assert!(!result.main_exe);
+        assert!(!result.shared_cache);
+        assert_eq!(result.has_large_offset, 0);
+        assert_eq!(result.large_shared_cache, 0);
+        assert_eq!(result.uuid_relative, [0; 16]);
     }
 
     #[test]
-    fn test_firehose_formatter_flags_uuid_relative() {
+    fn test_formatter_uuid_relative() {
+        // From test_firehose_formatter_flags_uuid_relative
+        // Old assertion was the hex string "7B0D3775F1903E21BA130447C41B8743".
         let test_data = [
             123, 13, 55, 117, 241, 144, 62, 33, 186, 19, 4, 71, 196, 27, 135, 67, 0, 0,
         ];
-        let test_flags = 0xa;
-        let mut flags = Vec::new();
-
-        let (_, results) =
-            FirehoseFormatters::firehose_formatter_flags(&test_data, test_flags, &mut flags)
-                .unwrap();
-        assert_eq!(results.uuid_relative, "7B0D3775F1903E21BA130447C41B8743");
-        assert_eq!(flags, vec![MessageFlags::UuidRelative]);
+        let flags = FirehoseFlags::from_bits_retain(0xa);
+        let (_, result) = RawFormatterFlags::parse(&test_data, flags).unwrap();
+        assert_eq!(
+            result.uuid_relative,
+            [123, 13, 55, 117, 241, 144, 62, 33, 186, 19, 4, 71, 196, 27, 135, 67]
+        );
+        assert!(!result.main_exe);
+        assert!(!result.shared_cache);
+        assert!(!result.absolute);
+        assert_eq!(result.has_large_offset, 0);
+        assert_eq!(result.large_shared_cache, 0);
+        assert_eq!(result.alt_index, 0);
     }
 }

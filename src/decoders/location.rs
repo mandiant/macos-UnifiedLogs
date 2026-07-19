@@ -5,21 +5,19 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-use crate::util::decode_standard;
-
-use super::{
-    DecoderError,
-    bool::{lowercase_bool, lowercase_int_bool},
-};
+use super::DecoderError;
+use super::bool::bool_from_int;
+use crate::helpers::decode_standard;
 use log::warn;
 use nom::{
     IResult, Parser,
     bytes::complete::take,
     number::complete::{le_f64, le_i32, le_i64, le_u8, le_u32},
 };
+use std::fmt::Display;
 
 #[derive(Debug, Default)]
-struct LocationTrackerState {
+pub struct LocationTrackerState {
     distance_filter: f64,
     desired_accuracy: f64,
     updating_location: u8,
@@ -50,76 +48,132 @@ struct LocationTrackerState {
     is_authorized_for_widgets: u8,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, strum::Display)]
+pub enum ClientAuthorizationStatus {
+    #[strum(to_string = "Not Determined")]
+    NotDetermined,
+    #[strum(to_string = "Restricted")]
+    Restricted,
+    #[strum(to_string = "Denied")]
+    Denied,
+    #[strum(to_string = "Authorized Always")]
+    AuthorizedAlways,
+    #[strum(to_string = "Authorized When In Use")]
+    AuthorizedWhenInUse,
+}
+
 /// Convert Core Location Client Autherization Status code to string
-pub(crate) fn client_authorization_status(status: &str) -> Result<String, DecoderError<'_>> {
-    let message = match status {
-        "0" => "Not Determined",
-        "1" => "Restricted",
-        "2" => "Denied",
-        "3" => "Authorized Always",
-        "4" => "Authorized When In Use",
-        _ => {
-            return Err(DecoderError::Parse {
-                input: status.as_bytes(),
-                parser_name: "client authorization status",
-                message: "Unknown Core Location client authorization status",
-            });
-        }
-    };
-    Ok(message.to_string())
+pub(crate) fn client_authorization_status(
+    status: &str,
+) -> Result<ClientAuthorizationStatus, DecoderError<'_>> {
+    match status {
+        "0" => Ok(ClientAuthorizationStatus::NotDetermined),
+        "1" => Ok(ClientAuthorizationStatus::Restricted),
+        "2" => Ok(ClientAuthorizationStatus::Denied),
+        "3" => Ok(ClientAuthorizationStatus::AuthorizedAlways),
+        "4" => Ok(ClientAuthorizationStatus::AuthorizedWhenInUse),
+        _ => Err(DecoderError::Parse {
+            input: status.as_bytes(),
+            parser_name: "client authorization status",
+            message: "Unknown Core Location client authorization status",
+        }),
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, strum::Display)]
+#[allow(clippy::enum_variant_names)]
+pub enum DaemonStatusType {
+    #[strum(to_string = "Reachability Unavailable")]
+    ReachabilityUnavailable,
+    #[strum(to_string = "Reachability Small")]
+    ReachabilitySmall,
+    #[strum(to_string = "Reachability Large")]
+    ReachabilityLarge,
+    #[strum(to_string = "Reachability Unachievable")]
+    ReachabilityUnachievable,
 }
 
 /// Convert Core Location Daemon Status type to string
-pub(crate) fn daemon_status_type(status: &str) -> Result<String, DecoderError<'_>> {
+pub(crate) fn daemon_status_type(status: &str) -> Result<DaemonStatusType, DecoderError<'_>> {
     // Found in dyldcache liblog
-    let message = match status {
-        "0" => "Reachability Unavailable",
-        "1" => "Reachability Small",
-        "2" => "Reachability Large",
-        "56" => "Reachability Unachievable",
-        _ => {
-            return Err(DecoderError::Parse {
-                input: status.as_bytes(),
-                parser_name: "daemon status type",
-                message: "Unknown Core Location daemon status type",
-            });
-        }
-    };
-    Ok(message.to_string())
+    match status {
+        "0" => Ok(DaemonStatusType::ReachabilityUnavailable),
+        "1" => Ok(DaemonStatusType::ReachabilitySmall),
+        "2" => Ok(DaemonStatusType::ReachabilityLarge),
+        "56" => Ok(DaemonStatusType::ReachabilityUnachievable),
+        _ => Err(DecoderError::Parse {
+            input: status.as_bytes(),
+            parser_name: "daemon status type",
+            message: "Unknown Core Location daemon status type",
+        }),
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, strum::Display)]
+pub enum SubharvesterIdentifier {
+    #[strum(to_string = "CellLegacy")]
+    CellLegacy,
+    #[strum(to_string = "Cell")]
+    Cell,
+    #[strum(to_string = "Wifi")]
+    Wifi,
+    #[strum(to_string = "Tracks")]
+    Tracks,
+    #[strum(to_string = "Realtime")]
+    Realtime,
+    #[strum(to_string = "App")]
+    App,
+    #[strum(to_string = "Pass")]
+    Pass,
+    #[strum(to_string = "Indoor")]
+    Indoor,
+    #[strum(to_string = "Pressure")]
+    Pressure,
+    #[strum(to_string = "Poi")]
+    Poi,
+    #[strum(to_string = "Trace")]
+    Trace,
+    #[strum(to_string = "Avenger")]
+    Avenger,
+    #[strum(to_string = "Altimeter")]
+    Altimeter,
+    #[strum(to_string = "Ionosphere")]
+    Ionosphere,
+    #[strum(to_string = "Unknown")]
+    Unknown,
 }
 
 /// Convert Core Location Subhaverester id to string
-pub(crate) fn subharvester_identifier(status: &str) -> Result<String, DecoderError<'_>> {
+pub(crate) fn subharvester_identifier(
+    status: &str,
+) -> Result<SubharvesterIdentifier, DecoderError<'_>> {
     // Found in dyldcache liblog
-    let message = match status {
-        "0" => "CellLegacy",
-        "1" => "Cell",
-        "2" => "Wifi",
-        "3" => "Tracks",
-        "4" => "Realtime",
-        "5" => "App",
-        "6" => "Pass",
-        "7" => "Indoor",
-        "8" => "Pressure",
-        "9" => "Poi",
-        "10" => "Trace",
-        "11" => "Avenger",
-        "12" => "Altimeter",
-        "13" => "Ionosphere",
-        "14" => "Unknown",
-        _ => {
-            return Err(DecoderError::Parse {
-                input: status.as_bytes(),
-                parser_name: "subharvester identifier",
-                message: "Unknown Core Location subhaverster identifier type",
-            });
-        }
-    };
-    Ok(format!("{:?}", message.to_string()))
+    match status {
+        "0" => Ok(SubharvesterIdentifier::CellLegacy),
+        "1" => Ok(SubharvesterIdentifier::Cell),
+        "2" => Ok(SubharvesterIdentifier::Wifi),
+        "3" => Ok(SubharvesterIdentifier::Tracks),
+        "4" => Ok(SubharvesterIdentifier::Realtime),
+        "5" => Ok(SubharvesterIdentifier::App),
+        "6" => Ok(SubharvesterIdentifier::Pass),
+        "7" => Ok(SubharvesterIdentifier::Indoor),
+        "8" => Ok(SubharvesterIdentifier::Pressure),
+        "9" => Ok(SubharvesterIdentifier::Poi),
+        "10" => Ok(SubharvesterIdentifier::Trace),
+        "11" => Ok(SubharvesterIdentifier::Avenger),
+        "12" => Ok(SubharvesterIdentifier::Altimeter),
+        "13" => Ok(SubharvesterIdentifier::Ionosphere),
+        "14" => Ok(SubharvesterIdentifier::Unknown),
+        _ => Err(DecoderError::Parse {
+            input: status.as_bytes(),
+            parser_name: "subharvester identifier",
+            message: "Unknown Core Location subhaverster identifier type",
+        }),
+    }
 }
 
 /// Convert Core Location SQLITE code to string
-pub(crate) fn sqlite_location(input: &str) -> Result<&'static str, DecoderError<'_>> {
+pub(crate) fn sqlite_location(input: &str) -> Result<SqliteError, DecoderError<'_>> {
     let decoded_data = decode_standard(input).map_err(|_| DecoderError::Parse {
         input: input.as_bytes(),
         parser_name: "sqlite location",
@@ -135,55 +189,126 @@ pub(crate) fn sqlite_location(input: &str) -> Result<&'static str, DecoderError<
     Ok(result)
 }
 
-/// Get the SQLITE error message
-fn get_sqlite_data(input: &[u8]) -> IResult<&[u8], &'static str> {
-    let (input, sqlite_code) = le_u32(input)?;
+#[allow(non_camel_case_types)]
+#[derive(Debug, Clone, PartialEq, Eq, strum::Display)]
+pub enum SqliteError {
+    #[strum(to_string = "SQLITE OK")]
+    SQLITE_OK,
+    #[strum(to_string = "SQLITE ERROR")]
+    SQLITE_ERROR,
+    #[strum(to_string = "SQLITE INTERNAL")]
+    SQLITE_INTERNAL,
+    #[strum(to_string = "SQLITE PERM")]
+    SQLITE_PERM,
+    #[strum(to_string = "SQLITE ABORT")]
+    SQLITE_ABORT,
+    #[strum(to_string = "SQLITE BUSY")]
+    SQLITE_BUSY,
+    #[strum(to_string = "SQLITE LOCKED")]
+    SQLITE_LOCKED,
+    #[strum(to_string = "SQLITE NOMEM")]
+    SQLITE_NOMEM,
+    #[strum(to_string = "SQLITE READ ONLY")]
+    SQLITE_READ_ONLY,
+    #[strum(to_string = "SQLITE INTERRUPT")]
+    SQLITE_INTERRUPT,
+    #[strum(to_string = "SQLITE IO ERR")]
+    SQLITE_IO_ERR,
+    #[strum(to_string = "SQLITE CORRUPT")]
+    SQLITE_CORRUPT,
+    #[strum(to_string = "SQLITE NOT FOUND")]
+    SQLITE_NOT_FOUND,
+    #[strum(to_string = "SQLITE FULL")]
+    SQLITE_FULL,
+    #[strum(to_string = "SQLITE CAN'T OPEN")]
+    SQLITE_CANT_OPEN,
+    #[strum(to_string = "SQLITE PROTOCOL")]
+    SQLITE_PROTOCOL,
+    #[strum(to_string = "SQLITE EMPTY")]
+    SQLITE_EMPTY,
+    #[strum(to_string = "SQLITE SCHEMA")]
+    SQLITE_SCHEMA,
+    #[strum(to_string = "SQLITE TOO BIG")]
+    SQLITE_TOO_BIG,
+    #[strum(to_string = "SQLITE CONSTRAINT")]
+    SQLITE_CONSTRAINT,
+    #[strum(to_string = "SQLITE MISMATCH")]
+    SQLITE_MISMATCH,
+    #[strum(to_string = "SQLITE MISUSE")]
+    SQLITE_MISUSE,
+    #[strum(to_string = "SQLITE NO LFS")]
+    SQLITE_NO_LFS,
+    #[strum(to_string = "SQLITE AUTH")]
+    SQLITE_AUTH,
+    #[strum(to_string = "SQLITE FORMAT")]
+    SQLITE_FORMAT,
+    #[strum(to_string = "SQLITE RANGE")]
+    SQLITE_RANGE,
+    #[strum(to_string = "SQLITE NOT A DB")]
+    SQLITE_NOT_A_DB,
+    #[strum(to_string = "SQLITE NOTICE")]
+    SQLITE_NOTICE,
+    #[strum(to_string = "SQLITE WARNING")]
+    SQLITE_WARNING,
+    #[strum(to_string = "SQLITE ROW")]
+    SQLITE_ROW,
+    #[strum(to_string = "SQLITE DONE")]
+    SQLITE_DONE,
+    #[strum(to_string = "SQLITE IO ERR READ")]
+    SQLITE_IO_ERR_READ,
+    #[strum(to_string = "Unknown Core Location sqlite error")]
+    Unknown,
+}
 
+/// Get the SQLITE error message
+fn get_sqlite_data(input: &[u8]) -> IResult<&[u8], SqliteError> {
+    let (input, sqlite_code) = le_u32(input)?;
     // Found at https://www.sqlite.org/rescode.html
-    let message = match sqlite_code {
-        0 => "SQLITE OK",
-        1 => "SQLITE ERROR",
-        2 => "SQLITE INTERNAL",
-        3 => "SQLITE PERM",
-        4 => "SQLITE ABORT",
-        5 => "SQLITE BUSY",
-        6 => "SQLITE LOCKED",
-        7 => "SQLITE NOMEM",
-        8 => "SQLITE READ ONLY",
-        9 => "SQLITE INTERRUPT",
-        10 => "SQLITE IO ERR",
-        11 => "SQLITE CORRUPT",
-        12 => "SQLITE NOT FOUND",
-        13 => "SQLITE FULL",
-        14 => "SQLITE CAN'T OPEN",
-        15 => "SQLITE PROTOCOL",
-        16 => "SQLITE EMPTY",
-        17 => "SQLITE SCHEMA",
-        18 => "SQLITE TOO BIG",
-        19 => "SQLITE CONSTRAINT",
-        20 => "SQLITE MISMATCH",
-        21 => "SQLITE MISUSE",
-        22 => "SQLITE NO LFS",
-        23 => "SQLITE AUTH",
-        24 => "SQLITE FORMAT",
-        25 => "SQLITE RANGE",
-        26 => "SQLITE NOT A DB",
-        27 => "SQLITE NOTICE",
-        28 => "SQLITE WARNING",
-        100 => "SQLITE ROW",
-        101 => "SQLITE DONE",
-        266 => "SQLITE IO ERR READ",
+    let result = match sqlite_code {
+        0 => SqliteError::SQLITE_OK,
+        1 => SqliteError::SQLITE_ERROR,
+        2 => SqliteError::SQLITE_INTERNAL,
+        3 => SqliteError::SQLITE_PERM,
+        4 => SqliteError::SQLITE_ABORT,
+        5 => SqliteError::SQLITE_BUSY,
+        6 => SqliteError::SQLITE_LOCKED,
+        7 => SqliteError::SQLITE_NOMEM,
+        8 => SqliteError::SQLITE_READ_ONLY,
+        9 => SqliteError::SQLITE_INTERRUPT,
+        10 => SqliteError::SQLITE_IO_ERR,
+        11 => SqliteError::SQLITE_CORRUPT,
+        12 => SqliteError::SQLITE_NOT_FOUND,
+        13 => SqliteError::SQLITE_FULL,
+        14 => SqliteError::SQLITE_CANT_OPEN,
+        15 => SqliteError::SQLITE_PROTOCOL,
+        16 => SqliteError::SQLITE_EMPTY,
+        17 => SqliteError::SQLITE_SCHEMA,
+        18 => SqliteError::SQLITE_TOO_BIG,
+        19 => SqliteError::SQLITE_CONSTRAINT,
+        20 => SqliteError::SQLITE_MISMATCH,
+        21 => SqliteError::SQLITE_MISUSE,
+        22 => SqliteError::SQLITE_NO_LFS,
+        23 => SqliteError::SQLITE_AUTH,
+        24 => SqliteError::SQLITE_FORMAT,
+        25 => SqliteError::SQLITE_RANGE,
+        26 => SqliteError::SQLITE_NOT_A_DB,
+        27 => SqliteError::SQLITE_NOTICE,
+        28 => SqliteError::SQLITE_WARNING,
+        100 => SqliteError::SQLITE_ROW,
+        101 => SqliteError::SQLITE_DONE,
+        266 => SqliteError::SQLITE_IO_ERR_READ,
         _ => {
             warn!("[macos-unifiedlogs] Unknown Core Location sqlite error: {sqlite_code}");
-            "Unknown Core Location sqlite error"
+            SqliteError::Unknown
         }
     };
-
-    Ok((input, message))
+    Ok((input, result))
 }
 
 /// Parse the manager tracker state data
-pub(crate) fn client_manager_state_tracker_state(input: &str) -> Result<String, DecoderError<'_>> {
+pub(crate) fn client_manager_state_tracker_state(
+    input: &str,
+) -> Result<LocationStateTrackerData, DecoderError<'_>> {
     let decoded_data = decode_standard(input).map_err(|_| DecoderError::Parse {
         input: input.as_bytes(),
         parser_name: "client manager state tracker state",
@@ -199,24 +324,39 @@ pub(crate) fn client_manager_state_tracker_state(input: &str) -> Result<String, 
     Ok(result)
 }
 
+pub struct LocationStateTrackerData {
+    location_enabled: u32,
+    location_restricted: u32,
+}
+
+impl Display for LocationStateTrackerData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{{\"locationRestricted\":{}, \"locationServicesenabledStatus\":{}}}",
+            bool_from_int(self.location_restricted),
+            self.location_enabled
+        )
+    }
+}
+
 /// Get the tracker data
-pub(crate) fn get_state_tracker_data(input: &[u8]) -> IResult<&[u8], String> {
+pub(crate) fn get_state_tracker_data(input: &[u8]) -> IResult<&[u8], LocationStateTrackerData> {
     let mut tup = (le_u32, le_u32);
     let (input, (location_enabled, location_restricted)) = tup.parse(input)?;
     Ok((
         input,
-        format!(
-            "{{\"locationRestricted\":{}, \"locationServicesenabledStatus\":{}}}",
-            lowercase_bool(&format!("{location_restricted}")),
-            location_enabled
-        ),
+        LocationStateTrackerData {
+            location_enabled,
+            location_restricted,
+        },
     ))
 }
 
 /// Parse location tracker state data
 pub(crate) fn location_manager_state_tracker_state(
     input: &str,
-) -> Result<String, DecoderError<'_>> {
+) -> Result<LocationTrackerState, DecoderError<'_>> {
     let decoded_data = decode_standard(input).map_err(|_| DecoderError::Parse {
         input: input.as_bytes(),
         parser_name: "location manager state tracker state",
@@ -234,7 +374,9 @@ pub(crate) fn location_manager_state_tracker_state(
 }
 
 /// Get the location state data
-pub(crate) fn get_location_tracker_state(input: &[u8]) -> nom::IResult<&[u8], String> {
+pub(crate) fn get_location_tracker_state(
+    input: &[u8],
+) -> nom::IResult<&[u8], LocationTrackerState> {
     // https://github.com/cmsj/ApplePrivateHeaders/blob/main/macOS/11.3/System/Library/Frameworks/CoreLocation.framework/Versions/A/CoreLocation/CoreLocation-Structs.h and in dyldcache
 
     // Padding? Reserved?
@@ -325,7 +467,7 @@ pub(crate) fn get_location_tracker_state(input: &[u8]) -> nom::IResult<&[u8], St
     // Return early if we only have 64 bytes to work with
     const CATALINA_SIZE: usize = 64;
     if input.len() == CATALINA_SIZE {
-        return Ok((location_data, location_tracker_object(&tracker)));
+        return Ok((location_data, tracker));
     }
 
     let mut location_tup = (le_u8, le_u8, le_u8, le_u8, le_u8, le_u8, le_u8, le_u8);
@@ -355,13 +497,15 @@ pub(crate) fn get_location_tracker_state(input: &[u8]) -> nom::IResult<&[u8], St
         ..tracker
     };
 
-    Ok((input, location_tracker_object(&tracker)))
+    Ok((input, tracker))
 }
 
 /// Create the location tracker json object
-fn location_tracker_object(tracker: &LocationTrackerState) -> String {
-    format!(
-        "{{
+impl Display for LocationTrackerState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{{
             \"distanceFilter\":{}, 
             \"desiredAccuracy\":{}, 
             \"updatingLocation\":{}, 
@@ -391,35 +535,36 @@ fn location_tracker_object(tracker: &LocationTrackerState) -> String {
             \"courtesyPromptNeeded\":{},
             \"isAuthorizedForWidgetUpdates\":{},
         }}",
-        tracker.distance_filter,
-        tracker.desired_accuracy,
-        lowercase_int_bool(tracker.updating_location),
-        lowercase_int_bool(tracker.requesting_location),
-        lowercase_int_bool(tracker.requesting_ranging),
-        lowercase_int_bool(tracker.updating_ranging),
-        lowercase_int_bool(tracker.updating_heading),
-        tracker.heading_filter,
-        lowercase_int_bool(tracker.allows_location_prompts),
-        lowercase_int_bool(tracker.allows_altered_locations),
-        lowercase_int_bool(tracker.dynamic_accuracy),
-        lowercase_int_bool(tracker.previous_authorization_status_valid),
-        tracker.previous_authorization_status,
-        lowercase_int_bool(tracker.limits_precision),
-        tracker.activity_type,
-        tracker.pauses_location_updates,
-        lowercase_int_bool(tracker.paused),
-        lowercase_int_bool(tracker.allows_background_updates),
-        lowercase_int_bool(tracker.shows_background_location),
-        lowercase_int_bool(tracker.allows_map_correction),
-        lowercase_int_bool(tracker.batching_location),
-        lowercase_int_bool(tracker.updating_vehicle_speed),
-        lowercase_int_bool(tracker.updating_vehicle_heading),
-        lowercase_int_bool(tracker.match_info),
-        lowercase_int_bool(tracker.ground_altitude),
-        lowercase_int_bool(tracker.fusion_info),
-        lowercase_int_bool(tracker.courtesy_prompt),
-        lowercase_int_bool(tracker.is_authorized_for_widgets),
-    )
+            self.distance_filter,
+            self.desired_accuracy,
+            bool_from_int(self.updating_location),
+            bool_from_int(self.requesting_location),
+            bool_from_int(self.requesting_ranging),
+            bool_from_int(self.updating_ranging),
+            bool_from_int(self.updating_heading),
+            self.heading_filter,
+            bool_from_int(self.allows_location_prompts),
+            bool_from_int(self.allows_altered_locations),
+            bool_from_int(self.dynamic_accuracy),
+            bool_from_int(self.previous_authorization_status_valid),
+            self.previous_authorization_status,
+            bool_from_int(self.limits_precision),
+            self.activity_type,
+            self.pauses_location_updates,
+            bool_from_int(self.paused),
+            bool_from_int(self.allows_background_updates),
+            bool_from_int(self.shows_background_location),
+            bool_from_int(self.allows_map_correction),
+            bool_from_int(self.batching_location),
+            bool_from_int(self.updating_vehicle_speed),
+            bool_from_int(self.updating_vehicle_heading),
+            bool_from_int(self.match_info),
+            bool_from_int(self.ground_altitude),
+            bool_from_int(self.fusion_info),
+            bool_from_int(self.courtesy_prompt),
+            bool_from_int(self.is_authorized_for_widgets),
+        )
+    }
 }
 
 /// Parse location tracker state data
@@ -461,8 +606,97 @@ pub(crate) fn io_message(data: &str) -> Result<&'static str, DecoderError<'_>> {
     Ok(message)
 }
 
+pub struct DaemonTrackerData {
+    level: f64,
+    charged: u8,
+    connected: u8,
+    _unknown: u8,
+    _unknown2: u8,
+    charger_type: ChargerType,
+    _unknown3: u32,
+    _unknown4: u32,
+    reachability: ReachabilityStatus,
+    thermal_level: i32,
+    airplane: u8,
+    battery_saver: u8,
+    push_service: u8,
+    restricted: u8,
+    was_connected: bool,
+}
+
+impl Display for DaemonTrackerData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            r#"{{"thermalLevel": {}, "reachability": "{}", "airplaneMode": {}, "batteryData":{{"wasConnected": {}, "charged": {}, "level": {}, "connected": {}, "chargerType": "{}"}}, "restrictedMode": {}, "batterySaverModeEnabled": {}, "push_service":{}}}"#,
+            self.thermal_level,
+            self.reachability,
+            bool_from_int(self.airplane),
+            self.was_connected,
+            bool_from_int(self.charged),
+            self.level,
+            bool_from_int(self.connected),
+            self.charger_type,
+            bool_from_int(self.restricted),
+            bool_from_int(self.battery_saver),
+            bool_from_int(self.push_service)
+        )
+    }
+}
+
+/// Values found in dyldcache `logd_location`.
+#[derive(Debug, Clone, PartialEq, Eq, strum::Display)]
+pub enum ReachabilityStatus {
+    #[strum(to_string = "kReachabilityUnavailable")]
+    Unavailable,
+    #[strum(to_string = "kReachabilitySmall")]
+    Small,
+    #[strum(to_string = "kReachabilityLarge")]
+    Large,
+    #[strum(to_string = "kReachabilityUnachievable")]
+    Unachievable,
+    #[strum(to_string = "Unknown Reachability Status {0}")]
+    Unknown(u32),
+}
+
+impl From<u32> for ReachabilityStatus {
+    fn from(value: u32) -> Self {
+        match value {
+            0 => ReachabilityStatus::Unavailable,
+            1 => ReachabilityStatus::Small,
+            2 => ReachabilityStatus::Large,
+            1000 => ReachabilityStatus::Unachievable,
+            _ => ReachabilityStatus::Unknown(value),
+        }
+    }
+}
+
+// Values found in dyldcache logd_location
+// Other values seen are:
+// kChargerTypeNone, kChargerTypeExternal, and kChargerTypeArcas.
+// But have not observed the numerical value for these types
+#[derive(Debug, Clone, PartialEq, Eq, strum::Display)]
+pub enum ChargerType {
+    #[strum(to_string = "kChargerTypeUnknown")]
+    Unknown,
+    #[strum(to_string = "kChargerTypeUsb")]
+    Usb,
+    #[strum(to_string = "Unknown charger type value {0}")]
+    Other(u32),
+}
+
+impl From<u32> for ChargerType {
+    fn from(value: u32) -> Self {
+        match value {
+            0 => ChargerType::Unknown,
+            2 => ChargerType::Usb,
+            _ => ChargerType::Other(value),
+        }
+    }
+}
+
 /// Parse and get the location Daemon tracker
-pub(crate) fn get_daemon_status_tracker(input: &[u8]) -> nom::IResult<&[u8], String> {
+pub(crate) fn get_daemon_status_tracker(input: &[u8]) -> nom::IResult<&[u8], DaemonTrackerData> {
     // Slightly outdated but still helpful: https://gist.github.com/razvand/578f94748b624f4d47c1533f5a02b095
     let mut tup = (
         le_f64, le_u8, le_u8, le_u8, le_u8, le_u32, le_u32, le_u32, le_u32, le_i32, le_u8, le_u8,
@@ -488,62 +722,44 @@ pub(crate) fn get_daemon_status_tracker(input: &[u8]) -> nom::IResult<&[u8], Str
         ),
     ) = tup.parse(input)?;
 
-    let mut was_connected = false;
     // When these unknown values are not 0 `was_connected` is always true
     // Not 100% sure the significance or what they represent
-    if _unknown != 0 && _unknown2 != 0 && _unknown3 != 0 {
-        was_connected = true;
-    }
+    let was_connected = _unknown != 0 && _unknown2 != 0 && _unknown3 != 0;
 
-    // Values found in dyldcache logd_location
-    let reachability_str = match reachability {
-        0 => "kReachabilityUnavailable",
-        1 => "kReachabilitySmall",
-        2 => "kReachabilityLarge",
-        1000 => "kReachabilityUnachievable",
-        _ => {
-            warn!("[macos-unifiedlogs] Unknown reachability value: {reachability}");
-            "Unknown reachability value"
-        }
+    let charger_type: ChargerType = charger_type.into();
+    let reachability: ReachabilityStatus = reachability.into();
+
+    let tracker_data = DaemonTrackerData {
+        level,
+        charged,
+        connected,
+        _unknown,
+        _unknown2,
+        charger_type,
+        _unknown3,
+        _unknown4,
+        reachability,
+        thermal_level,
+        airplane,
+        battery_saver,
+        push_service,
+        restricted,
+        was_connected,
     };
 
-    // Values found in dyldcache logd_location
-    // Other values seen are:
-    // kChargerTypeNone, kChargerTypeExternal, and kChargerTypeArcas.
-    // But have not observed the numerical value for these types
-    let charger_type_str = match charger_type {
-        0 => "kChargerTypeUnknown",
-        2 => "kChargerTypeUsb",
-        _ => {
-            warn!("[macos-unifiedlogs] Unknown charger type value: {charger_type}");
-            "Unknown charger type value"
-        }
-    };
-
-    let message = format!(
-        r#"{{"thermalLevel": {thermal_level}, "reachability": "{reachability_str}", "airplaneMode": {}, "batteryData":{{"wasConnected": {was_connected}, "charged": {}, "level": {level}, "connected": {}, "chargerType": "{charger_type_str}"}}, "restrictedMode": {}, "batterySaverModeEnabled": {}, "push_service":{}}}"#,
-        lowercase_int_bool(airplane),
-        lowercase_int_bool(charged),
-        lowercase_int_bool(connected),
-        lowercase_int_bool(restricted),
-        lowercase_int_bool(battery_saver),
-        lowercase_int_bool(push_service)
-    );
-
-    Ok((location_data, message))
+    Ok((location_data, tracker_data))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::util::decode_standard;
+    use crate::helpers::decode_standard;
 
     #[test]
     fn test_client_authorization_status() {
         let test_data = "0";
         let result = client_authorization_status(test_data).unwrap();
-
-        assert_eq!(result, "Not Determined")
+        assert_eq!(result, ClientAuthorizationStatus::NotDetermined)
     }
 
     #[test]
@@ -551,7 +767,7 @@ mod tests {
         let test_data = "2";
         let result = daemon_status_type(test_data).unwrap();
 
-        assert_eq!(result, "Reachability Large")
+        assert_eq!(result, DaemonStatusType::ReachabilityLarge)
     }
 
     #[test]
@@ -559,7 +775,7 @@ mod tests {
         let test_data = "2";
         let result = subharvester_identifier(test_data).unwrap();
 
-        assert_eq!(result, "\"Wifi\"")
+        assert_eq!(result, SubharvesterIdentifier::Wifi)
     }
 
     #[test]
@@ -567,7 +783,7 @@ mod tests {
         let test_data = "AAAAAA==";
         let result = sqlite_location(test_data).unwrap();
 
-        assert_eq!(result, "SQLITE OK")
+        assert_eq!(result, SqliteError::SQLITE_OK)
     }
 
     #[test]
@@ -577,7 +793,7 @@ mod tests {
 
         let (_, result) = get_sqlite_data(&decoded_data_result).unwrap();
 
-        assert_eq!(result, "SQLITE OK")
+        assert_eq!(result, SqliteError::SQLITE_OK)
     }
 
     #[test]
@@ -586,7 +802,7 @@ mod tests {
         let result = client_manager_state_tracker_state(test_data).unwrap();
 
         assert_eq!(
-            result,
+            result.to_string(),
             "{\"locationRestricted\":false, \"locationServicesenabledStatus\":1}"
         )
     }
@@ -594,11 +810,8 @@ mod tests {
     #[test]
     fn test_location_tracker_object() {
         let test_data = LocationTrackerState::default();
-
-        let result = location_tracker_object(&test_data);
-
         assert_eq!(
-            result,
+            test_data.to_string(),
             "{\n            \"distanceFilter\":0, \n            \"desiredAccuracy\":0, \n            \"updatingLocation\":false, \n            \"requestingLocation\":false, \n            \"requestingRanging\":false, \n            \"updatingRanging\":false,\n            \"updatingHeading\":false,\n            \"headingFilter\":0,\n            \"allowsLocationPrompts\":false,\n            \"allowsAlteredAccessoryLocations\":false,\n            \"dynamicAccuracyReductionEnabled\":false,\n            \"previousAuthorizationStatusValid\":false,\n            \"previousAuthorizationStatus\":0,\n            \"limitsPrecision\":false,\n            \"activityType\":0,\n            \"pausesLocationUpdatesAutomatically\":0,\n            \"paused\":false,\n            \"allowsBackgroundLocationUpdates\":false,\n            \"showsBackgroundLocationIndicator\":false,\n            \"allowsMapCorrection\":false,\n            \"batchingLocation\":false,\n            \"updatingVehicleSpeed\":false,\n            \"updatingVehicleHeading\":false,\n            \"matchInfoEnabled\":false,\n            \"groundAltitudeEnabled\":false,\n            \"fusionInfoEnabled\":false,\n            \"courtesyPromptNeeded\":false,\n            \"isAuthorizedForWidgetUpdates\":false,\n        }"
         )
     }
@@ -611,7 +824,7 @@ mod tests {
         let (_, result) = get_state_tracker_data(&decoded_data_result).unwrap();
 
         assert_eq!(
-            result,
+            result.to_string(),
             "{\"locationRestricted\":false, \"locationServicesenabledStatus\":1}"
         )
     }
@@ -622,7 +835,7 @@ mod tests {
         let result = location_manager_state_tracker_state(test_data).unwrap();
 
         assert_eq!(
-            result,
+            result.to_string(),
             "{\n            \"distanceFilter\":-1, \n            \"desiredAccuracy\":100, \n            \"updatingLocation\":false, \n            \"requestingLocation\":false, \n            \"requestingRanging\":false, \n            \"updatingRanging\":false,\n            \"updatingHeading\":false,\n            \"headingFilter\":1,\n            \"allowsLocationPrompts\":true,\n            \"allowsAlteredAccessoryLocations\":false,\n            \"dynamicAccuracyReductionEnabled\":false,\n            \"previousAuthorizationStatusValid\":false,\n            \"previousAuthorizationStatus\":0,\n            \"limitsPrecision\":false,\n            \"activityType\":0,\n            \"pausesLocationUpdatesAutomatically\":1,\n            \"paused\":false,\n            \"allowsBackgroundLocationUpdates\":false,\n            \"showsBackgroundLocationIndicator\":false,\n            \"allowsMapCorrection\":true,\n            \"batchingLocation\":false,\n            \"updatingVehicleSpeed\":false,\n            \"updatingVehicleHeading\":false,\n            \"matchInfoEnabled\":false,\n            \"groundAltitudeEnabled\":false,\n            \"fusionInfoEnabled\":false,\n            \"courtesyPromptNeeded\":false,\n            \"isAuthorizedForWidgetUpdates\":false,\n        }"
         )
     }
@@ -635,7 +848,7 @@ mod tests {
         let (_, result) = get_location_tracker_state(&decoded_data_result).unwrap();
 
         assert_eq!(
-            result,
+            result.to_string(),
             "{\n            \"distanceFilter\":-1, \n            \"desiredAccuracy\":100, \n            \"updatingLocation\":false, \n            \"requestingLocation\":false, \n            \"requestingRanging\":false, \n            \"updatingRanging\":false,\n            \"updatingHeading\":false,\n            \"headingFilter\":1,\n            \"allowsLocationPrompts\":true,\n            \"allowsAlteredAccessoryLocations\":false,\n            \"dynamicAccuracyReductionEnabled\":false,\n            \"previousAuthorizationStatusValid\":false,\n            \"previousAuthorizationStatus\":0,\n            \"limitsPrecision\":false,\n            \"activityType\":0,\n            \"pausesLocationUpdatesAutomatically\":1,\n            \"paused\":false,\n            \"allowsBackgroundLocationUpdates\":false,\n            \"showsBackgroundLocationIndicator\":false,\n            \"allowsMapCorrection\":true,\n            \"batchingLocation\":false,\n            \"updatingVehicleSpeed\":false,\n            \"updatingVehicleHeading\":false,\n            \"matchInfoEnabled\":false,\n            \"groundAltitudeEnabled\":false,\n            \"fusionInfoEnabled\":false,\n            \"courtesyPromptNeeded\":false,\n            \"isAuthorizedForWidgetUpdates\":false,\n        }"
         )
     }
@@ -656,7 +869,7 @@ mod tests {
         let (_, result) = get_daemon_status_tracker(&test_data).unwrap();
 
         assert_eq!(
-            result,
+            result.to_string(),
             "{\"thermalLevel\": -1, \"reachability\": \"kReachabilityLarge\", \"airplaneMode\": false, \"batteryData\":{\"wasConnected\": false, \"charged\": false, \"level\": -1, \"connected\": false, \"chargerType\": \"kChargerTypeUnknown\"}, \"restrictedMode\": false, \"batterySaverModeEnabled\": false, \"push_service\":false}"
         )
     }
@@ -670,7 +883,7 @@ mod tests {
         let (_, result) = get_daemon_status_tracker(&test_data).unwrap();
 
         assert_eq!(
-            result,
+            result.to_string(),
             "{\"thermalLevel\": 0, \"reachability\": \"kReachabilityLarge\", \"airplaneMode\": false, \"batteryData\":{\"wasConnected\": true, \"charged\": false, \"level\": 100, \"connected\": true, \"chargerType\": \"kChargerTypeUsb\"}, \"restrictedMode\": false, \"batterySaverModeEnabled\": false, \"push_service\":false}"
         )
     }
