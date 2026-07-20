@@ -5,24 +5,48 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-use std::{fs::File, path::PathBuf};
-
 use macos_unifiedlogs::{
-    cache::MemoryStringCache,
-    filesystem::LogarchiveProvider,
-    parser::{build_log, collect_timesync, parse_log},
-    traits::{FileProvider, SourceFile},
-    unified_log::{EventType, LogData, LogType, UnifiedLogData},
+    chunk::{Chunk, ChunksReader},
+    chunks::firehose::item::{RawItemKind, parse_items_data, parse_trace_items},
+    log_entry::{EventType, ItemsData, LogEntry, LogType},
+    logarchive::{visit_logarchive, visit_logarchive_tracev3_file},
 };
+use std::path::PathBuf;
+use uuid::uuid;
 
-fn collect_logs(provider: &impl FileProvider) -> Vec<UnifiedLogData> {
-    provider
-        .tracev3_files()
-        .map(|mut file| {
-            let path = file.source_path().to_string();
-            parse_log(file.reader(), &path).unwrap()
-        })
-        .collect()
+fn item_kind_counts(entry: &LogEntry<'_, '_>) -> (usize, usize, usize, usize) {
+    let raw_items = match entry.items() {
+        ItemsData::Regular { data, flags, .. } => {
+            let Ok((_, parsed)) = parse_items_data(data, *flags) else {
+                return (0, 0, 0, 0);
+            };
+            parsed.items
+        }
+        ItemsData::Trace { data } => parse_trace_items(data),
+        _ => return (0, 0, 0, 0),
+    };
+
+    let mut string_count = 0;
+    let mut number_count = 0;
+    let mut precision_count = 0;
+    let mut private_number_count = 0;
+
+    for item in raw_items {
+        match item.item_type {
+            RawItemKind::String | RawItemKind::Object | RawItemKind::BaseRaw => string_count += 1,
+            RawItemKind::Number => number_count += 1,
+            RawItemKind::Precision => precision_count += 1,
+            RawItemKind::PrivateNumber => private_number_count += 1,
+            _ => {}
+        }
+    }
+
+    (
+        string_count,
+        number_count,
+        precision_count,
+        private_number_count,
+    )
 }
 
 #[test]
@@ -31,22 +55,43 @@ fn test_parse_log_tahoe() {
     test_path.push("tests/test_data/system_logs_tahoe.logarchive");
 
     test_path.push("Persist/000000000000000a.tracev3");
-    let handle = File::open(&test_path.as_path()).unwrap();
+    let data = std::fs::read(&test_path).unwrap();
 
-    let log_data = parse_log(handle, test_path.to_str().unwrap()).unwrap();
-    assert_eq!(log_data.catalog_data.len(), 121);
+    let mut firehose = Vec::new();
+    let mut simpledump = Vec::new();
+    let mut headers_count = 0;
+    let mut catalog_process_info_entries = Vec::new();
+    let mut statedump = Vec::new();
 
-    assert_eq!(log_data.catalog_data[78].firehose.len(), 112);
-    assert_eq!(log_data.catalog_data[12].simpledump.len(), 78);
-    assert_eq!(log_data.header.len(), 1);
-    assert_eq!(
-        log_data.catalog_data[0]
-            .catalog
-            .catalog_process_info_entries
-            .len(),
-        10
-    );
-    assert_eq!(log_data.catalog_data[0].statedump.len(), 0);
+    let mut reader = ChunksReader::new(&data);
+    reader
+        .visit(|chunk| match chunk {
+            Chunk::Header(_) => headers_count += 1,
+            Chunk::Catalog(catalog) => {
+                firehose.push(0);
+                simpledump.push(0);
+                catalog_process_info_entries.push(catalog.catalog_process_info_entries.len());
+                statedump.push(0);
+            }
+            Chunk::Firehose(_) => {
+                *firehose.last_mut().unwrap() += 1;
+            }
+            Chunk::Simpledump(_) => {
+                *simpledump.last_mut().unwrap() += 1;
+            }
+            Chunk::Statedump(_) => {
+                *statedump.last_mut().unwrap() += 1;
+            }
+            _ => {}
+        })
+        .unwrap();
+
+    assert_eq!(firehose.len(), 121);
+    assert_eq!(firehose[78], 112);
+    assert_eq!(simpledump[12], 78);
+    assert_eq!(headers_count, 1);
+    assert_eq!(catalog_process_info_entries[0], 10);
+    assert_eq!(statedump[0], 0);
 }
 
 #[test]
@@ -54,128 +99,123 @@ fn test_build_log_tahoe() {
     let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_path.push("tests/test_data/system_logs_tahoe.logarchive");
 
-    let provider = LogarchiveProvider::new(test_path.as_path());
-    let cache = MemoryStringCache::default();
-    let timesync_data = collect_timesync(&provider).unwrap();
-
-    test_path.push("Persist/000000000000000a.tracev3");
-
-    let handle = File::open(test_path.as_path()).unwrap();
-    let log_data = parse_log(handle, test_path.to_str().unwrap()).unwrap();
-
-    let exclude_missing = false;
-    let (results, _) = build_log(
-        &log_data,
-        &provider,
-        &cache,
-        &timesync_data,
-        exclude_missing,
-    );
-    assert_eq!(results.len(), 305785);
-
-    assert_eq!(
-        results[103032].process,
-        "/System/Library/PrivateFrameworks/IDS.framework/identityservicesd.app/Contents/MacOS/identityservicesd"
-    );
-    assert_eq!(results[103032].subsystem, "");
-    assert_eq!(results[103032].time, 1.7766457650551785e18);
-    assert_eq!(results[103032].activity_id, 25562);
-    assert_eq!(results[103032].parent_activity_id, 0);
-    assert_eq!(
-        results[103032].library,
-        "/System/Library/Frameworks/Security.framework/Versions/A/Security"
-    );
-    assert_eq!(results[103032].message, "SecKeyCreateWithData");
-    assert_eq!(results[103032].pid, 412);
-    assert_eq!(results[103032].thread_id, 2701);
-    assert_eq!(results[103032].category, "");
-    assert_eq!(results[103032].log_type, LogType::Create);
-    assert_eq!(results[103032].event_type, EventType::Activity);
-    assert_eq!(results[103032].euid, 501);
-    assert_eq!(
-        results[103032].boot_uuid,
-        "78EDF02104B6458E9EFAAAC1FB21CCF7"
-    );
-    assert_eq!(results[103032].timezone_name, "Pacific");
-    assert_eq!(
-        results[103032].library_uuid,
-        "22A9E9D9308633AAB1B36C0FA75D3797"
-    );
-    assert_eq!(
-        results[103032].process_uuid,
-        "338D916F98A033EBB68B80C74C6C41C8"
-    );
-    assert_eq!(results[103032].raw_message, "SecKeyCreateWithData");
-    assert!(results[103032].message_entries.is_empty());
-    assert!(
-        results[103032]
-            .evidence
-            .ends_with("000000000000000a.tracev3")
-    );
-    assert_eq!(results[103032].timestamp, "2026-04-20T00:42:45.055178496Z");
-
-    assert_eq!(results[45].process, "/usr/libexec/opendirectoryd");
-    assert_eq!(results[45].subsystem, "com.apple.CFBundle");
-    assert_eq!(results[45].time, 1.7766457511717076e18);
-    assert_eq!(results[45].activity_id, 192);
-    assert_eq!(results[45].parent_activity_id, 0);
-    assert_eq!(
-        results[45].library,
-        "/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation"
-    );
-    assert_eq!(
-        results[45].message,
-        "dlsym cannot find symbol odm_RecordRemoveValue in CFBundle 0x102ed4970 </System/Library/OpenDirectory/Modules/SystemCache.bundle> (bundle, loaded): <private>"
-    );
-    assert_eq!(results[45].pid, 131);
-    assert_eq!(results[45].thread_id, 790);
-    assert_eq!(results[45].category, "loading");
-    assert_eq!(results[45].log_type, LogType::Error);
-    assert_eq!(results[45].event_type, EventType::Log);
-    assert_eq!(results[45].euid, 0);
-    assert_eq!(results[45].boot_uuid, "78EDF02104B6458E9EFAAAC1FB21CCF7");
-    assert_eq!(results[45].timezone_name, "Pacific");
-    assert_eq!(results[45].library_uuid, "61AFC7A8FF8D3F8F8B0F42CAFB667E76");
-    assert_eq!(results[45].process_uuid, "751A0472343930F7B421E36891337A30");
-    assert_eq!(
-        results[45].raw_message,
-        "dlsym cannot find symbol %{public}@ in %{public}@: %s"
-    );
-    assert_eq!(
-        results[45].message_entries[0].message_strings,
-        "odm_RecordRemoveValue"
-    );
-    assert!(results[45].evidence.ends_with("000000000000000a.tracev3"));
-    assert_eq!(results[45].timestamp, "2026-04-20T00:42:31.171707648Z");
-
+    let mut count = 0;
     let mut midnight = 0;
 
     let mut string_count = 0;
     let mut precision_count = 0;
     let mut number_count = 0;
     let mut private_number_count = 0;
-    for entry in results {
-        assert!(entry.timestamp.contains("2026-04-20T"));
-        if entry.timestamp.contains("2026-04-20T00:42") {
+    visit_logarchive_tracev3_file(&test_path, "Persist/000000000000000a.tracev3", |results| {
+        if count == 103032 {
+            assert_eq!(
+                results.process,
+                Some(
+                    "/System/Library/PrivateFrameworks/IDS.framework/identityservicesd.app/Contents/MacOS/identityservicesd"
+                )
+            );
+            assert_eq!(results.subsystem, None);
+            assert_eq!(results.time, 1.7766457650551785e18);
+            assert_eq!(results.activity_id, 25562);
+            assert_eq!(results.parent_activity_id.unwrap_or(0), 0);
+            assert_eq!(
+                results.library,
+                Some("/System/Library/Frameworks/Security.framework/Versions/A/Security")
+            );
+            assert_eq!(results.message().as_str(), "SecKeyCreateWithData");
+            assert_eq!(results.pid, 412);
+            assert_eq!(results.thread_id, 2701);
+            assert_eq!(results.category, None);
+            assert_eq!(results.log_type, LogType::Create);
+            assert_eq!(results.event_type, EventType::Activity);
+            assert_eq!(results.euid, 501);
+            assert_eq!(results.boot_uuid, uuid!("78EDF02104B6458E9EFAAAC1FB21CCF7"));
+            assert_eq!(results.timezone_name, "Pacific");
+            assert_eq!(
+                results.library_uuid,
+                uuid!("22A9E9D9308633AAB1B36C0FA75D3797")
+            );
+            assert_eq!(
+                results.process_uuid,
+                uuid!("338D916F98A033EBB68B80C74C6C41C8")
+            );
+            assert_eq!(results.raw_message(), "SecKeyCreateWithData");
+            assert!(results.evidence.ends_with("000000000000000a.tracev3"));
+            assert_eq!(
+                results
+                    .timestamp()
+                    .format("%Y-%m-%dT%H:%M:%S%.9fZ")
+                    .to_string(),
+                "2026-04-20T00:42:45.055178496Z"
+            );
+        }
+
+        if count == 45 {
+            assert_eq!(results.process, Some("/usr/libexec/opendirectoryd"));
+            assert_eq!(results.subsystem, Some("com.apple.CFBundle"));
+            assert_eq!(results.time, 1.7766457511717076e18);
+            assert_eq!(results.activity_id, 192);
+            assert_eq!(results.parent_activity_id.unwrap_or(0), 0);
+            assert_eq!(
+                results.library,
+                Some("/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation")
+            );
+            assert_eq!(
+                results.message().as_str(),
+                "dlsym cannot find symbol odm_RecordRemoveValue in CFBundle 0x102ed4970 </System/Library/OpenDirectory/Modules/SystemCache.bundle> (bundle, loaded): <private>"
+            );
+            assert_eq!(results.pid, 131);
+            assert_eq!(results.thread_id, 790);
+            assert_eq!(results.category, Some("loading"));
+            assert_eq!(results.log_type, LogType::Error);
+            assert_eq!(results.event_type, EventType::Log);
+            assert_eq!(results.euid, 0);
+            assert_eq!(results.boot_uuid, uuid!("78EDF02104B6458E9EFAAAC1FB21CCF7"));
+            assert_eq!(results.timezone_name, "Pacific");
+            assert_eq!(
+                results.library_uuid,
+                uuid!("61AFC7A8FF8D3F8F8B0F42CAFB667E76")
+            );
+            assert_eq!(
+                results.process_uuid,
+                uuid!("751A0472343930F7B421E36891337A30")
+            );
+            assert_eq!(
+                results.raw_message(),
+                "dlsym cannot find symbol %{public}@ in %{public}@: %s"
+            );
+            assert!(results.evidence.ends_with("000000000000000a.tracev3"));
+            assert_eq!(
+                results
+                    .timestamp()
+                    .format("%Y-%m-%dT%H:%M:%S%.9fZ")
+                    .to_string(),
+                "2026-04-20T00:42:31.171707648Z"
+            );
+        }
+
+        let timestamp = results
+            .timestamp()
+            .format("%Y-%m-%dT%H:%M:%S%.9fZ")
+            .to_string();
+        assert!(timestamp.contains("2026-04-20T"));
+        if timestamp.contains("2026-04-20T00:42") {
             midnight += 1;
         }
 
-        for value in entry.message_entries {
-            assert_ne!(format!("{:?}", value.item), "Unknown");
+        let (strings, numbers, precisions, private_numbers) = item_kind_counts(&results);
+        string_count += strings;
+        number_count += numbers;
+        precision_count += precisions;
+        private_number_count += private_numbers;
 
-            if format!("{:?}", value.item) == "String" {
-                string_count += 1;
-            } else if format!("{:?}", value.item) == "Number" {
-                number_count += 1;
-            } else if format!("{:?}", value.item) == "Precision" {
-                precision_count += 1;
-            } else if format!("{:?}", value.item) == "PrivateNumber" {
-                private_number_count += 1;
-            }
-        }
-    }
-    assert_eq!(string_count, 369927);
-    assert_eq!(number_count, 382427);
+        count += 1;
+    })
+    .unwrap();
+
+    assert_eq!(count, 305785);
+    assert_eq!(string_count, 370565);
+    assert_eq!(number_count, 382513);
     assert_eq!(precision_count, 13077);
     assert_eq!(private_number_count, 711);
 
@@ -187,31 +227,18 @@ fn test_check_log_tahoe() {
     let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_path.push("tests/test_data/system_logs_tahoe.logarchive");
 
-    let provider = LogarchiveProvider::new(test_path.as_path());
-    let cache = MemoryStringCache::default();
-    let timesync_data = collect_timesync(&provider).unwrap();
-
-    test_path.push("Persist/0000000000000002.tracev3");
-
-    let handle = File::open(test_path.as_path()).unwrap();
-    let log_data = parse_log(handle, test_path.to_str().unwrap()).unwrap();
-
-    let exclude_missing = false;
-    let (results, _) = build_log(
-        &log_data,
-        &provider,
-        &cache,
-        &timesync_data,
-        exclude_missing,
-    );
-
     let mut invalid_shared_string_offsets = 0;
 
-    for logs in &results {
-        if logs.message.contains("Error: Invalid shared string offset") {
+    visit_logarchive_tracev3_file(&test_path, "Persist/0000000000000002.tracev3", |logs| {
+        if logs
+            .message()
+            .contains("Error: Invalid shared string offset")
+        {
             invalid_shared_string_offsets += 1;
         }
-    }
+    })
+    .unwrap();
+
     assert_eq!(invalid_shared_string_offsets, 97); // Can validate with log raw-dump -f 0000000000000002.tracev3 | grep "~~> <Invalid shared cache " | wc -l
 }
 
@@ -220,21 +247,7 @@ fn test_parse_all_logs_tahoe() {
     let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_path.push("tests/test_data/system_logs_tahoe.logarchive");
 
-    let provider = LogarchiveProvider::new(test_path.as_path());
-    let cache = MemoryStringCache::default();
-
-    let timesync_data = collect_timesync(&provider).unwrap();
-    let log_data = collect_logs(&provider);
-
-    let mut log_data_vec: Vec<LogData> = Vec::new();
-    let exclude_missing = false;
-
-    for logs in &log_data {
-        let (mut data, _) = build_log(logs, &provider, &cache, &timesync_data, exclude_missing);
-        log_data_vec.append(&mut data);
-    }
-    assert_eq!(log_data_vec.len(), 4288584);
-
+    let mut log_data_vec_len = 0;
     let mut unknown_strings = 0;
     let mut invalid_offsets = 0;
     let mut invalid_shared_string_offsets = 0;
@@ -244,44 +257,49 @@ fn test_parse_all_logs_tahoe() {
     let mut syncthing = 0;
     let mut brew = 0;
 
-    for logs in &log_data_vec {
-        if logs.message.contains("Failed to get string message from ")
-            || logs.message.contains("Unknown shared string message")
+    visit_logarchive(&test_path, |logs| {
+        log_data_vec_len += 1;
+        let message = logs.message();
+
+        if message.contains("Failed to get string message from ")
+            || message.contains("Unknown shared string message")
         {
             unknown_strings += 1;
 
-            if !logs.evidence.ends_with("4.tracev3") && !logs.evidence.ends_with("5.tracev3") {
+            let evidence = logs.evidence.to_string_lossy();
+            if !evidence.ends_with("4.tracev3") && !evidence.ends_with("5.tracev3") {
                 panic!("Got unspected missing strings for: {logs:?}");
             }
         }
 
-        if logs.message.contains("Error: Invalid offset ") {
+        if message.contains("Error: Invalid offset ") {
             invalid_offsets += 1;
         }
 
-        if logs.message.contains("Error: Invalid shared string offset") {
+        if message.contains("Error: Invalid shared string offset") {
             invalid_shared_string_offsets += 1;
         }
 
-        if logs.message.contains("Unsupported Statedump object") {
+        if message.contains("Unsupported Statedump object") {
             statedump_custom_objects += 1;
         }
-        if logs.message.contains("Failed to parse StateDump protobuf")
-            || logs
-                .message
-                .contains("Failed to serialize Protobuf HashMap")
+        if message.contains("Failed to parse StateDump protobuf")
+            || message.contains("Failed to serialize Protobuf HashMap")
         {
             statedump_protocol_buffer += 1;
         }
 
-        if logs.message.contains("syncthing") {
+        if message.contains("syncthing") {
             syncthing += 1;
         }
 
-        if logs.message.contains("brew") {
+        if message.contains("brew") {
             brew += 1;
         }
-    }
+    })
+    .unwrap();
+
+    assert_eq!(log_data_vec_len, 4288584);
     assert_eq!(unknown_strings, 2); // Can validate with log raw-dump -A system_logs_tahoe.logarchive | grep "~~> Invalid image "
     assert_eq!(invalid_offsets, 268); // Can validate with log raw-dump -A system_logs_tahoe.logarchive | grep "~~> Invalid bounds " | wc -l
     assert_eq!(invalid_shared_string_offsets, 647); // Can validate with log raw-dump -A system_logs_tahoe.logarchive | grep "~~> <Invalid shared cache " | wc -l
