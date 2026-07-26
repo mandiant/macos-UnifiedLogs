@@ -145,7 +145,7 @@ impl MessageData {
 
     /// Extract string from the Shared Strings Cache (dsc data)
     /// Shared strings contain library and message string
-    fn extract_shared_strings(
+    pub(crate) fn extract_shared_strings(
         provider: &impl FileProvider,
         cache: &impl StringCache,
         string_offset: u64,
