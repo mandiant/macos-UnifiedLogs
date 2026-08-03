@@ -43,6 +43,14 @@ impl ChunksetChunk {
         let (input, chunkset_sig) = le_u32(input)?;
         let (input, chunkset_uncompress_size) = le_u32(input)?;
 
+        let abnormal_size = 1024 * 1024 * 1024;
+        if chunkset_uncompress_size > abnormal_size {
+            error!(
+                "[macos-unifiedlogs] Large decompression size provided (1GB+): {chunkset_uncompress_size:?}. Possible data corruption"
+            );
+            return Err(nom::Err::Incomplete(Needed::Unknown));
+        }
+
         let bv41 = 825521762; // bv41 signature
         let bv41_uncompressed = 758412898; // bv41- signature
 
@@ -55,7 +63,7 @@ impl ChunksetChunk {
             return Ok((input, chunkset_chunk));
         }
 
-        // Compressed data signatue should be bv41
+        // Compressed data signature should be bv41
         if chunkset_sig != bv41 {
             error!(
                 "[macos-unifiedlogs] Incorrect compression signature expected bv41, got: {chunkset_sig:?}"

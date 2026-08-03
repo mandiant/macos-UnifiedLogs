@@ -253,7 +253,7 @@ pub fn format_firehose_log_message(
             }
             None => error!(
                 "Failed to split log message ({log_message}) by printf formatter: {}",
-                &values.formatter
+                values.formatter
             ),
         }
     }
