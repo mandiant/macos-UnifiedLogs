@@ -2379,4 +2379,15 @@ mod tests {
         );
         assert_eq!(unified_log.simpledump[0].first_proc_id, 1);
     }
+
+    #[test]
+    fn test_large_decompression() {
+        let test = [
+            255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+            255, 255, 255, 255, 255, 255, 255,
+        ];
+
+        let err = ChunksetChunk::parse_chunkset(&test).unwrap_err();
+        assert_eq!(err, nom::Err::Incomplete(nom::Needed::Unknown));
+    }
 }
