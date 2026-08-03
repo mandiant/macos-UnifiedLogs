@@ -86,7 +86,7 @@
 //!
 //! ```
 
-/// Thread-safe cache for UUIDText and SharedCacheStrings used during log parsing
+/// Thread-safe cache for `UUIDText` and `SharedCacheStrings` used during log parsing
 pub mod cache;
 /// Functions to parse catalog information from tracev3 files
 mod catalog;
