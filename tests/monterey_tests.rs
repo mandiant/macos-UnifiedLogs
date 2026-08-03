@@ -8,14 +8,15 @@
 use std::{fs::File, path::PathBuf};
 
 use macos_unifiedlogs::{
+    cache::MemoryStringCache,
     filesystem::LogarchiveProvider,
     parser::{build_log, collect_timesync, parse_log},
-    traits::FileProvider,
+    traits::{FileProvider, SourceFile},
     unified_log::{EventType, LogData, LogType, UnifiedLogData},
 };
 use regex::Regex;
 
-fn collect_logs(provider: &dyn FileProvider) -> Vec<UnifiedLogData> {
+fn collect_logs(provider: &impl FileProvider) -> Vec<UnifiedLogData> {
     provider
         .tracev3_files()
         .map(|mut file| {
@@ -53,7 +54,8 @@ fn test_build_log_monterey() {
     let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_path.push("tests/test_data/system_logs_monterey.logarchive");
 
-    let mut provider = LogarchiveProvider::new(test_path.as_path());
+    let provider = LogarchiveProvider::new(test_path.as_path());
+    let cache = MemoryStringCache::default();
     let timesync_data = collect_timesync(&provider).unwrap();
 
     test_path.push("Persist/000000000000000a.tracev3");
@@ -62,7 +64,13 @@ fn test_build_log_monterey() {
     let log_data = parse_log(handle, test_path.to_str().unwrap()).unwrap();
 
     let exclude_missing = false;
-    let (results, _) = build_log(&log_data, &mut provider, &timesync_data, exclude_missing);
+    let (results, _) = build_log(
+        &log_data,
+        &provider,
+        &cache,
+        &timesync_data,
+        exclude_missing,
+    );
     assert_eq!(results.len(), 322859);
     assert_eq!(results[0].process, "/kernel");
     assert_eq!(results[0].subsystem, "");
@@ -94,7 +102,8 @@ fn test_parse_all_logs_monterey() {
     let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_path.push("tests/test_data/system_logs_monterey.logarchive");
 
-    let mut provider = LogarchiveProvider::new(test_path.as_path());
+    let provider = LogarchiveProvider::new(test_path.as_path());
+    let cache = MemoryStringCache::default();
 
     let timesync_data = collect_timesync(&provider).unwrap();
     let log_data = collect_logs(&provider);
@@ -104,7 +113,7 @@ fn test_parse_all_logs_monterey() {
     let message_re = Regex::new(r"^[\s]*%s\s*$").unwrap();
 
     for logs in &log_data {
-        let (mut data, _) = build_log(logs, &mut provider, &timesync_data, exclude_missing);
+        let (mut data, _) = build_log(logs, &provider, &cache, &timesync_data, exclude_missing);
         log_data_vec.append(&mut data);
     }
     assert_eq!(log_data_vec.len(), 2397109);
@@ -115,6 +124,9 @@ fn test_parse_all_logs_monterey() {
     let mut statedump_custom_objects = 0;
     let mut statedump_protocol_buffer = 0;
     let mut string_count = 0;
+
+    let mut simple_logs = Vec::new();
+    let mut simple_log_display = 0;
 
     let mut mutilities_worldclock = 0;
     let mut mutililties_return = 0;
@@ -172,7 +184,21 @@ fn test_parse_all_logs_monterey() {
         if logs.message.contains("Question Count: 1, Answer Record Count: 0, Authority Record Count: 0, Additional Record Count: 0") {
             dns_counts += 1;
         }
+
+        if logs.log_type == LogType::Simpledump {
+            if logs.process
+                == "/System/Library/PrivateFrameworks/MobileAccessoryUpdater.framework/XPCServices/UARPUpdaterServiceDisplay.xpc/Contents/MacOS/UARPUpdaterServiceDisplay"
+                && logs.subsystem.is_empty()
+            {
+                simple_log_display += 1;
+            }
+            simple_logs.push(logs);
+        }
     }
+
+    assert_eq!(simple_logs.len(), 162715);
+    assert_eq!(simple_log_display, 34);
+
     assert_eq!(unknown_strings, 531);
     assert_eq!(invalid_offsets, 60);
     assert_eq!(invalid_shared_string_offsets, 309);

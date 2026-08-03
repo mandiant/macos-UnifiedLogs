@@ -7,10 +7,11 @@
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use macos_unifiedlogs::{
+    cache::MemoryStringCache,
     filesystem::LogarchiveProvider,
     parser::{build_log, collect_timesync, parse_log},
     timesync::TimesyncBoot,
-    traits::FileProvider,
+    traits::{FileProvider, StringCache},
     unified_log::UnifiedLogData,
 };
 use std::{collections::HashMap, fs::File, path::PathBuf};
@@ -21,11 +22,12 @@ fn monterey_parse_log(path: &str) {
 
 fn bench_build_log(
     log_data: &UnifiedLogData,
-    provider: &mut dyn FileProvider,
+    provider: &impl FileProvider,
+    cache: &impl StringCache,
     timesync_data: &HashMap<String, TimesyncBoot>,
     exclude_missing: bool,
 ) {
-    let (_, _) = build_log(log_data, provider, timesync_data, exclude_missing);
+    let (_, _) = build_log(log_data, provider, cache, timesync_data, exclude_missing);
 }
 
 fn monterey_single_log_benchpress(c: &mut Criterion) {
@@ -34,7 +36,7 @@ fn monterey_single_log_benchpress(c: &mut Criterion) {
         .push("tests/test_data/system_logs_monterey.logarchive/Persist/0000000000000004.tracev3");
 
     c.bench_function("Benching Parsing One Monterey Log", |b| {
-        b.iter(|| monterey_parse_log(&test_path.display().to_string()))
+        b.iter(|| monterey_parse_log(&test_path.display().to_string()));
     });
 }
 
@@ -42,17 +44,26 @@ fn monterey_build_log_benchbress(c: &mut Criterion) {
     let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_path.push("tests/test_data/system_logs_monterey.logarchive");
 
-    let mut provider = LogarchiveProvider::new(test_path.as_path());
+    let provider = LogarchiveProvider::new(test_path.as_path());
     let timesync_data = collect_timesync(&provider).unwrap();
+    let cache = MemoryStringCache::default();
 
     test_path.push("Persist/0000000000000004.tracev3");
     let exclude_missing = false;
-    let handle = File::open(&test_path.as_path()).unwrap();
+    let handle = File::open(test_path.as_path()).unwrap();
 
     let log_data = parse_log(handle, test_path.to_str().unwrap()).unwrap();
 
     c.bench_function("Benching Building One Monterey Log", |b| {
-        b.iter(|| bench_build_log(&log_data, &mut provider, &timesync_data, exclude_missing))
+        b.iter(|| {
+            bench_build_log(
+                &log_data,
+                &provider,
+                &cache,
+                &timesync_data,
+                exclude_missing,
+            );
+        });
     });
 }
 
