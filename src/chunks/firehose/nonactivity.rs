@@ -17,6 +17,7 @@ use nom::number::complete::{le_u8, le_u16, le_u32};
 pub struct FirehoseNonActivity {
     pub activity_id: u32,            // if flag 0x0001
     pub sentinal: u32,               // always 0x80000000? if flag 0x0001
+    pub persona_id: u32,             // if flag 0x0040
     pub private_strings_offset: u16, // if flag 0x0100
     pub private_strings_size: u16,   // if flag 0x0100
     pub message_string_ref: u32,     // if flag 0x0008
@@ -47,6 +48,17 @@ impl FirehoseNonActivity {
             non_activity.activity_id = firehose_activity_id;
             non_activity.sentinal = firehose_unknown_sentinel;
             non_activity.flags.push(MessageFlags::HasCurrentAid);
+            input = firehose_input;
+        }
+
+        let has_persona = 0x40; // has_persona flag
+        if (firehose_flags & has_persona) != 0 {
+            debug!("[macos-unifiedlogs] Non-Activity Firehose log chunk has_persona flag");
+            let (firehose_input, persona_id) = le_u32(input)?;
+
+            non_activity.persona_id = persona_id;
+            non_activity.flags.push(MessageFlags::HasPersona);
+
             input = firehose_input;
         }
 

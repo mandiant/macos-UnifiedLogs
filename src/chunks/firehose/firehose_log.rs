@@ -5,6 +5,7 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
+use std::fs;
 use crate::chunks::firehose::activity::FirehoseActivity;
 use crate::chunks::firehose::loss::FirehoseLoss;
 use crate::chunks::firehose::nonactivity::FirehoseNonActivity;
@@ -13,7 +14,7 @@ use crate::chunks::firehose::trace::FirehoseTrace;
 use crate::util::{
     encode_standard, extract_string_size, padding_size_8, padding_size_four, u64_to_usize,
 };
-use log::{debug, error, warn};
+use log::{debug, error, info, warn};
 use nom::Parser;
 use nom::bytes::complete::take_while;
 use nom::combinator::map;
@@ -118,6 +119,7 @@ pub enum MessageFlags {
     HasPrivateData,
     HasOversize,
     HasSubsystem,
+    HasPersona,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -281,6 +283,9 @@ impl FirehosePreamble {
         let mut firehose_input = data;
         let mut firehose_item_data = FirehoseItemData::default();
 
+        // TODO: Unknown items
+        // 128, 98
+
         // Firehose number item values
         let number_item_type = [0x0, 0x2];
         // Dynamic precision item types?
@@ -291,7 +296,7 @@ impl FirehosePreamble {
         let object_items = [0x40, 0x42];
 
         while item_count < firehose_number_items {
-            // Get non-number values first since the values are at the end of the of the log (chunk) entry data
+            // Get non-number values first since the values are at the end of the log (chunk) entry data
             let (item_value_input, mut item) =
                 FirehosePreamble::get_firehose_items(firehose_input)?;
             firehose_input = item_value_input;
@@ -387,11 +392,12 @@ impl FirehosePreamble {
                 firehose_input = item_value_input;
                 item.message_strings = message_string;
             } else {
-                error!(
+                // debug!("[macos-unifiedlogs] Firehose item data: {data:?}");
+                // fs::write(format!("firehose-items-{}.bin", item_count), data).unwrap();
+                panic!(
                     "[macos-unifiedlogs] Unknown Firehose item: {}",
                     &item.item_type
                 );
-                debug!("[macos-unifiedlogs] Firehose item data: {data:?}");
             }
         }
 
@@ -464,6 +470,8 @@ impl FirehosePreamble {
     /// Parse all the different types of Firehose data (activity, non-activity, loss, trace, signpost)
     fn parse_firehose(data: &[u8]) -> nom::IResult<&[u8], Firehose> {
         let mut firehose_results = Firehose::default();
+
+        // fs::write("firehose.bin", data).unwrap();
 
         let (input, log_activity_type) = le_u8(data)?;
         let (input, log_type) = le_u8(input)?;

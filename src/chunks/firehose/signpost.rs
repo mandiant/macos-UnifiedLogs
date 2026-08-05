@@ -18,6 +18,7 @@ pub struct FirehoseSignpost {
     pub pc_id: u32, // Appears to be used to calculate string offset for firehose events with Absolute flag
     pub activity_id: u32,
     pub sentinel: u32,
+    pub persona_id: u32,             // if flag 0x0040
     pub subsystem: u16,
     pub signpost_id: u64,
     pub signpost_name: u32,
@@ -49,6 +50,17 @@ impl FirehoseSignpost {
             firehose_signpost.sentinel = firehose_sentinel;
             input = firehose_input;
             firehose_signpost.flags.push(MessageFlags::HasCurrentAid);
+        }
+
+        let has_persona = 0x40; // has_persona flag
+        if (firehose_flags & has_persona) != 0 {
+            debug!("[macos-unifiedlogs] Signpost Firehose log chunk has_persona flag");
+            let (firehose_input, persona_id) = le_u32(input)?;
+
+            firehose_signpost.persona_id = persona_id;
+            firehose_signpost.flags.push(MessageFlags::HasPersona);
+
+            input = firehose_input;
         }
 
         let private_string_range = 0x100; // has_private_data flag

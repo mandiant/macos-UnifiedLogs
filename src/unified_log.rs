@@ -1207,7 +1207,8 @@ mod tests {
         assert_eq!(data.catalog.number_process_information_entries, 1);
         assert_eq!(data.catalog.catalog_offset_sub_chunks, 160);
         assert_eq!(data.catalog.number_sub_chunks, 7);
-        assert_eq!(data.catalog.unknown, [0, 0, 0, 0, 0, 0]);
+        assert_eq!(data.catalog.catalog_persona_offset, 0);
+        assert_eq!(data.catalog.catalog_persona_count, 0);
         assert_eq!(data.catalog.earliest_firehose_timestamp, 820223379547412);
         assert_eq!(
             data.catalog.catalog_uuids,

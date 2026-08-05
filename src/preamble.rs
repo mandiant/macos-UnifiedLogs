@@ -30,6 +30,7 @@ impl LogPreamble {
     pub fn parse(input: &[u8]) -> IResult<&[u8], Self> {
         let mut tup = (le_u32, le_u32, le_u64);
         let (input, (chunk_tag, chunk_sub_tag, chunk_data_size)) = tup.parse(input)?;
+        // info!("Parsing log preamble: tag={:x}, subtag={:x}, size={}", chunk_tag, chunk_sub_tag, chunk_data_size);
         Ok((
             input,
             LogPreamble {

@@ -5,14 +5,11 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-use log::{error, warn};
-use lz4_flex::decompress;
-use nom::{
-    Needed,
-    bytes::complete::{take, take_while},
-    number::complete::{le_u32, le_u64},
-};
-
+use std::fs;
+use compression::Algorithm;
+use log::{error, info, warn};
+use nom::{bytes::complete::{take, take_while}, number::complete::{le_u32, le_u64}, Needed, Parser};
+use nom::combinator::peek;
 use crate::chunks::simpledump::SimpleDump;
 use crate::chunks::statedump::Statedump;
 use crate::{chunks::firehose::firehose_log::FirehosePreamble, util::u64_to_usize};
@@ -27,7 +24,7 @@ pub struct ChunksetChunk {
     pub chunk_data_size: u64,
     pub signature: u32, // should be "bv41"
     pub uncompress_size: u32,
-    pub block_size: u32,
+    pub block_size: Option<u32>,
     pub decompressed_data: Vec<u8>,
     pub footer: u32, // should be "bv4$"
 }
@@ -40,14 +37,20 @@ impl ChunksetChunk {
         let (input, chunkset_chunk_tag) = le_u32(data)?;
         let (input, chunkset_chunk_sub_tag) = le_u32(input)?;
         let (input, chunkset_chunk_data_size) = le_u64(input)?;
-        let (input, chunkset_sig) = le_u32(input)?;
-        let (input, chunkset_uncompress_size) = le_u32(input)?;
+        // info!("next bytes = {:x?}", input.get(0..4));
+
+        // do not consume
+        let (input, chunkset_sig) = peek(le_u32).parse(input)?;
 
         let bv41 = 825521762; // bv41 signature
         let bv41_uncompressed = 758412898; // bv41- signature
+        let zbmc = 206389850; // ZBM\x0C signature
 
         // Data is already decompressed (Observed in tracev3 files in /var/db/diagnostics/Special)
         if chunkset_sig == bv41_uncompressed {
+            // Consume compression signature
+            let (input, _) = le_u32(input)?;
+            let (input, chunkset_uncompress_size) = le_u32(input)?;
             let (input, uncompressed_data) = take(chunkset_uncompress_size)(input)?;
             chunkset_chunk.decompressed_data = uncompressed_data.to_vec();
             let (input, chunkset_footer) = le_u32(input)?;
@@ -56,37 +59,68 @@ impl ChunksetChunk {
         }
 
         // Compressed data signatue should be bv41
-        if chunkset_sig != bv41 {
+        if chunkset_sig != bv41 && chunkset_sig != zbmc {
             error!(
-                "[macos-unifiedlogs] Incorrect compression signature expected bv41, got: {chunkset_sig:?}"
+                "[macos-unifiedlogs] Incorrect compression signature expected bv41 or zbm\\x0c, got: {chunkset_sig:?}"
             );
             return Err(nom::Err::Incomplete(Needed::Unknown));
         }
 
-        let (input, chunkset_block_size) = le_u32(input)?;
+        info!("[macos-unifiedlogs] Chunkset: tag {:x}, sub tag {:x}, data size {}, signature {}", chunkset_chunk_tag, chunkset_chunk_sub_tag, chunkset_chunk_data_size, chunkset_sig);
 
         chunkset_chunk.chunk_tag = chunkset_chunk_tag;
         chunkset_chunk.chunk_sub_tag = chunkset_chunk_sub_tag;
         chunkset_chunk.chunk_data_size = chunkset_chunk_data_size;
         chunkset_chunk.signature = chunkset_sig;
-        chunkset_chunk.uncompress_size = chunkset_uncompress_size;
-        chunkset_chunk.block_size = chunkset_block_size;
 
-        let (input, compressed_data) = take(chunkset_block_size)(input)?;
-        let decompress_data_results =
-            decompress(compressed_data, chunkset_uncompress_size as usize);
+        // TODO: Use of compression metadata of sub chunk
+        // TODO: Speed-up idea for macOS platforms -> use native things -> but is that really faster?
+        let (input, decompress_data_results): (&[u8], Result<Vec<u8>, String>) = if chunkset_sig == bv41 {
+            // Consume compression signature
+            let (input, _) = le_u32(input)?;
+
+            // Only LZ4 has this concept of a block size
+            let (input, chunkset_uncompress_size) = le_u32(input)?;
+            let (input, chunkset_block_size) = le_u32(input)?;
+            chunkset_chunk.uncompress_size = chunkset_uncompress_size;
+            chunkset_chunk.block_size = Some(chunkset_block_size);
+
+            let (input, compressed_data) = take(chunkset_block_size)(input)?;
+            let res = lz4_flex::decompress(compressed_data, chunkset_uncompress_size as usize)
+                .map_err(|err| err.to_string());
+
+            (input, res)
+        } else if chunkset_sig == zbmc {
+            info!("[macos-unifiedlogs] Decoding Lzbitmap0 decompressed data");
+            let (input, compressed_data) = take(chunkset_chunk.chunk_data_size)(input)?;
+            let res = compression::decompress(compressed_data, Algorithm::Lzbitmap)
+                .map_err(|err| err.to_string());
+
+            (input, res)
+        } else {
+            return Err(nom::Err::Incomplete(Needed::Unknown));
+        };
 
         // The decompressed data contains multiple log entries
         match decompress_data_results {
-            Ok(decompress_data) => chunkset_chunk.decompressed_data = decompress_data,
+            Ok(decompress_data) => {
+                chunkset_chunk.uncompress_size = decompress_data.len() as u32;
+                chunkset_chunk.decompressed_data = decompress_data
+            },
             Err(err) => {
                 error!("[macos-unifiedlogs] Failed to decompress log data: {err:?}");
                 return Err(nom::Err::Incomplete(Needed::Unknown));
             }
         }
 
-        let (input, chunkset_footer) = le_u32(input)?;
-        chunkset_chunk.footer = chunkset_footer;
+        // Only LZ4 has a footer
+        let input = if chunkset_sig == bv41 {
+            let (input, chunkset_footer) = le_u32(input)?;
+            chunkset_chunk.footer = chunkset_footer;
+            input
+        } else {
+            input
+        };
 
         Ok((input, chunkset_chunk))
     }
@@ -98,6 +132,8 @@ impl ChunksetChunk {
     ) -> nom::IResult<&'a [u8], ()> {
         let mut input = data;
         let chunk_preamble_size = 16; // Include preamble size in total chunk size
+
+        // fs::write("chunkset.bin", input).unwrap();
 
         // Loop through decompressed chunkset data until all log entries (chunks) are read
         while !input.is_empty() {
@@ -1207,7 +1243,7 @@ mod tests {
         assert_eq!(chunkset.chunk_data_size, 21703);
         assert_eq!(chunkset.signature, 825521762); // "bv41"
         assert_eq!(chunkset.uncompress_size, 63560);
-        assert_eq!(chunkset.block_size, 21687);
+        assert_eq!(chunkset.block_size, Some(21687));
         assert_eq!(chunkset.decompressed_data.len(), 63560);
         assert_eq!(chunkset.footer, 607417954); // "bv4$"
     }
@@ -2183,7 +2219,7 @@ mod tests {
         assert_eq!(chunkset.chunk_data_size, 20758);
         assert_eq!(chunkset.signature, 825521762); // "bv41"
         assert_eq!(chunkset.uncompress_size, 62592);
-        assert_eq!(chunkset.block_size, 20742);
+        assert_eq!(chunkset.block_size, Some(20742));
         assert_eq!(chunkset.decompressed_data.len(), 62592);
         assert_eq!(chunkset.footer, 607417954); // "bv4$"
     }
@@ -2204,7 +2240,8 @@ mod tests {
                 number_process_information_entries: 0,
                 catalog_offset_sub_chunks: 0,
                 number_sub_chunks: 0,
-                unknown: Vec::new(),
+                catalog_persona_offset: 0,
+                catalog_persona_count: 0,
                 earliest_firehose_timestamp: 0,
                 catalog_uuids: Vec::new(),
                 catalog_subsystem_strings: Vec::new(),
@@ -2251,7 +2288,8 @@ mod tests {
                 number_process_information_entries: 0,
                 catalog_offset_sub_chunks: 0,
                 number_sub_chunks: 0,
-                unknown: Vec::new(),
+                catalog_persona_offset: 0,
+                catalog_persona_count: 0,
                 earliest_firehose_timestamp: 0,
                 catalog_uuids: Vec::new(),
                 catalog_subsystem_strings: Vec::new(),

@@ -8,7 +8,7 @@
 use std::collections::HashMap;
 
 use crate::{preamble::LogPreamble, util::*};
-use log::error;
+use log::{error, info};
 use nom::{
     IResult, Parser,
     bytes::complete::take,
@@ -32,7 +32,8 @@ pub struct CatalogChunk {
     pub catalog_offset_sub_chunks: u16,
     pub number_sub_chunks: u16,
     /// unknown 6 bytes, padding? alignment?
-    pub unknown: Vec<u8>,
+    pub catalog_persona_offset: u16,
+    pub catalog_persona_count: u32,
     pub earliest_firehose_timestamp: u64,
     /// array of UUIDs in big endian
     pub catalog_uuids: Vec<String>,
@@ -95,7 +96,7 @@ pub struct CatalogSubchunk {
     pub start: u64,
     pub end: u64,
     pub uncompressed_size: u32,
-    /// Should always be LZ4 (value 0x100)
+    /// Should always be LZ4 (value 0x100) or LZBITMAP0 (value 0x700)
     pub compression_algorithm: u32,
     pub number_index: u32,
     /// indexes size = `number_index` * u16
@@ -115,7 +116,8 @@ impl CatalogChunk {
     /// Parse log Catalog data. The log Catalog contains metadata related to log entries such as Process info, Subsystem info, and the compressed log entries
     pub fn parse_catalog(input: &[u8]) -> IResult<&[u8], Self> {
         let (input, preamble) = LogPreamble::parse(input)?;
-        let mut tup = (le_u16, le_u16, le_u16, le_u16, le_u16);
+        // info!("First chunk bytes: {:x?}", input);
+        let mut tup = (le_u16, le_u16, le_u16, le_u16, le_u16, le_u16, le_u32, le_u64);
         let (
             input,
             (
@@ -124,12 +126,18 @@ impl CatalogChunk {
                 number_process_information_entries,
                 catalog_offset_sub_chunks,
                 number_sub_chunks,
+                catalog_persona_offset,
+                catalog_persona_count,
+                earliest_firehose_timestamp
             ),
         ) = tup.parse(input)?;
 
-        const UNKNOWN_LENGTH: u8 = 6;
+        info!("strings_offset: {}, info_offset: {}, info_count: {}, subchunk_offset: {}, subchunk_number: {}, persona_offset: {}, persona_count: {}, earliest_firehose_timestamp: {}", catalog_subsystem_strings_offset, catalog_process_info_entries_offset, number_process_information_entries, catalog_offset_sub_chunks, number_sub_chunks, catalog_persona_offset, catalog_persona_count, earliest_firehose_timestamp);
+
+        /* const UNKNOWN_LENGTH: u8 = 6;
         let (input, unknown) = map(take(UNKNOWN_LENGTH), |v: &[u8]| v.to_vec()).parse(input)?;
-        let (input, earliest_firehose_timestamp) = le_u64(input)?;
+        info!("Unknown length: {:x?}", unknown); */
+        // let (input, earliest_firehose_timestamp) = le_u64(input)?;
 
         const UUID_LENGTH: usize = 16;
         let number_catalog_uuids = catalog_subsystem_strings_offset as usize / UUID_LENGTH;
@@ -141,10 +149,14 @@ impl CatalogChunk {
         )
         .parse(input)?;
 
+        // info!("Found Catalog UUIDs: {:?}", catalog_uuids.len());
+
         let subsystems_strings_length =
             catalog_process_info_entries_offset - catalog_subsystem_strings_offset;
         let (input, subsystem_strings_data) = take(subsystems_strings_length)(input)?;
         let catalog_subsystem_strings = subsystem_strings_data.to_vec();
+
+        // info!("Subsystem Strings: {:?}", catalog_subsystem_strings.len());
 
         let (input, catalog_process_info_entries_vec) = many_m_n(
             number_process_information_entries as usize,
@@ -152,6 +164,8 @@ impl CatalogChunk {
             |input| Self::parse_catalog_process_entry(input, &catalog_uuids),
         )
         .parse(input)?;
+
+        // info!("Found process info entries: {}", catalog_process_info_entries_vec.len());
 
         let mut catalog_process_info_entries = HashMap::new();
         for entry in catalog_process_info_entries_vec {
@@ -163,6 +177,20 @@ impl CatalogChunk {
                 entry,
             );
         }
+
+        // Consuming the persona bytes if there are any, they are between process info entries and sub chunks
+        let input = if catalog_persona_count > 0 && catalog_persona_offset > 0 {
+            let (input, _) = take(catalog_offset_sub_chunks - catalog_persona_offset)(input)?;
+            // TODO: Parse the persona bytes
+            // log raw-dump on macOS just shows
+            // ----- Catalog Persona Section (skipping) -----
+            // Persona section found with 2 entries - skipping for compatibility
+            input
+        } else {
+            input
+        };
+
+        // info!("Found proc info entries: {:?}", catalog_process_info_entries.len());
         let (input, catalog_subchunks) = many_m_n(
             number_sub_chunks as usize,
             number_sub_chunks as usize,
@@ -180,7 +208,8 @@ impl CatalogChunk {
                 number_process_information_entries,
                 catalog_offset_sub_chunks,
                 number_sub_chunks,
-                unknown,
+                catalog_persona_offset,
+                catalog_persona_count,
                 earliest_firehose_timestamp,
                 catalog_uuids,
                 catalog_subsystem_strings,
@@ -327,12 +356,17 @@ impl CatalogChunk {
 
     /// Parse the Catalog Subchunk metadata. This metadata is related to the compressed (typically) Chunkset data
     fn parse_catalog_subchunk(input: &[u8]) -> IResult<&[u8], CatalogSubchunk> {
+        // info!("[macos-unifiedlogs] Catalog subchunk: {:x?}", input);
+
         let mut tup = (le_u64, le_u64, le_u32, le_u32, le_u32);
-        let (input, (start, end, uncompressed_size, compression_algorithmn, number_index)) =
+        let (input, (start, end, uncompressed_size, compression_algorithm, number_index)) =
             tup.parse(input)?;
 
-        const LZ4_COMPRESSION: u32 = 256;
-        if compression_algorithmn != LZ4_COMPRESSION {
+        // info!("Start: {:x}, End: {:x}, Uncomp Sz: {:x}, Algo: {:x}, Num Index: {:x}", start, end, uncompressed_size, compression_algorithm, number_index);
+
+        const LZ4_COMPRESSION: u32 = 0x100;
+        const LZBITMAP0_COMPRESSION: u32 = 0x700;
+        if compression_algorithm != LZ4_COMPRESSION && compression_algorithm != LZBITMAP0_COMPRESSION {
             return Err(nom::Err::Error(make_error(input, ErrorKind::OneOf)));
         }
 
@@ -371,7 +405,7 @@ impl CatalogChunk {
                 start,
                 end,
                 uncompressed_size,
-                compression_algorithm: compression_algorithmn,
+                compression_algorithm,
                 number_index,
                 indexes,
                 number_string_offsets,
@@ -485,7 +519,8 @@ mod tests {
         assert_eq!(catalog_data.number_process_information_entries, 1);
         assert_eq!(catalog_data.catalog_offset_sub_chunks, 160);
         assert_eq!(catalog_data.number_sub_chunks, 7);
-        assert_eq!(catalog_data.unknown, [0, 0, 0, 0, 0, 0]);
+        assert_eq!(catalog_data.catalog_persona_offset, 0);
+        assert_eq!(catalog_data.catalog_persona_count, 0);
         assert_eq!(catalog_data.earliest_firehose_timestamp, 820223379547412);
         assert_eq!(
             catalog_data.catalog_uuids,
