@@ -283,9 +283,6 @@ impl FirehosePreamble {
         let mut firehose_input = data;
         let mut firehose_item_data = FirehoseItemData::default();
 
-        // TODO: Unknown items
-        // 128, 98
-
         // Firehose number item values
         let number_item_type = [0x0, 0x2];
         // Dynamic precision item types?
