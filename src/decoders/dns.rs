@@ -569,6 +569,7 @@ pub(crate) fn dns_getaddrinfo_opts(data: &str) -> Result<&'static str, DecoderEr
         "8" => "0x8 {use-failover}",
         "12" => "0xC {in-app-browser, use-failover}",
         "24" => "0x18 {use-failover, prohibit-encrypted-dns}",
+        "32" => "0x20 {use-cache-only}",
         _ => {
             return Err(DecoderError::Parse {
                 input: data.as_bytes(),
