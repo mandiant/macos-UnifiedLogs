@@ -15,6 +15,7 @@ use nom::Parser;
 use nom::branch::alt;
 use nom::bytes::complete::{is_a, is_not, take, take_until};
 use nom::character::complete::digit0;
+use nom::combinator::opt;
 use regex::Regex;
 
 struct FormatAndMessage {
@@ -289,7 +290,7 @@ fn parse_formatter<'a>(
 
     let number_item_type: Vec<u8> = vec![0x0, 0x1, 0x2];
 
-    // If the message formatter is expects a string/character and the message string is a number type
+    // If the message formatter expects a string/character and the message string is a number type
     // Try to convert to a character/string
     if formatter.to_lowercase().ends_with('c')
         && number_item_type.contains(&message_value[index].item_type)
@@ -363,7 +364,9 @@ fn parse_formatter<'a>(
 
     if formatter_message.starts_with('.') {
         let (input, _) = is_a(".")(formatter_message)?;
-        let (input, precision_data) = is_not("hljzZtqLdDiuUoOcCxXfFeEgGaASspPn%@")(input)?;
+        let (input, precision_data) = opt(is_not("hljzZtqLdDiuUoOcCxXfFeEgGaASspPn%@")).parse(input)?;
+        // Format strings such as "%.f" also exist, they are equivalent to "%.0f"
+        let precision_data = precision_data.unwrap_or_else(|| "0");
         if precision_data != "*" {
             let precision_results = precision_data.parse::<usize>();
             match precision_results {
