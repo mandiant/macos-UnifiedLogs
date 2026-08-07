@@ -11,9 +11,7 @@ use crate::chunks::firehose::loss::FirehoseLoss;
 use crate::chunks::firehose::nonactivity::FirehoseNonActivity;
 use crate::chunks::firehose::signpost::FirehoseSignpost;
 use crate::chunks::firehose::trace::FirehoseTrace;
-use crate::util::{
-    encode_standard, extract_string_size, padding_size_8, padding_size_four, u64_to_usize,
-};
+use crate::util::{encode_standard, extract_string_max_size, extract_string_size, padding_size_8, padding_size_four, u64_to_usize};
 use log::{debug, error, info, warn};
 use nom::Parser;
 use nom::bytes::complete::take_while;
@@ -456,7 +454,21 @@ impl FirehosePreamble {
                 if firehose_info.item_size == null_private {
                     firehose_info.message_strings = String::from("<private>");
                 } else {
-                    let (private_data, private_string) = extract_string_size(
+                    // TODO: message_size == 33748 -> no limit?
+                    info!("String: Noming {}", firehose_info.item_size);
+                    /* let (private_data, private_string) = if firehose_info.item_type == 0x21 {
+                        extract_string_max_size(
+                            private_string_start,
+                            u64::from(firehose_info.item_size),
+                        )?
+                    } else {
+                        extract_string_size(
+                            private_string_start,
+                            u64::from(firehose_info.item_size),
+                        )?
+                    }; */
+                    // seen null-terminated strings for 0x21 (private strings) and 0x41 (private objects b64 encoded strings)
+                    let (private_data, private_string) = extract_string_max_size(
                         private_string_start,
                         u64::from(firehose_info.item_size),
                     )?;

@@ -10,10 +10,11 @@ use chrono::{SecondsFormat, TimeZone, Utc};
 use log::{error, warn};
 use nom::{
     Parser,
-    bytes::complete::{take, take_while},
+    bytes::complete::{take, take_while, take_while_m_n},
     combinator::opt,
     error::ErrorKind,
 };
+use std::cmp::min;
 use std::str::from_utf8;
 
 /// Returns the padding to consume in order to align to 8 bytes
@@ -86,6 +87,56 @@ pub(crate) fn extract_string_size(data: &[u8], message_size: u64) -> nom::IResul
 }
 
 const NULL_BYTE: u8 = 0;
+
+/// Extract a size from private Firehose string item entries either stopping at its maximum size or the first null termination we encounter.
+pub(crate) fn extract_string_max_size(data: &[u8], max_size: u64) -> nom::IResult<&[u8], String> {
+    const NULL_STRING: u64 = 0;
+    if max_size == NULL_STRING {
+        return Ok((data, String::from("(null)")));
+    }
+
+    // Get whole string message except end of string (0s)
+    let max_size = match u64_to_usize(max_size) {
+        Some(m) => m,
+        None => {
+            error!("[macos-unifiedlogs] u64 is bigger than system usize");
+            return Err(nom::Err::Error(nom::error::Error::new(
+                data,
+                nom::error::ErrorKind::TooLarge,
+            )));
+        }
+    };
+
+    // If our remaining data is smaller than the message string size just go until the end of the remaining data
+    // It's important that we stop at the NULL terminator as some private data item have an item_size larger than their actucal number of character.
+    let (input, path) =
+        take_while_m_n(0, min(data.len(), max_size), |i| i != NULL_BYTE)(data)?;
+
+    // Remove the null byte from the input
+    let input = if path.len() < max_size {
+        input.strip_prefix(&[NULL_BYTE]).unwrap_or(input)
+    } else {
+        input
+    };
+
+    // Convert bytes to UTF-8
+    match String::from_utf8(path.to_vec()) {
+        Ok(results) => {
+            let trimmed_string = results.trim_end_matches(char::from(NULL_BYTE));
+
+            // If the string is the private data is shorter than the item_size log raw-dump appends "<…>"
+            let trimmed_string = if path.len() < max_size {
+                format!("{}<…>", trimmed_string)
+            } else {
+                trimmed_string.to_string()
+            };
+
+            return Ok((input, trimmed_string));
+        }
+        Err(err) => error!("[macos-unifiedlogs] Failed to get specific string: {err:?}"),
+    }
+    Ok((input, String::from("Could not find path string")))
+}
 
 /// Extract an UTF8 string from a byte array, stops at `NULL_BYTE` or END OF STRING
 /// Consumes the end byte
