@@ -5,7 +5,6 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-use std::fs;
 use compression::Algorithm;
 use log::{error, info, warn};
 use nom::{bytes::complete::{take, take_while}, number::complete::{le_u32, le_u64}, Needed, Parser};

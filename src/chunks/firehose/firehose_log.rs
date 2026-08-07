@@ -5,7 +5,6 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-use std::fs;
 use crate::chunks::firehose::activity::FirehoseActivity;
 use crate::chunks::firehose::loss::FirehoseLoss;
 use crate::chunks::firehose::nonactivity::FirehoseNonActivity;
@@ -144,6 +143,8 @@ impl FirehosePreamble {
     ) -> nom::IResult<&[u8], FirehosePreamble> {
         let mut firehose_data = FirehosePreamble::default();
 
+        // fs::write("firehose-preamble.bin", firehose_input_data).unwrap();
+
         let (input, chunk_tag) = le_u32(firehose_input_data)?;
         let (input, chunk_sub_tag) = le_u32(input)?;
         let (input, chunk_data_size) = le_u64(input)?;
@@ -159,6 +160,8 @@ impl FirehosePreamble {
         let (input, unknown2) = le_u16(input)?;
         let (input, unknown3) = le_u16(input)?;
         let (log_data, base_continous_time) = le_u64(input)?;
+
+        // info!("Parsing firehose chunk with base: {base_continous_time}");
 
         firehose_data.chunk_tag = chunk_tag;
         firehose_data.chunk_sub_tag = chunk_sub_tag;
@@ -181,6 +184,8 @@ impl FirehosePreamble {
         let (mut input, mut public_data) =
             take(public_data_size - public_data_size_offset)(log_data)?;
 
+        // info!("Got initial chunk size public_data={} and input={}", public_data.len(), input.len());
+
         // Go through all the public data associated with log Firehose entry
         while !public_data.is_empty() {
             let (firehose_input, firehose_public_data) =
@@ -201,6 +206,7 @@ impl FirehosePreamble {
                         let leftover_data = input.len() - private_data_offset as usize;
                         let (private_data, _) = take(leftover_data)(input)?;
                         input = private_data;
+                        // info!("# Threw away leftover data: {} - {}", leftover_data, wow.len());
                     } else {
                         // If log data and public data are the same size. Use private data offset to calculate the private data
                         if log_data.len() == (public_data_size - public_data_size_offset) as usize {
@@ -208,6 +214,7 @@ impl FirehosePreamble {
                                 (private_data_virtual_offset - public_data_size_offset) as usize
                                     - public_data.len(),
                             )(log_data)?;
+                            // info!("# log data == public data: {}", trash.len());
                             input = private_input_data;
                         } else {
                             // If we have private data, then any leftover public data is actually prepended to the private data
@@ -224,10 +231,13 @@ impl FirehosePreamble {
                                 00000030: 2e 66 2e 69 70 36 2e 61 72 70 61 20 6e 5f 6e 61 .f.ip6.arpa n_na
                                 00000040: 6d 65 73 65 72 76 65 72 20 30 00 43 6f 6e 66 69 meserver 0.Confi
                             */
+                            // TODO: We're still missing FOUR BYTES HERE
+                            // Too much data passed as firehose data?
                             let (private_input_data, _) = take(
                                 (public_data_size - public_data_size_offset) as usize
                                     - public_data.len(),
                             )(log_data)?;
+                            // info!("# public data + private data: public_data_size={} - public_data_size_offset={} - public_data={} -> {}", public_data_size, public_data_size_offset, public_data.len(), private_input_data.len());
                             input = private_input_data;
                         }
                     }
@@ -435,6 +445,7 @@ impl FirehosePreamble {
                     || firehose_info.item_type == private_strings[4]
                 {
                     if private_string_start.len() < firehose_info.item_size as usize {
+                        info!("Private String B64 Smol: Noming {}", private_string_start.len());
                         let (private_data, pointer_object) =
                             take(private_string_start.len())(private_string_start)?;
                         private_string_start = private_data;
@@ -443,6 +454,7 @@ impl FirehosePreamble {
                         continue;
                     }
 
+                    info!("Private String B64: Noming {}", firehose_info.item_size);
                     let (private_data, pointer_object) =
                         take(firehose_info.item_size)(private_string_start)?;
                     private_string_start = private_data;
@@ -472,6 +484,7 @@ impl FirehosePreamble {
                         private_string_start,
                         u64::from(firehose_info.item_size),
                     )?;
+                    info!("Got {}", private_string);
 
                     private_string_start = private_data;
                     firehose_info.message_strings = private_string;
@@ -482,10 +495,13 @@ impl FirehosePreamble {
                 if firehose_info.item_size == private_number {
                     firehose_info.message_strings = String::from("<private>")
                 } else {
+                    info!("Private Number: Noming {}", firehose_info.item_size);
                     let (private_data, private_string) = FirehosePreamble::parse_item_number(
                         private_string_start,
                         firehose_info.item_size,
                     )?;
+                    info!("Got {}", private_string);
+
                     private_string_start = private_data;
                     firehose_info.message_strings = format!("{private_string}");
                 }
@@ -607,6 +623,7 @@ impl FirehosePreamble {
         // Nom any zero padding
         let (remaining_data, taken_data) = take_while(|b: u8| b == 0)(input)?;
 
+        info!("firehose preamble noomed {} padding bytes", taken_data.len());
         // Verify we did not nom into remnant/junk data
         let padding_data = padding_size_8(data_size.into());
         let padding_data = match u64_to_usize(padding_data) {

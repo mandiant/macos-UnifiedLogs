@@ -60,6 +60,7 @@ pub(crate) fn extract_string_size(data: &[u8], message_size: u64) -> nom::IResul
         match path_string {
             Ok(results) => return Ok((input, results.trim_end_matches(char::from(0)).to_string())),
             Err(err) => {
+                // warn!("Error parsing string of size {}: {:x?}", message_size, data);
                 error!("[macos-unifiedlogs] Failed to get extract specific string size: {err:?}")
             }
         }
