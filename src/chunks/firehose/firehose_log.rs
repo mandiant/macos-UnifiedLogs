@@ -90,6 +90,7 @@ pub struct FirehoseItemType {
 pub enum FirehoseItem {
     String,
     PrivateNumber,
+    SensitiveNumber,
     Number,
     PrivateString,
     Precision,
@@ -133,6 +134,7 @@ impl FirehosePreamble {
     /// Remaining data (if any) contains strings for the string item types
     const STRING_ITEM: [u8; 8] = [0x20, 0x22, 0x40, 0x42, 0x30, 0x31, 0x32, 0xf2];
     const PRIVATE_NUMBER: u8 = 0x1;
+    const SENSITIVE_NUMBER: u8 = 0x5;
     /// 0x81 and 0xf1 Added in macOS Sequioa
     const PRIVATE_STRINGS: [u8; 7] = [0x21, 0x25, 0x35, 0x31, 0x41, 0x81, 0xf1];
     const LOG_TYPES: [u8; 5] = [0x2, 0x6, 0x4, 0x7, 0x3];
@@ -287,9 +289,10 @@ impl FirehosePreamble {
         let number_item_type = [0x0, 0x2];
         // Dynamic precision item types?
         let precision_items = [0x10, 0x12];
-        //  Likely realted to private string. Seen only "<private>" values
+        // Likely related to private string. Seen only "<private>" values
         // 0x85 and 0x5 added in macOS Sequioa
-        let sensitive_items = [0x5, 0x45, 0x85];
+        // 0x5 is a sensitive number, e.g. %{sensitive}.7f, %{sensitive}.7f
+        let sensitive_items = [0x45, 0x85];
         let object_items = [0x40, 0x42];
 
         while item_count < firehose_number_items {
@@ -367,6 +370,12 @@ impl FirehosePreamble {
                 continue;
             }
 
+            if item.item_type == Self::SENSITIVE_NUMBER {
+                item.item = FirehoseItem::SensitiveNumber;
+                item.message_strings = String::from("<private>");
+                continue;
+            }
+
             if item.item_type == Self::PRIVATE_NUMBER {
                 continue;
             }
@@ -389,8 +398,6 @@ impl FirehosePreamble {
                 firehose_input = item_value_input;
                 item.message_strings = message_string;
             } else {
-                // debug!("[macos-unifiedlogs] Firehose item data: {data:?}");
-                // fs::write(format!("firehose-items-{}.bin", item_count), data).unwrap();
                 panic!(
                     "[macos-unifiedlogs] Unknown Firehose item: {}",
                     &item.item_type
@@ -409,6 +416,7 @@ impl FirehosePreamble {
     ) -> nom::IResult<&'a [u8], ()> {
         let private_strings: Vec<u8> = vec![0x21, 0x25, 0x41, 0x35, 0x31, 0x81, 0xf1];
         let private_number = 0x1;
+        let sensitive_number = 0x5;
 
         let mut private_string_start = data;
         // Go through all firehose items, for each private item entry get the private value
@@ -456,6 +464,21 @@ impl FirehosePreamble {
                         private_string_start,
                         firehose_info.item_size,
                     )?;
+                    private_string_start = private_data;
+                    firehose_info.message_strings = format!("{private_string}");
+                }
+            } else if firehose_info.item_type == sensitive_number {
+                let private_number = 0x8000;
+                if firehose_info.item_size == private_number {
+                    firehose_info.message_strings = String::from("<private>")
+                } else {
+                    // info!("Sensitive Number: Noming {}", firehose_info.item_size);
+                    let (private_data, private_string) = FirehosePreamble::parse_item_number(
+                        private_string_start,
+                        firehose_info.item_size,
+                    )?;
+                    // info!("Got {}", private_string);
+
                     private_string_start = private_data;
                     firehose_info.message_strings = format!("{private_string}");
                 }
