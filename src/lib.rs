@@ -101,6 +101,7 @@ mod error;
 pub mod filesystem;
 mod header;
 pub mod iterator;
+mod lzbitmap;
 /// Functions to assemble the log message
 mod message;
 /// Functions to extract and assemble log entries from the macOS Unified Log

@@ -389,7 +389,7 @@ impl FirehosePreamble {
             } else {
                 error!(
                     "[macos-unifiedlogs] Unknown Firehose item: {}",
-                    &item.item_type
+                    item.item_type
                 );
                 debug!("[macos-unifiedlogs] Firehose item data: {data:?}");
             }
