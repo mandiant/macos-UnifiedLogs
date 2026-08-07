@@ -637,7 +637,7 @@ impl FirehosePreamble {
             }
         };
         let (mut input, _) = take(padding_data)(input)?;
-        if (padding_data as usize) > taken_data.len() {
+        if padding_data > taken_data.len() {
             input = remaining_data;
         }
 
