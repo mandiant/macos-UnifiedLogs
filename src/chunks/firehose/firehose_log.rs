@@ -241,18 +241,27 @@ impl FirehosePreamble {
         }
 
         // If there is private data, go through and update any logs that have private data items
-        if private_data_virtual_offset != 0x1000 {
+        let private_data_size = 0x1000 - private_data_virtual_offset;
+        if private_data_size > 0 {
             debug!("[macos-unifiedlogs] Parsing Private Firehose Data");
-            // Nom any padding
-            let (mut private_input, _) = take_while(|b: u8| b == 0)(input)?;
 
-            // if we nom the rest of the data (all zeros) then the private data is actually zeros
-            // Or if the firehose data is collapsed, then there was no padding
-            if private_input.is_empty() || firehose_data.collapsed == 1 {
-                private_input = input;
+            // 0x20 the additional tracev3 header (chunk_tag, ...) has a size of 0x20 bytes.
+            // The firehose header starts with
+            let private_input = if firehose_data.collapsed > 0 {
+                let (private_input, _) = take(0x20 + firehose_data.public_data_size)(firehose_input_data)?;
+                private_input
+            } else {
+                let (private_input, _) = take(0x20 + firehose_data.private_data_virtual_offset)(firehose_input_data)?;
+                private_input
+            };
+
+            // info!("Got {} bytes of private data, wanted at least", private_input.len(), private_data_size);
+            if private_input.len() < private_data_size as usize {
+                warn!("Expected {} bytes of private data, but only got {}", private_data_size, input.len());
             }
 
             for data in &mut firehose_data.public_data {
+                // info!("= Parsing Public Firehose Data: {:x}", data.thread_id);
                 // Only non-activity firehose entries appears to have private strings
                 if data.firehose_non_activity.private_strings_size == 0 {
                     continue;
@@ -261,6 +270,7 @@ impl FirehosePreamble {
                 let string_offset =
                     data.firehose_non_activity.private_strings_offset - private_data_virtual_offset;
                 let (private_string_start, _) = take(string_offset)(private_input)?;
+                // info!("Nom {} string offset bytes ({} - {})", string_offset, data.firehose_non_activity.private_strings_offset, private_data_virtual_offset);
                 let _ =
                     FirehosePreamble::parse_private_data(private_string_start, &mut data.message);
             }
