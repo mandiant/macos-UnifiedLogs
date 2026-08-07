@@ -717,7 +717,7 @@ impl MessageData {
         provider: &impl FileProvider,
         cache: &impl StringCache,
     ) -> nom::IResult<&'static [u8], String> {
-        // An UUID of all zeros is possilbe in the Catalog, if this happens there is no process path
+        // A UUID of all zeros is possible in the Catalog, if this happens there is no process path
         if main_uuid == "00000000000000000000000000000000" {
             info!("[macos-unifiedlogs] Got UUID of all zeros fom Catalog");
             return Ok((&[], String::new()));
