@@ -3,7 +3,7 @@ default:
 
 alias c:= check
 check:
-    cargo c --lib --bins --tests --examples 
+    cargo c --lib --bins --tests --examples --benches
     cargo c --manifest-path examples/Cargo.toml --workspace
 
 alias t:= test
