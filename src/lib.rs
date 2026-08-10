@@ -104,6 +104,7 @@ pub mod iterator;
 /// Functions to assemble the log message
 mod message;
 /// Functions to extract and assemble log entries from the macOS Unified Log
+#[path = "logarchive.rs"]
 pub mod parser;
 mod preamble;
 /// Functions to parse time data associated with the Unified Log
@@ -111,6 +112,7 @@ pub mod timesync;
 pub mod traits;
 /// Functions to parse tracev3 files
 pub mod unified_log;
+#[path = "helpers.rs"]
 mod util;
 /// Functions to parse the log string files
 pub mod uuidtext;

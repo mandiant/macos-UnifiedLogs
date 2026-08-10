@@ -6,9 +6,11 @@
 // See the License for the specific language governing permissions and limitations under the License.
 
 pub mod activity;
+#[path = "item.rs"]
 pub mod firehose_log;
 pub mod flags;
 pub mod loss;
+#[path = "../../format.rs"]
 pub mod message;
 pub mod nonactivity;
 pub mod signpost;
