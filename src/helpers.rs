@@ -10,7 +10,7 @@ use nom::{
 use std::str::from_utf8;
 use uuid::Uuid;
 
-pub(crate) const INVALID_UTF8: &str = "<Invalid UTF-8>";
+const INVALID_UTF8: &str = "<Invalid UTF-8>";
 const NULL_BYTE: u8 = 0;
 
 /// Returns the padding to consume in order to align to 8 bytes
