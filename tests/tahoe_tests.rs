@@ -308,3 +308,65 @@ fn test_parse_all_logs_tahoe() {
     assert_eq!(syncthing, 1146);
     assert_eq!(brew, 97);
 }
+
+/// Prove parsing works without any filesystem: slurp the tahoe archive into an
+/// InMemoryProvider and compare against visit_logarchive on the same archive.
+#[test]
+fn test_visit_in_memory_provider_matches_logarchive() {
+    use macos_unifiedlogs::filesystem::{
+        InMemoryProvider, LogarchiveProvider, collect_timesync_paths, collect_tracev3_paths,
+    };
+    use macos_unifiedlogs::logarchive::visit_provider;
+    use macos_unifiedlogs::traits::FileProvider;
+
+    let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    test_path.push("tests/test_data/system_logs_tahoe.logarchive");
+
+    let archive_provider = LogarchiveProvider::new(&test_path);
+    let mut memory_provider = InMemoryProvider::default();
+    for path in collect_tracev3_paths(&test_path) {
+        memory_provider.tracev3.push((
+            format!("mem://{}", path.file_name().unwrap().to_string_lossy()),
+            std::fs::read(&path).unwrap(),
+        ));
+    }
+    for path in collect_timesync_paths(&test_path.join("timesync")) {
+        memory_provider
+            .timesync
+            .push((path.to_string_lossy().to_string(), std::fs::read(&path).unwrap()));
+    }
+    for uuid in archive_provider.uuidtext_uuids() {
+        memory_provider
+            .uuidtext
+            .insert(uuid, archive_provider.read_uuidtext(&uuid).unwrap());
+    }
+    for uuid in archive_provider.dsc_uuids() {
+        memory_provider
+            .dsc
+            .insert(uuid, archive_provider.read_dsc(&uuid).unwrap());
+    }
+
+    let mut archive_count = 0_usize;
+    let mut archive_messages = 0_usize;
+    visit_logarchive(&test_path, |entry| {
+        archive_count += 1;
+        if archive_count % 1000 == 0 {
+            archive_messages += entry.message().len();
+        }
+    })
+    .unwrap();
+
+    let mut memory_count = 0_usize;
+    let mut memory_messages = 0_usize;
+    visit_provider(&memory_provider, |entry| {
+        memory_count += 1;
+        if memory_count % 1000 == 0 {
+            memory_messages += entry.message().len();
+        }
+    })
+    .unwrap();
+
+    assert_eq!(memory_count, archive_count);
+    assert_eq!(memory_messages, archive_messages);
+    assert_eq!(archive_count, 4288584);
+}
