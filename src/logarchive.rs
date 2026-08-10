@@ -384,6 +384,9 @@ mod tests {
     #[test]
     #[cfg(target_os = "macos")]
     fn test_visit_live_system() {
+        use crate::log_entry::EventType;
+        use chrono::SecondsFormat;
+
         visit_live_system(|entry| {
             assert_ne!(
                 entry.event_type,
