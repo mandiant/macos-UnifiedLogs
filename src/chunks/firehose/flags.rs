@@ -114,8 +114,7 @@ mod tests {
     fn test_formatter_has_large_offset() {
         // From src/chunks/firehose/flags.rs test_firehose_formatter_flags_has_large_offset
         let test_data = [
-            1, 0, 2, 0, 14, 0, 34, 2, 0, 4, 135, 16, 0, 0, 34, 4, 0, 0, 5, 0, 100, 101, 110, 121,
-            0,
+            1, 0, 2, 0, 14, 0, 34, 2, 0, 4, 135, 16, 0, 0, 34, 4, 0, 0, 5, 0, 100, 101, 110, 121, 0,
         ];
         let flags = FirehoseFlags::from_bits_retain(557);
         let (_, result) = RawFormatterFlags::parse(&test_data, flags).unwrap();
@@ -181,12 +180,12 @@ mod tests {
     fn test_formatter_absolute_alt_index_large() {
         // From test_firehose_formatter_flags_absolute_message_alt_uuid
         let test_data = [
-            128, 255, 2, 13, 34, 4, 0, 0, 6, 0, 34, 4, 6, 0, 11, 0, 34, 4, 17, 0, 7, 0, 2, 4, 8,
-            0, 0, 0, 2, 8, 0, 0, 0, 0, 0, 0, 0, 0, 2, 4, 0, 0, 0, 0, 2, 8, 0, 0, 0, 0, 0, 0, 0,
-            0, 34, 4, 24, 0, 3, 0, 34, 4, 27, 0, 3, 0, 2, 8, 156, 17, 7, 98, 0, 0, 0, 0, 2, 8,
-            156, 17, 7, 98, 0, 0, 0, 0, 2, 4, 0, 0, 0, 0, 34, 4, 30, 0, 3, 0, 65, 67, 77, 82, 77,
-            0, 95, 108, 111, 103, 80, 111, 108, 105, 99, 121, 0, 83, 65, 86, 73, 78, 71, 0, 78,
-            79, 0, 78, 79, 0, 78, 79, 0,
+            128, 255, 2, 13, 34, 4, 0, 0, 6, 0, 34, 4, 6, 0, 11, 0, 34, 4, 17, 0, 7, 0, 2, 4, 8, 0,
+            0, 0, 2, 8, 0, 0, 0, 0, 0, 0, 0, 0, 2, 4, 0, 0, 0, 0, 2, 8, 0, 0, 0, 0, 0, 0, 0, 0, 34,
+            4, 24, 0, 3, 0, 34, 4, 27, 0, 3, 0, 2, 8, 156, 17, 7, 98, 0, 0, 0, 0, 2, 8, 156, 17, 7,
+            98, 0, 0, 0, 0, 2, 4, 0, 0, 0, 0, 34, 4, 30, 0, 3, 0, 65, 67, 77, 82, 77, 0, 95, 108,
+            111, 103, 80, 111, 108, 105, 99, 121, 0, 83, 65, 86, 73, 78, 71, 0, 78, 79, 0, 78, 79,
+            0, 78, 79, 0,
         ];
         let flags = FirehoseFlags::from_bits_retain(8);
         let (_, result) = RawFormatterFlags::parse(&test_data, flags).unwrap();
@@ -210,7 +209,9 @@ mod tests {
         let (_, result) = RawFormatterFlags::parse(&test_data, flags).unwrap();
         assert_eq!(
             result.uuid_relative,
-            [123, 13, 55, 117, 241, 144, 62, 33, 186, 19, 4, 71, 196, 27, 135, 67]
+            [
+                123, 13, 55, 117, 241, 144, 62, 33, 186, 19, 4, 71, 196, 27, 135, 67
+            ]
         );
         assert!(!result.main_exe);
         assert!(!result.shared_cache);

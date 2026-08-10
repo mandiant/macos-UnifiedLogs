@@ -1,5 +1,6 @@
 //! `TraceV3` file processor — threads all parsing modules together to produce log entries.
 
+use super::cache::StringCatalog;
 use super::catalog::RawCatalogChunk;
 use super::chunk::{ChunkSetReader, ChunksReader, TopChunk};
 use super::chunks::ChunkTag;
@@ -9,7 +10,6 @@ use super::chunks::firehose::entry::FirehoseLogType;
 use super::chunks::firehose::flags::{FirehoseFlags, FormatterType};
 use super::chunks::oversize::RawOversize;
 use super::chunks::simpledump::RawSimpleDump;
-use super::cache::StringCatalog;
 use super::chunks::statedump::RawStatedump;
 use super::error::{NomExt, ParseError};
 use super::header::RawHeaderChunk;
@@ -238,16 +238,18 @@ fn flush_deferred_entries<'d, 's: 'd>(
                     // Process info from the catalog's main executable UUIDText,
                     // resolved only when the associated DSC file is available
                     // (parity with the shared-strings extraction, PR #136).
-                    let entry_info = current_catalog
-                        .as_ref()
-                        .and_then(|c| c.get_process_info(sd.first_proc_id, sd.second_proc_id as u32));
+                    let entry_info = current_catalog.as_ref().and_then(|c| {
+                        c.get_process_info(sd.first_proc_id, sd.second_proc_id as u32)
+                    });
                     let main_uuid = entry_info.map_or(Uuid::nil(), |e| e.main_uuid);
                     let (process, process_uuid) = entry_info
                         .and_then(|e| e.dsc_uuid)
                         .and_then(|dsc_uuid| strings.get_dsc(&dsc_uuid))
                         .map_or((None, Uuid::nil()), |_| {
                             (
-                                strings.get_uuidtext(&main_uuid).and_then(|u| u.image_path()),
+                                strings
+                                    .get_uuidtext(&main_uuid)
+                                    .and_then(|u| u.image_path()),
                                 main_uuid,
                             )
                         });
@@ -491,7 +493,9 @@ fn visit_firehose_entries<'d: 'b, 'b, 's: 'd>(
                 // Process/library from UUIDText via main_uuid
                 let entry_info = catalog.get_process_info(fh.first_proc_id, fh.second_proc_id);
                 let main_uuid = entry_info.map_or(Uuid::nil(), |e| e.main_uuid);
-                let process = strings.get_uuidtext(&main_uuid).and_then(|u| u.image_path());
+                let process = strings
+                    .get_uuidtext(&main_uuid)
+                    .and_then(|u| u.image_path());
 
                 callback(LogEntry {
                     subsystem: None,

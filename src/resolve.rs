@@ -107,7 +107,9 @@ fn resolve_shared_cache<'s>(
 
     let dsc = dsc_uuid.and_then(|uuid| strings.get_dsc(&uuid));
     let source_found = dsc.is_some();
-    let process = strings.get_uuidtext(&main_uuid).and_then(|u| u.image_path());
+    let process = strings
+        .get_uuidtext(&main_uuid)
+        .and_then(|u| u.image_path());
 
     if is_dynamic {
         let (library, library_uuid) = dsc
@@ -220,7 +222,9 @@ fn resolve_absolute<'s>(
     let library_uuidtext = strings.get_uuidtext(&library_uuid);
     let source_found = library_uuidtext.is_some();
     let library = library_uuidtext.and_then(|u| u.image_path());
-    let process = strings.get_uuidtext(&main_uuid).and_then(|u| u.image_path());
+    let process = strings
+        .get_uuidtext(&main_uuid)
+        .and_then(|u| u.image_path());
 
     let format_string = if is_dynamic {
         dynamic_format_string(source_found)
@@ -258,7 +262,9 @@ fn resolve_uuid_relative<'s>(
     let library_uuidtext = strings.get_uuidtext(&uuid);
     let source_found = library_uuidtext.is_some();
     let library = library_uuidtext.and_then(|u| u.image_path());
-    let process = strings.get_uuidtext(&main_uuid).and_then(|u| u.image_path());
+    let process = strings
+        .get_uuidtext(&main_uuid)
+        .and_then(|u| u.image_path());
 
     let format_string = if is_dynamic {
         dynamic_format_string(source_found)
@@ -356,15 +362,7 @@ mod tests {
 
         // format_string_location with MSB set
         let location = 0x8000_0000u32;
-        let result = resolve_strings(
-            location,
-            0,
-            &formatter,
-            0,
-            0,
-            &catalog,
-            &strings,
-        );
+        let result = resolve_strings(location, 0, &formatter, 0, 0, &catalog, &strings);
 
         assert_eq!(result.format_string, None); // source file missing → no "%s"
         assert_eq!(result.process_uuid, Uuid::nil());
@@ -382,15 +380,7 @@ mod tests {
             ..Default::default()
         };
 
-        let result = resolve_strings(
-            12345,
-            0,
-            &formatter,
-            99,
-            99,
-            &catalog,
-            &strings,
-        );
+        let result = resolve_strings(12345, 0, &formatter, 99, 99, &catalog, &strings);
 
         // No catalog entry, no uuidtext → format_string and paths are None
         assert!(result.format_string.is_none());
@@ -413,15 +403,7 @@ mod tests {
 
         // format_string_location with DYNAMIC_OFFSET_FLAG set
         let location = 0x8000_1234u32;
-        let result = resolve_strings(
-            location,
-            0,
-            &formatter,
-            0,
-            0,
-            &catalog,
-            &strings,
-        );
+        let result = resolve_strings(location, 0, &formatter, 0, 0, &catalog, &strings);
 
         assert_eq!(result.format_string, None); // DSC not loaded → no "%s"
     }
@@ -438,15 +420,7 @@ mod tests {
         };
 
         let location = 0x8000_0000u32;
-        let result = resolve_strings(
-            location,
-            0,
-            &formatter,
-            0,
-            0,
-            &catalog,
-            &strings,
-        );
+        let result = resolve_strings(location, 0, &formatter, 0, 0, &catalog, &strings);
 
         assert_eq!(result.format_string, None); // UUIDText not loaded → no "%s"
         assert_eq!(
@@ -469,15 +443,7 @@ mod tests {
         };
 
         // pc_id = 102, format_string_location = 102 → string_offset == absolute_offset
-        let result = resolve_strings(
-            102,
-            102,
-            &formatter,
-            0,
-            0,
-            &catalog,
-            &strings,
-        );
+        let result = resolve_strings(102, 102, &formatter, 0, 0, &catalog, &strings);
         assert_eq!(result.format_string, None); // UUIDText not loaded → no "%s"
     }
 
@@ -495,15 +461,7 @@ mod tests {
         };
 
         let location = 0x8000_0000u32;
-        let result = resolve_strings(
-            location,
-            0,
-            &formatter,
-            0,
-            0,
-            &catalog,
-            &strings,
-        );
+        let result = resolve_strings(location, 0, &formatter, 0, 0, &catalog, &strings);
         // Should take shared_cache path → dynamic → "%s"
         assert_eq!(result.format_string, None); // DSC not loaded → no "%s"
     }

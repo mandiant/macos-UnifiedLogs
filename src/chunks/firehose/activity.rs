@@ -1,8 +1,8 @@
+use super::entry::FirehoseLogType;
+use super::flags::{FirehoseFlags, RawFormatterFlags};
 use nom::Parser;
 use nom::combinator::cond;
 use nom::number::complete::{le_u32, le_u64};
-use super::entry::FirehoseLogType;
-use super::flags::{FirehoseFlags, RawFormatterFlags};
 
 /// Parsed Activity entry body.
 #[derive(Debug, Clone, Copy)]

@@ -800,7 +800,9 @@ mod tests {
         let mut items = [RawFirehoseItem {
             item_type: RawItemKind::PrivateString,
             item_size: 161,
-            value: RawItemValue::Private { raw_item_type: 0x21 },
+            value: RawItemValue::Private {
+                raw_item_type: 0x21,
+            },
         }];
 
         fill_private_data(&mut items, test_data, 0, 0, 1);
@@ -826,7 +828,9 @@ mod tests {
         let mut items = [RawFirehoseItem {
             item_type: RawItemKind::PrivateNumber,
             item_size: 8,
-            value: RawItemValue::Private { raw_item_type: 0x01 },
+            value: RawItemValue::Private {
+                raw_item_type: 0x01,
+            },
         }];
 
         fill_private_data(&mut items, test_data, 0, 0, 1);
@@ -860,31 +864,41 @@ mod tests {
             RawFirehoseItem {
                 item_type: RawItemKind::Sensitive,
                 item_size: 0,
-                value: RawItemValue::Private { raw_item_type: 0x45 },
+                value: RawItemValue::Private {
+                    raw_item_type: 0x45,
+                },
             },
             // 0x01 PrivateNumber with size 0x8000 — should stay Private
             RawFirehoseItem {
                 item_type: RawItemKind::PrivateNumber,
                 item_size: 0x8000,
-                value: RawItemValue::Private { raw_item_type: 0x01 },
+                value: RawItemValue::Private {
+                    raw_item_type: 0x01,
+                },
             },
             // 0x01 PrivateNumber with size 0x8000 — should stay Private
             RawFirehoseItem {
                 item_type: RawItemKind::PrivateNumber,
                 item_size: 0x8000,
-                value: RawItemValue::Private { raw_item_type: 0x01 },
+                value: RawItemValue::Private {
+                    raw_item_type: 0x01,
+                },
             },
             // 0x41 PrivateObject with size 0 — should stay Private
             RawFirehoseItem {
                 item_type: RawItemKind::PrivateObject,
                 item_size: 0,
-                value: RawItemValue::Private { raw_item_type: 0x41 },
+                value: RawItemValue::Private {
+                    raw_item_type: 0x41,
+                },
             },
             // 0x81 PrivateString with size 140 — should be filled with the string
             RawFirehoseItem {
                 item_type: RawItemKind::PrivateString,
                 item_size: 140,
-                value: RawItemValue::Private { raw_item_type: 0x81 },
+                value: RawItemValue::Private {
+                    raw_item_type: 0x81,
+                },
             },
         ];
 

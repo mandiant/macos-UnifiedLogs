@@ -331,9 +331,10 @@ fn test_visit_in_memory_provider_matches_logarchive() {
         ));
     }
     for path in collect_timesync_paths(&test_path.join("timesync")) {
-        memory_provider
-            .timesync
-            .push((path.to_string_lossy().to_string(), std::fs::read(&path).unwrap()));
+        memory_provider.timesync.push((
+            path.to_string_lossy().to_string(),
+            std::fs::read(&path).unwrap(),
+        ));
     }
     for uuid in archive_provider.uuidtext_uuids() {
         memory_provider
@@ -350,7 +351,7 @@ fn test_visit_in_memory_provider_matches_logarchive() {
     let mut archive_messages = 0_usize;
     visit_logarchive(&test_path, |entry| {
         archive_count += 1;
-        if archive_count % 1000 == 0 {
+        if archive_count.is_multiple_of(1000) {
             archive_messages += entry.message().len();
         }
     })
@@ -360,7 +361,7 @@ fn test_visit_in_memory_provider_matches_logarchive() {
     let mut memory_messages = 0_usize;
     visit_provider(&memory_provider, |entry| {
         memory_count += 1;
-        if memory_count % 1000 == 0 {
+        if memory_count.is_multiple_of(1000) {
             memory_messages += entry.message().len();
         }
     })

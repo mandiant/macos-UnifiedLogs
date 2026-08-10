@@ -171,7 +171,9 @@ impl crate::traits::FileProvider for LiveSystemProvider {
         local_files(collect_tracev3_paths(&self.diagnostics_root))
     }
     fn timesync_files(&self) -> impl Iterator<Item = impl SourceFile> {
-        local_files(collect_timesync_paths(&self.diagnostics_root.join("timesync")))
+        local_files(collect_timesync_paths(
+            &self.diagnostics_root.join("timesync"),
+        ))
     }
     fn read_uuidtext(&self, uuid: &Uuid) -> Result<Vec<u8>, Error> {
         std::fs::read(uuidtext_path(&self.uuidtext_root, uuid))
@@ -347,7 +349,8 @@ pub fn collect_uuidtext_uuids(root: &Path) -> Vec<Uuid> {
         let Ok(file_entries) = std::fs::read_dir(&dir_path) else {
             continue;
         };
-        let file_paths = sorted_paths(file_entries.filter_map(|entry| entry.ok().map(|e| e.path())));
+        let file_paths =
+            sorted_paths(file_entries.filter_map(|entry| entry.ok().map(|e| e.path())));
         for file_path in file_paths {
             if !file_path.is_file() {
                 continue;
@@ -497,7 +500,10 @@ mod tests {
             LogFileType::from(Path::new("/x/timesync/A5D3382D.timesync")),
             LogFileType::Timesync
         );
-        assert_eq!(LogFileType::from(Path::new("/x/other.txt")), LogFileType::Invalid);
+        assert_eq!(
+            LogFileType::from(Path::new("/x/other.txt")),
+            LogFileType::Invalid
+        );
     }
 
     #[test]
@@ -506,7 +512,9 @@ mod tests {
 
         let uuid = Uuid::from_u128(0x1234_5678_9abc_def0_1234_5678_9abc_def0);
         let mut provider = InMemoryProvider::default();
-        provider.tracev3.push(("mem://a.tracev3".into(), vec![1, 2, 3]));
+        provider
+            .tracev3
+            .push(("mem://a.tracev3".into(), vec![1, 2, 3]));
         provider.uuidtext.insert(uuid, vec![4, 5]);
 
         let mut sources: Vec<_> = provider.tracev3_files().collect();
