@@ -28,29 +28,33 @@ Data that is currently extracted includes:
 
 ## Running
 
-An example binary is available to download
+Example binaries live in `examples/`:
 
-- `unifiedlog_iterator` - Can parse a logarchive into a JSOL or CSV file. It can also parse the logs
-  on a live system. The output file will be quite large
+- `unifiedlog_iterator` - Parses a logarchive (or the logs on a live macOS system)
+  into a JSONL or CSV file, with bookmark/resume support. The output file will be
+  quite large.
+- `dump` - Minimal JSONL dump of a logarchive.
+- `logrs` - JSONL output for a logarchive or live system, including a
+  timesync-only mode.
 
+```bash
+cd examples && cargo run --release -p unifiedlog_iterator -- --mode log-archive --input system_logs.logarchive
+```
 
-## Rewrite Design
+## Design
 
-Starting with version 0.7.0, the library received a large rewrite to speed up the parsing of Unified Log data.  
-The rewrite parser is available with the `rewrite` feature. Its core type is
-`LogEntry<'a, 'b>` — a zero-copy log entry that borrows directly from the parsed
-file buffers. Messages are formatted lazily on demand via `.message()`, avoiding
-heap allocation until explicitly needed.
+The core type is `LogEntry<'a, 'b>` — a zero-copy log entry that borrows directly
+from the parsed file buffers. Messages are formatted lazily on demand via
+`.message()`, avoiding heap allocation until explicitly needed. `UUIDText` and
+shared-cache (DSC) string files are read lazily as log entries reference them,
+keeping memory proportional to what the logs actually use; see `cache::StringStorage::preload`
+for the eager mode. See `ARCHITECTURE.md` for the full pipeline.
 
 ## Usage
 
-The default feature is still `legacy` so existing developers can upgrade without API
-breakage. New integrations should use the rewrite parser by disabling default
-features and enabling `rewrite`:
-
 ```toml
 [dependencies]
-macos-unifiedlogs = { version = "0.7", default-features = false, features = ["rewrite"] }
+macos-unifiedlogs = "0.8"
 ```
 
 ### Parsing a logarchive directory
@@ -88,37 +92,45 @@ with `logarchive::visit_provider`.
 ### Parsing a single tracev3 file
 
 ```rust
-use macos_unifiedlogs::{
-    dsc::RawSharedCacheStrings,
-    logarchive::{load_timesync_data, load_file_buffers_by_uuid, load_uuidtext_buffers},
-    timesync::TimestampResolver,
-    tracev3::{visit_tracev3, OversizeCache},
-    uuidtext::RawUUIDText,
-};
-use std::collections::HashMap;
+use macos_unifiedlogs::logarchive::visit_logarchive_tracev3_file;
+use std::path::Path;
 
-// Load context from the logarchive directory
-let base = std::path::Path::new("system_logs.logarchive");
-let resolver = TimestampResolver::new(load_timesync_data(&base.join("timesync")).unwrap());
-
-let dsc_buffers = load_file_buffers_by_uuid(&base.join("dsc"));
-let dsc_files: HashMap<_, RawSharedCacheStrings<'_>> = dsc_buffers.iter()
-    .filter_map(|(uuid, buf)| Some((*uuid, RawSharedCacheStrings::parse(buf).ok()?.1)))
-    .collect();
-
-let uuidtext_buffers = load_uuidtext_buffers(base);
-let uuidtext_files: HashMap<_, RawUUIDText<'_>> = uuidtext_buffers.iter()
-    .filter_map(|(uuid, buf)| Some((*uuid, RawUUIDText::parse(buf).ok()?.1)))
-    .collect();
-
-// Parse a single file
-let data = std::fs::read(base.join("Persist/0000000000000004.tracev3")).unwrap();
-let mut oversize_cache = OversizeCache::new();
-visit_tracev3(&data, &resolver, &dsc_files, &uuidtext_files, &mut oversize_cache, |entry| {
-    let message = entry.message();
-    println!("{:?} {:?} {}", entry.event_type, entry.log_type, message);
-}).unwrap();
+visit_logarchive_tracev3_file(
+    Path::new("system_logs.logarchive"),
+    "Persist/0000000000000004.tracev3",
+    |entry| {
+        let message = entry.message();
+        println!("{:?} {:?} {message}", entry.event_type, entry.log_type);
+    },
+)
+.unwrap();
 ```
+
+### Parsing from a custom source (no filesystem required)
+
+Implement `traits::FileProvider` to feed the parser from anywhere — a mounted
+image, an evidence container, or plain memory. `filesystem::InMemoryProvider`
+is a ready-made in-memory implementation:
+
+```rust
+use macos_unifiedlogs::filesystem::InMemoryProvider;
+use macos_unifiedlogs::logarchive::visit_provider;
+
+let mut provider = InMemoryProvider::default();
+provider.tracev3.push(("mem://persist-1.tracev3".into(), tracev3_bytes));
+provider.timesync.push(("mem://boot.timesync".into(), timesync_bytes));
+provider.uuidtext.insert(some_uuid, uuidtext_bytes);
+provider.dsc.insert(dsc_uuid, dsc_bytes);
+
+visit_provider(&provider, |entry| {
+    println!("{}", entry.message());
+})
+.unwrap();
+```
+
+`UUIDText`/DSC data is requested lazily by UUID as entries reference it. Use
+`logarchive::visit_provider_preloaded` to load everything up front instead
+(maximum throughput at maximum memory).
 
 
 ## Limitations

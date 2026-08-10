@@ -6,24 +6,28 @@ architecture.
 
 ## Parsing pipeline
 
-1. **Timesync** — Parse timesync files for timestamp boot/offset data
-2. **TraceV3** — Parse tracev3 binary files into chunks (header, catalog, firehose, oversize, simpledump, statedump)
-3. **Resolve** — Look up format strings from UUIDText files and DSC (shared string cache)
-4. **Format** — Apply printf-style formatting with decoded message items
-5. **Emit** — Deliver `LogEntry` via callback with resolved process/library names, timestamps, subsystem/category
+1. **Provider** — A `traits::FileProvider` supplies tracev3/timesync sources and UUIDText/DSC bytes (logarchive, live system, or any custom source — no filesystem required)
+2. **Timesync** — Parse timesync sources for timestamp boot/offset data
+3. **TraceV3** — Parse tracev3 binary buffers into chunks (header, catalog, firehose, oversize, simpledump, statedump)
+4. **Resolve** — Look up format strings through a lazily-loading `StringCatalog` (UUIDText files and DSC shared string cache are read on demand, by UUID)
+5. **Format** — Apply printf-style formatting with decoded message items
+6. **Emit** — Deliver `LogEntry` via callback with resolved process/library names, timestamps, subsystem/category
 
 ```
-                        visit_logarchive(path, callback)
+        visit_logarchive(path, cb) / visit_live_system(cb) / visit_provider(&provider, cb)
+                                      │
+                          traits::FileProvider
                                       │
           ┌───────────────────────────┼──────────────────────────┐
           │                           │                          │
-    ┌─────┴──────┐  ┌────────────────┴────────────────┐  ┌─────┴──────────┐
-    │ timesync/  │  │ Persist/ Special/ HighVolume/ … │  │ dsc/ UUIDText/ │
-    └─────┬──────┘  │         .tracev3 files          │  └─────┬──────────┘
-          │         └────────────────┬────────────────┘        │
+    ┌─────┴──────┐  ┌────────────────┴────────────────┐  ┌─────┴──────────────┐
+    │ timesync   │  │        tracev3 sources          │  │ UUIDText/DSC bytes │
+    │  sources   │  │  (Persist/ Special/ HighVolume…)│  │  read lazily, by   │
+    └─────┬──────┘  └────────────────┬────────────────┘  │        UUID        │
+          │                          │                   └─────┬──────────────┘
           ▼                          │                          ▼
-  TimestampResolver                  │              SharedCacheStrings (DSC)
-                                     │              UUIDText files
+  TimestampResolver                  │            StringStorage + StringCatalog
+                                     │            (append-only, parse-once views)
                                      ▼
                        ┌──────────────────────────┐
                        │       ChunksReader       │  per .tracev3
@@ -51,7 +55,7 @@ architecture.
              Activity
                         │
                         ▼
-             resolve_strings() ◄── DSC + UUIDText + Oversize cache
+             resolve_strings() ◄── StringCatalog (lazy DSC + UUIDText) + Oversize cache
                         │
                         ▼
               LogEntry<'a,'b>   zero-copy, borrows from buffers
