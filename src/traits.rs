@@ -6,10 +6,6 @@ use crate::{dsc::RawSharedCacheStrings as SharedCacheStrings, uuidtext::RawUUIDT
 
 /// Implementing this trait allows library consumers to provide the files required by the parser in
 /// arbitrary formats, as long as they are provided as an iterator of items that implement \[Read\].
-///
-/// For help mapping files to the correct filetype, see the
-/// [`LogFileType`](crate::filesystem::LogFileType) enum's
-/// [From]<&[Path](std::path::Path)> implementation.
 pub trait FileProvider {
     /// Provides an iterator of `.tracev3` files from the
     /// `/private/var/db/diagnostics/((HighVolume|Signpost|Trace|Special)/`, plus the

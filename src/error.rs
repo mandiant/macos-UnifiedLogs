@@ -1,7 +1,7 @@
 use super::*;
 use std::str::Utf8Error;
 
-/// Error returned by all rewrite-module parsers.
+/// Error returned by all parsers in this crate.
 #[derive(thiserror::Error, Debug)]
 pub enum ParseError {
     #[error(

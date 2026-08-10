@@ -1,4 +1,4 @@
-//! Output types for the rewrite pipeline.
+//! Output types of the parsing pipeline.
 //!
 //! `LogEntry<'a, 'b>` is the zero-copy replacement for `LogData` + `RcString`.
 //! All fields borrow from source data buffers. The `message` is formatted
@@ -142,7 +142,7 @@ pub enum ItemsData<'b> {
 /// Zero-copy log entry — borrows strings from source data buffers.
 ///
 /// All `&'a str` fields borrow from the tracev3 file buffer, DSC files,
-/// or `UUIDText` files passed to [`super::tracev3::process_tracev3`].
+/// or `UUIDText` files passed to [`super::tracev3::visit_tracev3`].
 /// The `'b` lifetime covers raw item bytes borrowed from chunk data or
 /// the oversize cache — scoped to a single chunkset iteration.
 ///

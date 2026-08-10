@@ -584,8 +584,8 @@ pub fn fill_private_data_compat<'a>(
     }
 }
 
-/// Leak a String to get a `&'static str`. Used only while materializing old-pipeline
-/// owned private strings into rewrite's borrowed item representation.
+/// Leak a String to get a `&'static str`. Used only while materializing
+/// owned private strings into the borrowed item representation.
 fn leak_string(s: String) -> &'static str {
     Box::leak(s.into_boxed_str())
 }

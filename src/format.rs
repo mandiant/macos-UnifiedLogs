@@ -603,7 +603,7 @@ fn parse_specifier(bytes: &[u8]) -> (FormatSpec, usize, bool) {
 
 /// Format a printf-style log message by substituting items into the format string.
 ///
-/// Returns an owned `String` — this is where the rewrite transitions from
+/// Returns an owned `String` — this is where the pipeline transitions from
 /// zero-copy borrowed data to owned formatted output.
 pub fn format_message(format_string: Option<&str>, items: &[RawFirehoseItem<'_>]) -> String {
     let fmt = match format_string {

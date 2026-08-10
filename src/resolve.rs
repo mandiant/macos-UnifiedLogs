@@ -24,7 +24,7 @@ pub struct ResolvedStrings<'a> {
     /// UUID of the main process executable.
     pub process_uuid: Uuid,
     /// Whether the underlying source file (DSC or `UUIDText`) was found.
-    /// Used by compat layer to distinguish Level 1 vs Level 2 error messages.
+    /// Distinguishes Level 1 vs Level 2 error messages.
     pub source_found: bool,
 }
 
