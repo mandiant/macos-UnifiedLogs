@@ -1,5 +1,6 @@
 use super::{chunks_reader::*, *};
 use nom::number::complete::{le_u32, le_u64};
+use nom::{IResult, Parser};
 use std::rc::Rc;
 
 pub mod firehose;

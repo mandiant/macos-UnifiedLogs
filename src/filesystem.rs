@@ -131,7 +131,8 @@ pub fn collect_tracev3_paths(base: &Path) -> Vec<PathBuf> {
     paths
 }
 
-fn sorted_paths(paths: impl Iterator<Item = PathBuf>) -> Vec<PathBuf> {
+/// Sort paths to keep parser output deterministic across filesystems.
+pub(crate) fn sorted_paths(paths: impl Iterator<Item = PathBuf>) -> Vec<PathBuf> {
     let mut paths = paths.collect::<Vec<_>>();
     paths.sort();
     paths

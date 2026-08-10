@@ -23,7 +23,6 @@
 )]
 
 pub use error::*;
-use nom::{IResult, Parser};
 
 // pub mod cache; // to be ported to vNext (or other design entirely)
 pub mod catalog;

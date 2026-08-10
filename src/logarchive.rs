@@ -5,14 +5,14 @@
 
 use super::dsc::RawSharedCacheStrings;
 use super::error::ParseError;
-use super::filesystem::{FileProvider, LiveSystemProvider, LogarchiveProvider};
+use super::filesystem::{FileProvider, LiveSystemProvider, LogarchiveProvider, sorted_paths};
 use super::log_entry::LogEntry;
 use super::timesync::{RawTimesyncBoot, TimestampResolver, parse_timesync_file};
 use super::tracev3::{OversizeCache, visit_tracev3};
 use super::uuidtext::RawUUIDText;
 use log::warn;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::rc::Rc;
 use uuid::Uuid;
 
@@ -48,7 +48,7 @@ pub fn visit_live_system(
     visit_provider(&provider, callback)
 }
 
-/// Process all tracev3 files from a rewrite filesystem provider.
+/// Process all tracev3 files from a filesystem provider.
 ///
 /// The callback receives each `LogEntry` as it is produced. Individual file or parse
 /// failures are logged as warnings and skipped — only a missing timesync directory
@@ -67,7 +67,7 @@ pub fn visit_provider(
     let uuidtext_buffers = load_uuidtext_buffers(&provider.uuidtext_root());
     let uuidtext_files = parse_uuidtext_buffers(&uuidtext_buffers);
 
-    // 4. Collect and process all tracev3 files
+    // 3. Collect and process all tracev3 files
     let tracev3_paths = provider.tracev3_paths();
     let mut oversize_cache = OversizeCache::new();
 
@@ -151,7 +151,7 @@ pub fn visit_logarchive_tracev3_files<P: AsRef<Path>>(
 }
 
 // ---------------------------------------------------------------------------
-// Private helpers
+// Support-file loading
 // ---------------------------------------------------------------------------
 
 /// Load and merge all `.timesync` files from the timesync directory.
@@ -293,13 +293,6 @@ pub fn parse_uuidtext_buffers(buffers: &[(Uuid, Vec<u8>)]) -> HashMap<Uuid, RawU
             Some((*uuid, uuidtext))
         })
         .collect()
-}
-
-/// Sort paths to keep parser output deterministic across filesystems.
-fn sorted_paths(paths: impl Iterator<Item = PathBuf>) -> Vec<PathBuf> {
-    let mut paths = paths.collect::<Vec<_>>();
-    paths.sort();
-    paths
 }
 
 // ---------------------------------------------------------------------------
