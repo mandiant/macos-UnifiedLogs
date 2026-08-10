@@ -29,6 +29,7 @@ strum = { version = "0.28.0", features = ["derive"] }
 thiserror = "2.0.18"
 num_enum = "0.7.6"
 bitflags = "2.13.0"
+elsa = "1.11.2"
 
 [dev-dependencies]
 criterion = "0.8.2"

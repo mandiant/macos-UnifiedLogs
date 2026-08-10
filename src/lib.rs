@@ -24,7 +24,7 @@
 
 pub use error::*;
 
-// pub mod cache; // to be ported to vNext (or other design entirely)
+pub mod cache;
 pub mod catalog;
 pub mod chunk;
 pub mod chunks;
