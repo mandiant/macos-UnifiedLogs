@@ -25,5 +25,5 @@ dump_roundhouse:
 unifiedlog_iterator_live:
     cd examples && cargo run --release -p unifiedlog_iterator -- --mode live
 
-unifiedlog_iterator_logarchive path:
+unifiedlog_iterator_logarchive path="../tests/test_data/system_logs_big_sur_public_private_data_mix.logarchive":
     cd examples && cargo run --release -p unifiedlog_iterator -- --mode log-archive --input "{{path}}"
