@@ -1,8 +1,9 @@
 use chrono::SecondsFormat;
-use dump_helpers::{DumpEntry, no_output_enabled, write_entry};
+use dump_helpers::{DumpEntry, memory_budget, no_output_enabled, write_entry};
 use macos_unifiedlogs::{
+    filesystem::LogarchiveProvider,
     log_entry::{EventType, LogEntry},
-    logarchive::visit_logarchive,
+    logarchive::{VisitOptions, visit_provider_with_options},
 };
 use std::path::PathBuf;
 
@@ -11,10 +12,15 @@ mod dump_helpers;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let path = argument_path()?;
     let no_output = no_output_enabled();
+    let options = VisitOptions {
+        memory_budget: memory_budget(),
+        ..VisitOptions::default()
+    };
     let mut result: Result<(), Box<dyn std::error::Error>> = Ok(());
     let mut index = 0;
 
-    visit_logarchive(&path, |entry| {
+    let provider = LogarchiveProvider::new(&path);
+    visit_provider_with_options(&provider, options, |entry| {
         if result.is_err() {
             return;
         }

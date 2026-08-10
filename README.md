@@ -30,7 +30,9 @@ from the parsed file buffers. Messages are formatted lazily on demand via
 `.message()`, avoiding heap allocation until explicitly needed. `UUIDText` and
 shared-cache (DSC) string files are read lazily as log entries reference them,
 keeping memory proportional to what the logs actually use; see `cache::StringStorage::preload`
-for the eager mode. See `ARCHITECTURE.md` for the full pipeline.
+for the eager mode. For long-running processes, `logarchive::VisitOptions::memory_budget`
+caps loaded string data by reclaiming it between tracev3 files (off by default).
+See `ARCHITECTURE.md` for the full pipeline.
 
 ## Usage
 

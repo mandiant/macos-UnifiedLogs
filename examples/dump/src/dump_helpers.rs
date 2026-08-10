@@ -36,6 +36,14 @@ pub(crate) fn no_output_enabled() -> bool {
         .unwrap_or(false)
 }
 
+/// `MEMORY_BUDGET_MB=<n>` caps loaded string data, reclaimed between tracev3 files.
+pub(crate) fn memory_budget() -> Option<usize> {
+    std::env::var("MEMORY_BUDGET_MB")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .map(|mb| mb * 1024 * 1024)
+}
+
 pub(crate) fn write_entry(entry: &DumpEntry) -> Result<(), Box<dyn std::error::Error>> {
     let stdout = io::stdout();
     let mut stdout = stdout.lock();

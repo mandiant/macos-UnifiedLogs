@@ -61,7 +61,7 @@ pub fn visit_provider(
     provider: &impl FileProvider,
     callback: impl for<'a, 'b> FnMut(LogEntry<'a, 'b>),
 ) -> Result<(), std::io::Error> {
-    visit_provider_inner(provider, false, callback)
+    visit_provider_with_options(provider, VisitOptions::default(), callback)
 }
 
 /// Like [`visit_provider`], but eagerly loads every `UUIDText`/DSC file up front.
@@ -71,47 +71,86 @@ pub fn visit_provider_preloaded(
     provider: &impl FileProvider,
     callback: impl for<'a, 'b> FnMut(LogEntry<'a, 'b>),
 ) -> Result<(), std::io::Error> {
-    visit_provider_inner(provider, true, callback)
+    visit_provider_with_options(
+        provider,
+        VisitOptions {
+            preload: true,
+            ..VisitOptions::default()
+        },
+        callback,
+    )
 }
 
-fn visit_provider_inner(
+/// Tuning knobs for [`visit_provider_with_options`].
+#[derive(Debug, Clone, Copy, Default)]
+pub struct VisitOptions {
+    /// Eagerly load every `UUIDText`/DSC file up front instead of on demand.
+    pub preload: bool,
+    /// Reclaim string storage once the loaded `UUIDText`/DSC bytes exceed this
+    /// soft threshold. `None` (the default) never reclaims.
+    ///
+    /// The check runs between tracev3 files — the only points where no log
+    /// entry borrows the storage — so a single file's working set may
+    /// overshoot the threshold before reclaim happens. Reclaimed files are
+    /// re-read and re-parsed if later entries reference them again: lower
+    /// thresholds trade throughput for a bounded footprint in long-running
+    /// processes.
+    pub memory_budget: Option<usize>,
+}
+
+/// Like [`visit_provider`], with explicit [`VisitOptions`].
+pub fn visit_provider_with_options(
     provider: &impl FileProvider,
-    preload: bool,
+    options: VisitOptions,
     mut callback: impl for<'a, 'b> FnMut(LogEntry<'a, 'b>),
 ) -> Result<(), std::io::Error> {
     // 1. Timesync → TimestampResolver
     let timesync_data = load_timesync_data(provider)?;
     let resolver = TimestampResolver::new(timesync_data);
 
-    // 2. DSC and UUIDText support-file access (lazy unless preloading)
-    let storage = StringStorage::new(provider);
-    if preload {
-        storage.preload();
-    }
-    let strings = StringCatalog::new(&storage);
-
-    // 3. Process all tracev3 sources
+    // 2. Oversize entries (owned) survive storage reclaims
     let mut oversize_cache = OversizeCache::new();
+    let mut sources = provider.tracev3_files();
 
-    for mut source in provider.tracev3_files() {
-        let mut data = Vec::new();
-        let read_result = source.reader().read_to_end(&mut data);
-        if let Err(e) = read_result {
-            warn!("Failed to read {}: {e}", source.source_path());
-            continue;
+    // 3. Process all tracev3 sources, one storage generation at a time.
+    // Entries only live inside the callback, so dropping the storage between
+    // two files is safe; the budget decides when a fresh generation starts.
+    'generations: loop {
+        let storage = StringStorage::new(provider);
+        if options.preload {
+            storage.preload();
         }
+        let strings = StringCatalog::new(&storage);
 
-        if let Err(e) = visit_tracev3(
-            &data,
-            &resolver,
-            &strings,
-            &mut oversize_cache,
-            Rc::new(PathBuf::from(source.source_path())),
-            |entry| {
-                callback(entry);
-            },
-        ) {
-            warn!("Failed to process {}: {e}", source.source_path());
+        loop {
+            let Some(mut source) = sources.next() else {
+                break 'generations;
+            };
+            let mut data = Vec::new();
+            let read_result = source.reader().read_to_end(&mut data);
+            if let Err(e) = read_result {
+                warn!("Failed to read {}: {e}", source.source_path());
+                continue;
+            }
+
+            if let Err(e) = visit_tracev3(
+                &data,
+                &resolver,
+                &strings,
+                &mut oversize_cache,
+                Rc::new(PathBuf::from(source.source_path())),
+                |entry| {
+                    callback(entry);
+                },
+            ) {
+                warn!("Failed to process {}: {e}", source.source_path());
+            }
+
+            if let Some(budget) = options.memory_budget
+                && storage.loaded_bytes() > budget
+            {
+                break; // start a new generation, dropping all loaded strings
+            }
         }
     }
 
@@ -316,6 +355,41 @@ mod tests {
             );
         })
         .unwrap();
+    }
+
+    #[test]
+    fn test_visit_with_memory_budget_matches_unbudgeted() {
+        let base = test_data_path().join("system_logs_big_sur.logarchive");
+        let provider = LogarchiveProvider::new(&base);
+
+        // 1-byte budget: a fresh storage generation after every tracev3 file.
+        let options = VisitOptions {
+            memory_budget: Some(1),
+            ..VisitOptions::default()
+        };
+        let mut count = 0_usize;
+        let mut messages = 0_usize;
+        visit_provider_with_options(&provider, options, |entry| {
+            count += 1;
+            if count.is_multiple_of(1000) {
+                messages += entry.message().len();
+            }
+        })
+        .unwrap();
+
+        let mut unbudgeted_count = 0_usize;
+        let mut unbudgeted_messages = 0_usize;
+        visit_provider(&provider, |entry| {
+            unbudgeted_count += 1;
+            if unbudgeted_count.is_multiple_of(1000) {
+                unbudgeted_messages += entry.message().len();
+            }
+        })
+        .unwrap();
+
+        assert_eq!(count, 747_616);
+        assert_eq!(count, unbudgeted_count);
+        assert_eq!(messages, unbudgeted_messages);
     }
 
     #[test]

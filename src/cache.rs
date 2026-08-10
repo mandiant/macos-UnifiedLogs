@@ -8,11 +8,14 @@
 //! memory up front. Call [`StringStorage::preload`] to restore the eager
 //! behavior (maximum throughput at maximum memory).
 //!
-//! Loaded data is never evicted: log entries borrow `&str` slices from the
-//! stored buffers (zero-copy), so the memory ceiling is exactly the eager
-//! footprint, reached only if every file ends up referenced.
+//! A storage never evicts individual entries: log entries borrow `&str`
+//! slices from the stored buffers (zero-copy), so within one storage the
+//! memory ceiling is exactly the eager footprint. For a bounded footprint in
+//! long-running processes, drop and recreate the storage at points where no
+//! entries are alive — `logarchive::VisitOptions::memory_budget` automates
+//! this between tracev3 files, driven by [`StringStorage::loaded_bytes`].
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 
 use elsa::FrozenMap;
@@ -32,6 +35,7 @@ pub struct StringStorage<P: FileProvider> {
     provider: P,
     dsc: FrozenMap<Uuid, Box<[u8]>>,
     uuidtext: FrozenMap<Uuid, Box<[u8]>>,
+    loaded: Cell<usize>,
 }
 
 impl<P: FileProvider> StringStorage<P> {
@@ -44,7 +48,16 @@ impl<P: FileProvider> StringStorage<P> {
             provider,
             dsc: FrozenMap::new(),
             uuidtext: FrozenMap::new(),
+            loaded: Cell::new(0),
         }
+    }
+
+    /// Total bytes of `UUIDText`/DSC file data loaded so far.
+    ///
+    /// Drives `logarchive::VisitOptions::memory_budget`; also useful for
+    /// callers implementing their own reclaim policy.
+    pub fn loaded_bytes(&self) -> usize {
+        self.loaded.get()
     }
 
     /// Eagerly load every enumerable `UUIDText`/DSC file.
@@ -66,7 +79,10 @@ impl<P: FileProvider> StringStorage<P> {
             return Some(bytes);
         }
         match self.provider.read_dsc(uuid) {
-            Ok(bytes) => Some(self.dsc.insert(*uuid, bytes.into_boxed_slice())),
+            Ok(bytes) => {
+                self.loaded.set(self.loaded.get() + bytes.len());
+                Some(self.dsc.insert(*uuid, bytes.into_boxed_slice()))
+            }
             Err(e) => {
                 warn!("Failed to read DSC {uuid}: {e}");
                 None
@@ -80,7 +96,10 @@ impl<P: FileProvider> StringStorage<P> {
             return Some(bytes);
         }
         match self.provider.read_uuidtext(uuid) {
-            Ok(bytes) => Some(self.uuidtext.insert(*uuid, bytes.into_boxed_slice())),
+            Ok(bytes) => {
+                self.loaded.set(self.loaded.get() + bytes.len());
+                Some(self.uuidtext.insert(*uuid, bytes.into_boxed_slice()))
+            }
             Err(e) => {
                 warn!("Failed to read UUIDText {uuid}: {e}");
                 None
