@@ -9,14 +9,14 @@ use super::chunks::firehose::entry::FirehoseLogType;
 use super::chunks::firehose::flags::{FirehoseFlags, FormatterType};
 use super::chunks::oversize::RawOversize;
 use super::chunks::simpledump::RawSimpleDump;
+use super::cache::StringCatalog;
 use super::chunks::statedump::RawStatedump;
-use super::dsc::RawSharedCacheStrings;
 use super::error::{NomExt, ParseError};
 use super::header::RawHeaderChunk;
 use super::log_entry::{EventType, ItemsData, LogEntry, LogType, MessageFlags, PrivateDataContext};
 use super::resolve::resolve_strings;
 use super::timesync::TimestampResolver;
-use super::uuidtext::RawUUIDText;
+use super::traits::FileProvider;
 use log::warn;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -69,19 +69,17 @@ impl OversizeCache {
 /// The callback receives each log entry as it is produced. Entry-level errors
 /// (bad body parse, missing oversize data) are logged as warnings and skipped.
 /// The same evidence path is attached to every emitted `LogEntry`.
-#[allow(clippy::too_many_arguments)]
-pub fn visit_tracev3<'a>(
-    data: &'a [u8],
+pub fn visit_tracev3<'d, 's: 'd>(
+    data: &'d [u8],
     resolver: &TimestampResolver,
-    dsc_files: &'a HashMap<Uuid, RawSharedCacheStrings<'a>>,
-    uuidtext_files: &'a HashMap<Uuid, RawUUIDText<'a>>,
+    strings: &StringCatalog<'s, impl FileProvider>,
     oversize_cache: &mut OversizeCache,
     evidence: Rc<PathBuf>,
-    mut callback: impl for<'b> FnMut(LogEntry<'a, 'b>),
+    mut callback: impl for<'b> FnMut(LogEntry<'d, 'b>),
 ) -> Result<(), ParseError> {
-    let mut current_header: Option<RawHeaderChunk<'a>> = None;
-    let mut current_catalog: Option<RawCatalogChunk<'a>> = None;
-    let mut deferred_readers: Vec<ChunkSetReader<'a>> = Vec::new();
+    let mut current_header: Option<RawHeaderChunk<'d>> = None;
+    let mut current_catalog: Option<RawCatalogChunk<'d>> = None;
+    let mut deferred_readers: Vec<ChunkSetReader<'d>> = Vec::new();
 
     for top_chunk in ChunksReader::new(data) {
         let top_chunk = match top_chunk {
@@ -155,8 +153,7 @@ pub fn visit_tracev3<'a>(
                                 header,
                                 catalog,
                                 resolver,
-                                dsc_files,
-                                uuidtext_files,
+                                strings,
                                 oversize_cache,
                                 &evidence,
                                 &mut callback,
@@ -373,16 +370,15 @@ fn legacy_private_data_start<'a>(fh: &RawFirehose<'a>) -> Option<&'a [u8]> {
 // ---------------------------------------------------------------------------
 
 #[allow(clippy::too_many_arguments)]
-fn visit_firehose_entries<'a: 'b, 'b>(
+fn visit_firehose_entries<'d: 'b, 'b, 's: 'd>(
     fh: &RawFirehose<'b>,
-    header: &RawHeaderChunk<'a>,
-    catalog: &RawCatalogChunk<'a>,
+    header: &RawHeaderChunk<'d>,
+    catalog: &RawCatalogChunk<'d>,
     resolver: &TimestampResolver,
-    dsc_files: &'a HashMap<Uuid, RawSharedCacheStrings<'a>>,
-    uuidtext_files: &'a HashMap<Uuid, RawUUIDText<'a>>,
+    strings: &StringCatalog<'s, impl FileProvider>,
     oversize_cache: &'b OversizeCache,
     evidence: &Rc<PathBuf>,
-    callback: &mut impl FnMut(LogEntry<'a, 'b>),
+    callback: &mut impl FnMut(LogEntry<'d, 'b>),
 ) {
     let boot_uuid = header.boot_uuid;
     let timezone_name = extract_timezone_name(header.timezone_path);
@@ -468,7 +464,7 @@ fn visit_firehose_entries<'a: 'b, 'b>(
                 // Process/library from UUIDText via main_uuid
                 let entry_info = catalog.get_process_info(fh.first_proc_id, fh.second_proc_id);
                 let main_uuid = entry_info.map_or(Uuid::nil(), |e| e.main_uuid);
-                let process = uuidtext_files.get(&main_uuid).and_then(|u| u.image_path());
+                let process = strings.get_uuidtext(&main_uuid).and_then(|u| u.image_path());
 
                 callback(LogEntry {
                     subsystem: None,
@@ -565,8 +561,7 @@ fn visit_firehose_entries<'a: 'b, 'b>(
             fh.first_proc_id,
             fh.second_proc_id,
             catalog,
-            dsc_files,
-            uuidtext_files,
+            strings,
         );
 
         // Generate error string for invalid format string offsets (old pipeline parity)

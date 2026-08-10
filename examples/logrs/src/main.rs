@@ -1,7 +1,7 @@
 use crate::{viewer::show::Commands, writer::OutputWriter};
 use clap::{Parser, ValueEnum, builder};
 use log::{LevelFilter, info};
-use macos_unifiedlogs::filesystem::{FileProvider, LiveSystemProvider, LogarchiveProvider};
+use macos_unifiedlogs::filesystem::{LiveSystemProvider, LogarchiveProvider};
 use macos_unifiedlogs::logarchive::{load_timesync_data, visit_live_system, visit_logarchive};
 use simplelog::{ColorChoice, Config, TermLogger, TerminalMode};
 use std::{fs, io::Write, path::PathBuf};
@@ -93,7 +93,7 @@ fn live(writer: &mut OutputWriter, only_timesync: bool) {
     if only_timesync {
         let provider = LiveSystemProvider::new();
         let timesync_data =
-            load_timesync_data(&provider.timesync_dir()).expect("Could not parse timesync files");
+            load_timesync_data(&provider).expect("Could not parse timesync files");
         writer.write_timesync(timesync_data).unwrap();
         return;
     }
@@ -110,7 +110,7 @@ fn logarchive(path: PathBuf, writer: &mut OutputWriter, only_timesync: bool) {
     if only_timesync {
         let provider = LogarchiveProvider::new(&path);
         let timesync_data =
-            load_timesync_data(&provider.timesync_dir()).expect("Could not parse timesync files");
+            load_timesync_data(&provider).expect("Could not parse timesync files");
         writer.write_timesync(timesync_data).unwrap();
         return;
     }

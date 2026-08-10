@@ -175,7 +175,6 @@ mod tests {
     use super::*;
     use crate::filesystem::{InMemoryProvider, LogarchiveProvider};
     use crate::helpers::tests::test_data_path;
-    use crate::traits::FileProvider as _;
     use std::cell::Cell;
 
     #[test]

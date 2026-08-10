@@ -1,18 +1,21 @@
-//! Logarchive directory walker — orchestrates the full parsing pipeline.
+//! Parsing-pipeline orchestration over a [`FileProvider`].
 //!
-//! Scans a `.logarchive` directory, loads timesync/DSC/UUIDText data,
-//! then processes all tracev3 files in order, emitting `LogEntry` via callback.
+//! Loads timesync data, then processes all tracev3 sources in order, emitting
+//! `LogEntry` via callback. `UUIDText`/DSC string data is loaded lazily as
+//! entries reference it (see [`crate::cache`]); use [`visit_provider_preloaded`]
+//! to load everything up front instead.
 
-use super::dsc::RawSharedCacheStrings;
+use super::cache::{StringCatalog, StringStorage};
 use super::error::ParseError;
-use super::filesystem::{FileProvider, LiveSystemProvider, LogarchiveProvider, sorted_paths};
+use super::filesystem::{LiveSystemProvider, LogarchiveProvider};
 use super::log_entry::LogEntry;
 use super::timesync::{RawTimesyncBoot, TimestampResolver, parse_timesync_file};
 use super::tracev3::{OversizeCache, visit_tracev3};
-use super::uuidtext::RawUUIDText;
+use super::traits::{FileProvider, SourceFile};
 use log::warn;
 use std::collections::HashMap;
-use std::path::Path;
+use std::io::Read;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use uuid::Uuid;
 
@@ -48,50 +51,67 @@ pub fn visit_live_system(
     visit_provider(&provider, callback)
 }
 
-/// Process all tracev3 files from a filesystem provider.
+/// Process all tracev3 files from a provider, loading string data lazily.
 ///
 /// The callback receives each `LogEntry` as it is produced. Individual file or parse
-/// failures are logged as warnings and skipped — only a missing timesync directory
-/// is a hard error.
+/// failures are logged as warnings and skipped — only missing timesync data
+/// is a hard error. `UUIDText`/DSC files are read on demand as entries
+/// reference them, keeping memory proportional to what the logs actually use.
 pub fn visit_provider(
     provider: &impl FileProvider,
+    callback: impl for<'a, 'b> FnMut(LogEntry<'a, 'b>),
+) -> Result<(), std::io::Error> {
+    visit_provider_inner(provider, false, callback)
+}
+
+/// Like [`visit_provider`], but eagerly loads every `UUIDText`/DSC file up front.
+///
+/// Maximum throughput at maximum memory — the pre-lazy-loading behavior.
+pub fn visit_provider_preloaded(
+    provider: &impl FileProvider,
+    callback: impl for<'a, 'b> FnMut(LogEntry<'a, 'b>),
+) -> Result<(), std::io::Error> {
+    visit_provider_inner(provider, true, callback)
+}
+
+fn visit_provider_inner(
+    provider: &impl FileProvider,
+    preload: bool,
     mut callback: impl for<'a, 'b> FnMut(LogEntry<'a, 'b>),
 ) -> Result<(), std::io::Error> {
     // 1. Timesync → TimestampResolver
-    let timesync_data = load_timesync_data(&provider.timesync_dir())?;
+    let timesync_data = load_timesync_data(provider)?;
     let resolver = TimestampResolver::new(timesync_data);
 
-    // 2. DSC and UUIDText support files
-    let dsc_buffers = load_file_buffers_by_uuid(&provider.dsc_dir());
-    let dsc_files = parse_dsc_buffers(&dsc_buffers);
-    let uuidtext_buffers = load_uuidtext_buffers(&provider.uuidtext_root());
-    let uuidtext_files = parse_uuidtext_buffers(&uuidtext_buffers);
+    // 2. DSC and UUIDText support-file access (lazy unless preloading)
+    let storage = StringStorage::new(provider);
+    if preload {
+        storage.preload();
+    }
+    let strings = StringCatalog::new(&storage);
 
-    // 3. Collect and process all tracev3 files
-    let tracev3_paths = provider.tracev3_paths();
+    // 3. Process all tracev3 sources
     let mut oversize_cache = OversizeCache::new();
 
-    for tracev3_path in &tracev3_paths {
-        let data = match std::fs::read(tracev3_path) {
-            Ok(d) => d,
-            Err(e) => {
-                warn!("Failed to read {}: {e}", tracev3_path.display());
-                continue;
-            }
-        };
+    for mut source in provider.tracev3_files() {
+        let mut data = Vec::new();
+        let read_result = source.reader().read_to_end(&mut data);
+        if let Err(e) = read_result {
+            warn!("Failed to read {}: {e}", source.source_path());
+            continue;
+        }
 
         if let Err(e) = visit_tracev3(
             &data,
             &resolver,
-            &dsc_files,
-            &uuidtext_files,
+            &strings,
             &mut oversize_cache,
-            Rc::new(tracev3_path.clone()),
+            Rc::new(PathBuf::from(source.source_path())),
             |entry| {
                 callback(entry);
             },
         ) {
-            warn!("Failed to process {}: {e}", tracev3_path.display());
+            warn!("Failed to process {}: {e}", source.source_path());
         }
     }
 
@@ -125,12 +145,11 @@ pub fn visit_logarchive_tracev3_files<P: AsRef<Path>>(
     tracev3_paths: &[P],
     mut callback: impl for<'a, 'b> FnMut(usize, LogEntry<'a, 'b>),
 ) -> Result<(), VisitTracev3FileError> {
-    let timesync_data = load_timesync_data(&logarchive_path.join("timesync"))?;
+    let provider = LogarchiveProvider::new(logarchive_path);
+    let timesync_data = load_timesync_data(&provider)?;
     let resolver = TimestampResolver::new(timesync_data);
-    let dsc_buffers = load_file_buffers_by_uuid(&logarchive_path.join("dsc"));
-    let dsc_files = parse_dsc_buffers(&dsc_buffers);
-    let uuidtext_buffers = load_uuidtext_buffers(logarchive_path);
-    let uuidtext_files = parse_uuidtext_buffers(&uuidtext_buffers);
+    let storage = StringStorage::new(&provider);
+    let strings = StringCatalog::new(&storage);
     let mut oversize_cache = OversizeCache::new();
 
     for (index, tracev3_path) in tracev3_paths.iter().enumerate() {
@@ -139,8 +158,7 @@ pub fn visit_logarchive_tracev3_files<P: AsRef<Path>>(
         visit_tracev3(
             &data,
             &resolver,
-            &dsc_files,
-            &uuidtext_files,
+            &strings,
             &mut oversize_cache,
             Rc::new(evidence),
             |entry| callback(index, entry),
@@ -154,32 +172,29 @@ pub fn visit_logarchive_tracev3_files<P: AsRef<Path>>(
 // Support-file loading
 // ---------------------------------------------------------------------------
 
-/// Load and merge all `.timesync` files from the timesync directory.
-pub fn load_timesync_data(dir: &Path) -> Result<HashMap<Uuid, RawTimesyncBoot>, std::io::Error> {
+/// Load and merge all `.timesync` sources from the provider.
+///
+/// Errors with [`std::io::ErrorKind::NotFound`] when the provider yields no
+/// timesync sources at all — without timesync data no timestamp can be
+/// resolved. (Unreadable/unparsable individual files are warned and skipped.)
+pub fn load_timesync_data(
+    provider: &impl FileProvider,
+) -> Result<HashMap<Uuid, RawTimesyncBoot>, std::io::Error> {
     let mut all_data: HashMap<Uuid, RawTimesyncBoot> = HashMap::new();
-    let mut paths = Vec::new();
+    let mut found_any = false;
 
-    for entry in std::fs::read_dir(dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("timesync") {
+    for mut source in provider.timesync_files() {
+        found_any = true;
+        let mut buffer = Vec::new();
+        let read_result = source.reader().read_to_end(&mut buffer);
+        if let Err(e) = read_result {
+            warn!("Failed to read timesync {}: {e}", source.source_path());
             continue;
         }
-        paths.push(path);
-    }
-
-    for path in sorted_paths(paths.into_iter()) {
-        let buffer = match std::fs::read(&path) {
-            Ok(b) => b,
-            Err(e) => {
-                warn!("Failed to read timesync {}: {e}", path.display());
-                continue;
-            }
-        };
         let (_, file_data) = match parse_timesync_file(&buffer) {
             Ok(r) => r,
             Err(e) => {
-                warn!("Failed to parse timesync {}: {e}", path.display());
+                warn!("Failed to parse timesync {}: {e}", source.source_path());
                 continue;
             }
         };
@@ -192,107 +207,13 @@ pub fn load_timesync_data(dir: &Path) -> Result<HashMap<Uuid, RawTimesyncBoot>, 
         }
     }
 
+    if !found_any {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "no timesync files found",
+        ));
+    }
     Ok(all_data)
-}
-
-/// Load files from a directory where filenames are UUIDs (e.g. `dsc/`).
-pub fn load_file_buffers_by_uuid(dir: &Path) -> Vec<(Uuid, Vec<u8>)> {
-    let mut buffers = Vec::new();
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(_) => return buffers,
-    };
-    let paths = sorted_paths(entries.filter_map(|entry| entry.ok().map(|e| e.path())));
-
-    for path in paths {
-        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
-            continue;
-        };
-        let Ok(uuid) = Uuid::parse_str(name) else {
-            continue;
-        };
-        match std::fs::read(&path) {
-            Ok(buffer) => buffers.push((uuid, buffer)),
-            Err(e) => warn!("Failed to read DSC {}: {e}", path.display()),
-        }
-    }
-    buffers
-}
-
-/// Parse DSC support buffers keyed by UUID.
-pub fn parse_dsc_buffers(buffers: &[(Uuid, Vec<u8>)]) -> HashMap<Uuid, RawSharedCacheStrings<'_>> {
-    buffers
-        .iter()
-        .filter_map(|(uuid, buffer)| {
-            let (_, dsc) = RawSharedCacheStrings::parse(buffer)
-                .inspect_err(|e| warn!("Failed to parse DSC {uuid}: {e}"))
-                .ok()?;
-            Some((*uuid, dsc))
-        })
-        .collect()
-}
-
-/// Load `UUIDText` files from 2-char hex directories at the logarchive root.
-///
-/// Directory layout: `{XX}/{YYYYYYYYYYYYYYYYYYYYYYYYYYYYYY}`
-/// Full UUID = `XX` + `YYYYYYYYYYYYYYYYYYYYYYYYYYYYYY` (32 hex chars).
-pub fn load_uuidtext_buffers(base: &Path) -> Vec<(Uuid, Vec<u8>)> {
-    let mut buffers = Vec::new();
-    let entries = match std::fs::read_dir(base) {
-        Ok(e) => e,
-        Err(_) => return buffers,
-    };
-    let dir_paths = sorted_paths(entries.filter_map(|entry| entry.ok().map(|e| e.path())));
-
-    for dir_path in dir_paths {
-        let Some(dir_name_str) = dir_path.file_name().and_then(|n| n.to_str()) else {
-            continue;
-        };
-        // Only 2-char hex directories
-        if dir_name_str.len() != 2 || !dir_name_str.chars().all(|c| c.is_ascii_hexdigit()) {
-            continue;
-        }
-        if !dir_path.is_dir() {
-            continue;
-        }
-        let file_entries = match std::fs::read_dir(&dir_path) {
-            Ok(e) => e,
-            Err(_) => continue,
-        };
-        let file_paths =
-            sorted_paths(file_entries.filter_map(|entry| entry.ok().map(|e| e.path())));
-
-        for file_path in file_paths {
-            if !file_path.is_file() {
-                continue;
-            }
-            let Some(file_name_str) = file_path.file_name().and_then(|n| n.to_str()) else {
-                continue;
-            };
-            let uuid_str = format!("{dir_name_str}{file_name_str}");
-            let Ok(uuid) = Uuid::parse_str(&uuid_str) else {
-                continue;
-            };
-            match std::fs::read(&file_path) {
-                Ok(buffer) => buffers.push((uuid, buffer)),
-                Err(e) => warn!("Failed to read UUIDText {}: {e}", file_path.display()),
-            }
-        }
-    }
-    buffers
-}
-
-/// Parse `UUIDText` support buffers keyed by UUID.
-pub fn parse_uuidtext_buffers(buffers: &[(Uuid, Vec<u8>)]) -> HashMap<Uuid, RawUUIDText<'_>> {
-    buffers
-        .iter()
-        .filter_map(|(uuid, buffer)| {
-            let (_, uuidtext) = RawUUIDText::parse(buffer)
-                .inspect_err(|e| warn!("Failed to parse UUIDText {uuid}: {e}"))
-                .ok()?;
-            Some((*uuid, uuidtext))
-        })
-        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -400,29 +321,15 @@ mod tests {
     #[test]
     fn test_load_timsync_data() {
         let base = test_data_path().join("system_logs_big_sur.logarchive");
-        let times = load_timesync_data(&base.join("timesync").as_path()).unwrap();
+        let provider = LogarchiveProvider::new(&base);
+        let times = load_timesync_data(&provider).unwrap();
         assert_eq!(times.len(), 5);
     }
 
     #[test]
-    fn test_load_file_buffers_uuid() {
-        let base = test_data_path().join("system_logs_tahoe.logarchive");
-        let cache = load_file_buffers_by_uuid(&base.join("dsc").as_path());
-        assert_eq!(cache.len(), 1);
-
-        let cache_files = parse_dsc_buffers(&cache);
-        assert_eq!(cache_files.len(), 1);
-    }
-
-    #[test]
-    fn test_load_uuidtext_buffers() {
-        let base = test_data_path().join("system_logs_tahoe.logarchive");
-        let provider = LogarchiveProvider::new(&base);
-
-        let result = load_uuidtext_buffers(&provider.uuidtext_root());
-        assert_eq!(result.len(), 876);
-
-        let files = parse_uuidtext_buffers(&result);
-        assert_eq!(files.len(), 876);
+    fn test_load_timesync_data_errors_without_sources() {
+        let provider = crate::filesystem::InMemoryProvider::default();
+        let err = load_timesync_data(&provider).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
     }
 }

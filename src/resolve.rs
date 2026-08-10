@@ -1,10 +1,9 @@
-use std::collections::HashMap;
 use uuid::Uuid;
 
+use super::cache::StringCatalog;
 use super::catalog::RawCatalogChunk;
 use super::chunks::firehose::flags::RawFormatterFlags;
-use super::dsc::RawSharedCacheStrings;
-use super::uuidtext::RawUUIDText;
+use super::traits::FileProvider;
 
 const DYNAMIC_OFFSET_FLAG: u64 = 0x8000_0000;
 const LARGE_OFFSET_BASE: u64 = 0x1_0000_0000;
@@ -33,16 +32,15 @@ pub struct ResolvedStrings<'a> {
 /// Dispatches to one of 4 resolution paths based on formatter flags:
 /// `SharedCache`/`LargeSharedCache` > `Absolute` > `UuidRelative` > `MainExe` (default).
 #[allow(clippy::too_many_arguments)]
-pub fn resolve_strings<'a>(
+pub fn resolve_strings<'s>(
     format_string_location: u32,
     pc_id: u32,
     formatter: &RawFormatterFlags,
     first_proc_id: u64,
     second_proc_id: u32,
-    catalog: &RawCatalogChunk<'a>,
-    dsc_files: &'a HashMap<Uuid, RawSharedCacheStrings<'a>>,
-    uuidtext_files: &'a HashMap<Uuid, RawUUIDText<'a>>,
-) -> ResolvedStrings<'a> {
+    catalog: &RawCatalogChunk<'_>,
+    strings: &StringCatalog<'s, impl FileProvider>,
+) -> ResolvedStrings<'s> {
     let string_offset = u64::from(format_string_location);
     let original_offset = string_offset;
 
@@ -54,8 +52,7 @@ pub fn resolve_strings<'a>(
             first_proc_id,
             second_proc_id,
             catalog,
-            dsc_files,
-            uuidtext_files,
+            strings,
         )
     } else if formatter.absolute {
         resolve_absolute(
@@ -66,7 +63,7 @@ pub fn resolve_strings<'a>(
             first_proc_id,
             second_proc_id,
             catalog,
-            uuidtext_files,
+            strings,
         )
     } else if formatter.uuid_relative != [0u8; 16] {
         resolve_uuid_relative(
@@ -76,7 +73,7 @@ pub fn resolve_strings<'a>(
             first_proc_id,
             second_proc_id,
             catalog,
-            uuidtext_files,
+            strings,
         )
     } else {
         resolve_main_exe(
@@ -85,23 +82,22 @@ pub fn resolve_strings<'a>(
             first_proc_id,
             second_proc_id,
             catalog,
-            uuidtext_files,
+            strings,
         )
     }
 }
 
 /// Shared cache (DSC) resolution path.
 #[allow(clippy::too_many_arguments)]
-fn resolve_shared_cache<'a>(
+fn resolve_shared_cache<'s>(
     string_offset: u64,
     original_offset: u64,
     formatter: &RawFormatterFlags,
     first_proc_id: u64,
     second_proc_id: u32,
-    catalog: &RawCatalogChunk<'a>,
-    dsc_files: &'a HashMap<Uuid, RawSharedCacheStrings<'a>>,
-    uuidtext_files: &'a HashMap<Uuid, RawUUIDText<'a>>,
-) -> ResolvedStrings<'a> {
+    catalog: &RawCatalogChunk<'_>,
+    strings: &StringCatalog<'s, impl FileProvider>,
+) -> ResolvedStrings<'s> {
     let entry = catalog.get_process_info(first_proc_id, second_proc_id);
     let main_uuid = entry.map_or(Uuid::nil(), |e| e.main_uuid);
     let dsc_uuid = entry.and_then(|e| e.dsc_uuid);
@@ -109,9 +105,9 @@ fn resolve_shared_cache<'a>(
     let effective_offset = compute_shared_cache_offset(string_offset, formatter);
     let is_dynamic = original_offset & DYNAMIC_OFFSET_FLAG != 0;
 
-    let dsc = dsc_uuid.and_then(|uuid| dsc_files.get(&uuid));
+    let dsc = dsc_uuid.and_then(|uuid| strings.get_dsc(&uuid));
     let source_found = dsc.is_some();
-    let process = uuidtext_files.get(&main_uuid).and_then(|u| u.image_path());
+    let process = strings.get_uuidtext(&main_uuid).and_then(|u| u.image_path());
 
     if is_dynamic {
         let (library, library_uuid) = dsc
@@ -156,18 +152,18 @@ fn resolve_shared_cache<'a>(
 }
 
 /// Main executable resolution path (UUIDText-based, simplest).
-fn resolve_main_exe<'a>(
+fn resolve_main_exe<'s>(
     string_offset: u64,
     original_offset: u64,
     first_proc_id: u64,
     second_proc_id: u32,
-    catalog: &RawCatalogChunk<'a>,
-    uuidtext_files: &'a HashMap<Uuid, RawUUIDText<'a>>,
-) -> ResolvedStrings<'a> {
+    catalog: &RawCatalogChunk<'_>,
+    strings: &StringCatalog<'s, impl FileProvider>,
+) -> ResolvedStrings<'s> {
     let entry = catalog.get_process_info(first_proc_id, second_proc_id);
     let main_uuid = entry.map_or(Uuid::nil(), |e| e.main_uuid);
 
-    let uuidtext = uuidtext_files.get(&main_uuid);
+    let uuidtext = strings.get_uuidtext(&main_uuid);
     let source_found = uuidtext.is_some();
     let image_path = uuidtext.and_then(|u| u.image_path());
     let is_dynamic = original_offset & DYNAMIC_OFFSET_FLAG != 0;
@@ -190,16 +186,16 @@ fn resolve_main_exe<'a>(
 
 /// Absolute address resolution path.
 #[allow(clippy::too_many_arguments)]
-fn resolve_absolute<'a>(
+fn resolve_absolute<'s>(
     string_offset: u64,
     original_offset: u64,
     pc_id: u32,
     formatter: &RawFormatterFlags,
     first_proc_id: u64,
     second_proc_id: u32,
-    catalog: &RawCatalogChunk<'a>,
-    uuidtext_files: &'a HashMap<Uuid, RawUUIDText<'a>>,
-) -> ResolvedStrings<'a> {
+    catalog: &RawCatalogChunk<'_>,
+    strings: &StringCatalog<'s, impl FileProvider>,
+) -> ResolvedStrings<'s> {
     let absolute_offset = (u64::from(formatter.alt_index) << 32) | u64::from(pc_id);
 
     let entry = catalog.get_process_info(first_proc_id, second_proc_id);
@@ -221,10 +217,10 @@ fn resolve_absolute<'a>(
     let is_dynamic =
         (original_offset & DYNAMIC_OFFSET_FLAG != 0) || string_offset == absolute_offset;
 
-    let library_uuidtext = uuidtext_files.get(&library_uuid);
+    let library_uuidtext = strings.get_uuidtext(&library_uuid);
     let source_found = library_uuidtext.is_some();
     let library = library_uuidtext.and_then(|u| u.image_path());
-    let process = uuidtext_files.get(&main_uuid).and_then(|u| u.image_path());
+    let process = strings.get_uuidtext(&main_uuid).and_then(|u| u.image_path());
 
     let format_string = if is_dynamic {
         dynamic_format_string(source_found)
@@ -243,15 +239,15 @@ fn resolve_absolute<'a>(
 }
 
 /// UUID-relative resolution path.
-fn resolve_uuid_relative<'a>(
+fn resolve_uuid_relative<'s>(
     string_offset: u64,
     original_offset: u64,
     formatter: &RawFormatterFlags,
     first_proc_id: u64,
     second_proc_id: u32,
-    catalog: &RawCatalogChunk<'a>,
-    uuidtext_files: &'a HashMap<Uuid, RawUUIDText<'a>>,
-) -> ResolvedStrings<'a> {
+    catalog: &RawCatalogChunk<'_>,
+    strings: &StringCatalog<'s, impl FileProvider>,
+) -> ResolvedStrings<'s> {
     let uuid = Uuid::from_bytes(formatter.uuid_relative);
 
     let entry = catalog.get_process_info(first_proc_id, second_proc_id);
@@ -259,10 +255,10 @@ fn resolve_uuid_relative<'a>(
 
     let is_dynamic = original_offset & DYNAMIC_OFFSET_FLAG != 0;
 
-    let library_uuidtext = uuidtext_files.get(&uuid);
+    let library_uuidtext = strings.get_uuidtext(&uuid);
     let source_found = library_uuidtext.is_some();
     let library = library_uuidtext.and_then(|u| u.image_path());
-    let process = uuidtext_files.get(&main_uuid).and_then(|u| u.image_path());
+    let process = strings.get_uuidtext(&main_uuid).and_then(|u| u.image_path());
 
     let format_string = if is_dynamic {
         dynamic_format_string(source_found)
@@ -314,7 +310,9 @@ fn dynamic_format_string(source_found: bool) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cache::{StringCatalog, StringStorage};
     use crate::chunks::firehose::flags::RawFormatterFlags;
+    use crate::filesystem::InMemoryProvider;
     use test_case::test_case;
 
     // --- compute_shared_cache_offset tests ---
@@ -348,8 +346,8 @@ mod tests {
         // When DYNAMIC_OFFSET_FLAG is set, format_string should be "%s"
         // In compat mode, requires source file to exist (legacy behavior).
         let catalog = RawCatalogChunk::default();
-        let dsc_files = HashMap::new();
-        let uuidtext_files = HashMap::new();
+        let storage = StringStorage::new(InMemoryProvider::default());
+        let strings = StringCatalog::new(&storage);
 
         let formatter = RawFormatterFlags {
             main_exe: true,
@@ -365,8 +363,7 @@ mod tests {
             0,
             0,
             &catalog,
-            &dsc_files,
-            &uuidtext_files,
+            &strings,
         );
 
         assert_eq!(result.format_string, None); // source file missing → no "%s"
@@ -377,8 +374,8 @@ mod tests {
     fn test_resolve_missing_uuid() {
         // UUID not in maps → None for string fields
         let catalog = RawCatalogChunk::default();
-        let dsc_files = HashMap::new();
-        let uuidtext_files = HashMap::new();
+        let storage = StringStorage::new(InMemoryProvider::default());
+        let strings = StringCatalog::new(&storage);
 
         let formatter = RawFormatterFlags {
             main_exe: true,
@@ -392,8 +389,7 @@ mod tests {
             99,
             99,
             &catalog,
-            &dsc_files,
-            &uuidtext_files,
+            &strings,
         );
 
         // No catalog entry, no uuidtext → format_string and paths are None
@@ -407,8 +403,8 @@ mod tests {
     #[test]
     fn test_resolve_shared_cache_dynamic() {
         let catalog = RawCatalogChunk::default();
-        let dsc_files = HashMap::new();
-        let uuidtext_files = HashMap::new();
+        let storage = StringStorage::new(InMemoryProvider::default());
+        let strings = StringCatalog::new(&storage);
 
         let formatter = RawFormatterFlags {
             shared_cache: true,
@@ -424,8 +420,7 @@ mod tests {
             0,
             0,
             &catalog,
-            &dsc_files,
-            &uuidtext_files,
+            &strings,
         );
 
         assert_eq!(result.format_string, None); // DSC not loaded → no "%s"
@@ -434,8 +429,8 @@ mod tests {
     #[test]
     fn test_resolve_uuid_relative_dynamic() {
         let catalog = RawCatalogChunk::default();
-        let dsc_files = HashMap::new();
-        let uuidtext_files = HashMap::new();
+        let storage = StringStorage::new(InMemoryProvider::default());
+        let strings = StringCatalog::new(&storage);
 
         let formatter = RawFormatterFlags {
             uuid_relative: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
@@ -450,8 +445,7 @@ mod tests {
             0,
             0,
             &catalog,
-            &dsc_files,
-            &uuidtext_files,
+            &strings,
         );
 
         assert_eq!(result.format_string, None); // UUIDText not loaded → no "%s"
@@ -465,8 +459,8 @@ mod tests {
     fn test_resolve_absolute_dynamic_when_offsets_equal() {
         // When string_offset == absolute_offset, it's treated as dynamic
         let catalog = RawCatalogChunk::default();
-        let dsc_files = HashMap::new();
-        let uuidtext_files = HashMap::new();
+        let storage = StringStorage::new(InMemoryProvider::default());
+        let strings = StringCatalog::new(&storage);
 
         let formatter = RawFormatterFlags {
             absolute: true,
@@ -482,8 +476,7 @@ mod tests {
             0,
             0,
             &catalog,
-            &dsc_files,
-            &uuidtext_files,
+            &strings,
         );
         assert_eq!(result.format_string, None); // UUIDText not loaded → no "%s"
     }
@@ -492,8 +485,8 @@ mod tests {
     fn test_resolve_dispatch_priority() {
         // shared_cache takes priority over absolute
         let catalog = RawCatalogChunk::default();
-        let dsc_files = HashMap::new();
-        let uuidtext_files = HashMap::new();
+        let storage = StringStorage::new(InMemoryProvider::default());
+        let strings = StringCatalog::new(&storage);
 
         let formatter = RawFormatterFlags {
             shared_cache: true,
@@ -509,8 +502,7 @@ mod tests {
             0,
             0,
             &catalog,
-            &dsc_files,
-            &uuidtext_files,
+            &strings,
         );
         // Should take shared_cache path → dynamic → "%s"
         assert_eq!(result.format_string, None); // DSC not loaded → no "%s"

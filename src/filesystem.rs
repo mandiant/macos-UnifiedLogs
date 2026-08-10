@@ -15,18 +15,6 @@ use uuid::Uuid;
 
 use crate::traits::SourceFile;
 
-/// Provides paths required by the parser.
-pub trait FileProvider {
-    /// Tracev3 files in deterministic processing order.
-    fn tracev3_paths(&self) -> Vec<PathBuf>;
-    /// Directory containing `.timesync` files.
-    fn timesync_dir(&self) -> PathBuf;
-    /// Root containing `UUIDText` two-character hex directories.
-    fn uuidtext_root(&self) -> PathBuf;
-    /// Directory containing DSC shared-cache string files.
-    fn dsc_dir(&self) -> PathBuf;
-}
-
 /// A [`SourceFile`] backed by a local file, remembering its original path.
 pub struct LocalFile {
     reader: File,
@@ -126,21 +114,6 @@ impl LogarchiveProvider {
     }
 }
 
-impl FileProvider for LogarchiveProvider {
-    fn tracev3_paths(&self) -> Vec<PathBuf> {
-        collect_tracev3_paths(&self.base)
-    }
-    fn timesync_dir(&self) -> PathBuf {
-        self.base.join("timesync")
-    }
-    fn uuidtext_root(&self) -> PathBuf {
-        self.base.clone()
-    }
-    fn dsc_dir(&self) -> PathBuf {
-        self.base.join("dsc")
-    }
-}
-
 impl crate::traits::FileProvider for LogarchiveProvider {
     fn tracev3_files(&self) -> impl Iterator<Item = impl SourceFile> {
         local_files(collect_tracev3_paths(&self.base))
@@ -190,24 +163,6 @@ impl LiveSystemProvider {
 impl Default for LiveSystemProvider {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-impl FileProvider for LiveSystemProvider {
-    fn tracev3_paths(&self) -> Vec<PathBuf> {
-        collect_tracev3_paths(&self.diagnostics_root)
-    }
-
-    fn timesync_dir(&self) -> PathBuf {
-        self.diagnostics_root.join("timesync")
-    }
-
-    fn uuidtext_root(&self) -> PathBuf {
-        self.uuidtext_root.clone()
-    }
-
-    fn dsc_dir(&self) -> PathBuf {
-        self.uuidtext_root.join("dsc")
     }
 }
 
@@ -446,30 +401,13 @@ mod tests {
     use crate::traits::FileProvider as _;
 
     #[test]
-    fn logarchive_provider_uses_archive_layout() {
-        let base = test_data_path().join("system_logs_big_sur.logarchive");
-        let provider = LogarchiveProvider::new(&base);
+    fn live_provider_with_roots_reads_custom_layout() {
+        let root = test_data_path().join("system_logs_tahoe.logarchive");
+        let provider = LiveSystemProvider::with_roots(root.clone(), root.clone());
 
-        assert_eq!(provider.timesync_dir(), base.join("timesync"));
-        assert_eq!(provider.uuidtext_root(), base);
-        assert_eq!(provider.dsc_dir(), provider.uuidtext_root().join("dsc"));
-        assert_eq!(provider.tracev3_paths(), collect_tracev3_paths(&base));
-    }
-
-    #[test]
-    fn live_provider_uses_diagnostics_and_uuidtext_roots() {
-        let diagnostics_root = test_data_path().join("system_logs_big_sur.logarchive");
-        let uuidtext_root = test_data_path().join("system_logs_big_sur.logarchive");
-        let provider =
-            LiveSystemProvider::with_roots(diagnostics_root.clone(), uuidtext_root.clone());
-
-        assert_eq!(provider.timesync_dir(), diagnostics_root.join("timesync"));
-        assert_eq!(provider.uuidtext_root(), uuidtext_root);
-        assert_eq!(provider.dsc_dir(), provider.uuidtext_root().join("dsc"));
-        assert_eq!(
-            provider.tracev3_paths(),
-            collect_tracev3_paths(&diagnostics_root)
-        );
+        // diagnostics_root drives tracev3/timesync, uuidtext_root drives strings
+        assert_eq!(provider.uuidtext_uuids().count(), 876);
+        assert_eq!(provider.dsc_uuids().count(), 1);
     }
 
     #[test]
