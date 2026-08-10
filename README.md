@@ -4,27 +4,7 @@ A simple and high-performance Rust library that can help parse Apple's Unified L
 
 Unified Logs were introduced in macOS 10.12 (Sierra, 2016) as part of Apple's unified logging system across macOS, iOS, watchOS, and tvOS. This library can parse the binary tracev3 files and emit structured log entries.
 
-Data that is currently extracted includes:
-
-- Process ID
-- Thread ID
-- Activity ID
-- Parent Activity ID
-- Log Message
-- Timestamp (Intel and ARM supported)
-- Effective User ID (EUID)
-- Log Type
-- Event Type
-- Library
-- Subsystem
-- Category
-- Process
-- Raw message
-- Raw log items
-- Library UUID
-- Process UUID
-- Boot UUID
-- Timezone
+Each entry exposes: the formatted message (plus raw message and raw log items), timestamp (Intel and ARM), event and log type, process and library paths with their UUIDs, subsystem, category, PID, thread ID, EUID, activity ID (and parent), boot UUID, and timezone.
 
 ## Running
 
@@ -38,8 +18,10 @@ Example binaries live in `examples/`:
   timesync-only mode.
 
 ```bash
-cd examples && cargo run --release -p unifiedlog_iterator -- --mode log-archive --input system_logs.logarchive
+cargo run --release --manifest-path examples/Cargo.toml -p unifiedlog_iterator -- --mode log-archive --input system_logs.logarchive
 ```
+
+See `RUNNING.md` for more usage, how to create a logarchive, and expected warnings.
 
 ## Design
 

@@ -1,7 +1,7 @@
 
 ## Building
 
-You will need to install [Rust](https://www.rust-lang.org). Once installed the library can be built with cargo
+You will need to install [Rust](https://www.rust-lang.org). Once installed, the library can be built with cargo:
 
 ```bash
 cargo build --release

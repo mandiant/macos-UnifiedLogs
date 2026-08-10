@@ -1,7 +1,6 @@
 # Library architecture
 
-This document provides a very high level overview of the macos-unifiedlogs design
-architecture.
+A high-level overview of the macos-unifiedlogs design.
 
 
 ## Parsing pipeline
