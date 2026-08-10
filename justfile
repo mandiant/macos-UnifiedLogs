@@ -21,26 +21,17 @@ dump_roundhouse:
     just dump "tests/test_data/system_logs_tahoe.logarchive" "dump_5.txt"
     just dump "tests/test_data/system_logs_big_sur_private_enabled.logarchive" "dump_6.txt"
 
-# Times from the previous rewrite branch with features
-
-# === Legacy ===
-# real    0m3.457s
-# user    0m2.796s
-# sys     0m0.233s
-
-# === Compat ===
-# real    0m2.370s
-# user    0m1.922s
-# sys     0m0.127s
-
-# === Rewrite ===
-# real    0m0.809s
-# user    0m0.429s
-# sys     0m0.071s
-
-time path="tests/test_data/system_logs_big_sur_private_enabled.logarchive" dump_file="dump.txt":
+time path="tests/test_data/system_logs_big_sur_private_enabled.logarchive" $NO_OUTPUT="1":
     cargo build --release --manifest-path examples/Cargo.toml -p dump
     time cargo run --release --manifest-path examples/Cargo.toml -p dump -- "{{path}}" > /dev/null 2>/dev/null
+
+time_roundhouse:
+    just time "tests/test_data/system_logs_big_sur_public_private_data_mix.logarchive"
+    just time "tests/test_data/system_logs_big_sur.logarchive"
+    just time "tests/test_data/system_logs_high_sierra.logarchive"
+    just time "tests/test_data/system_logs_monterey.logarchive"
+    just time "tests/test_data/system_logs_tahoe.logarchive"
+    just time "tests/test_data/system_logs_big_sur_private_enabled.logarchive"
 
 [macos]
 unifiedlog_iterator_live:
