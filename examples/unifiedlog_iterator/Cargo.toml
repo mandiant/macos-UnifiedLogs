@@ -9,6 +9,7 @@ edition = "2024"
 simplelog = "0.12.2"
 csv = "1.4.0"
 chrono = "0.4.44"
+uuid = "1"
 log = "0.4.29"
 serde_json = "1.0.149"
 macos-unifiedlogs = { path = "../../" }

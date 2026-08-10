@@ -1,4 +1,3 @@
 [workspace]
 resolver = "3"
-# todo: "unifiedlog_iterator",
-members = ["logrs", "dump"]
+members = ["logrs", "dump", "unifiedlog_iterator"]
