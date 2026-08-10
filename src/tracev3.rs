@@ -95,7 +95,9 @@ pub fn visit_tracev3<'d, 's: 'd>(
                 flush_deferred_entries(
                     &mut deferred_readers,
                     &current_header,
+                    &current_catalog,
                     resolver,
+                    strings,
                     &evidence,
                     &mut callback,
                 );
@@ -107,7 +109,9 @@ pub fn visit_tracev3<'d, 's: 'd>(
                 flush_deferred_entries(
                     &mut deferred_readers,
                     &current_header,
+                    &current_catalog,
                     resolver,
+                    strings,
                     &evidence,
                     &mut callback,
                 );
@@ -178,7 +182,9 @@ pub fn visit_tracev3<'d, 's: 'd>(
     flush_deferred_entries(
         &mut deferred_readers,
         &current_header,
+        &current_catalog,
         resolver,
+        strings,
         &evidence,
         &mut callback,
     );
@@ -193,12 +199,15 @@ pub fn visit_tracev3<'d, 's: 'd>(
 /// Flush deferred chunkset readers, emitting all simpledump entries first,
 /// then all statedump entries. This matches the legacy per-catalog ordering:
 /// all firehose → all simpledump → all statedump within each catalog.
-fn flush_deferred_entries<'a>(
-    deferred_readers: &mut Vec<ChunkSetReader<'a>>,
-    current_header: &Option<RawHeaderChunk<'a>>,
+#[allow(clippy::too_many_arguments)]
+fn flush_deferred_entries<'d, 's: 'd>(
+    deferred_readers: &mut Vec<ChunkSetReader<'d>>,
+    current_header: &Option<RawHeaderChunk<'d>>,
+    current_catalog: &Option<RawCatalogChunk<'d>>,
     resolver: &TimestampResolver,
+    strings: &StringCatalog<'s, impl FileProvider>,
     evidence: &Rc<PathBuf>,
-    callback: &mut impl for<'b> FnMut(LogEntry<'a, 'b>),
+    callback: &mut impl for<'b> FnMut(LogEntry<'d, 'b>),
 ) {
     if deferred_readers.is_empty() {
         return;
@@ -225,6 +234,24 @@ fn flush_deferred_entries<'a>(
                     };
                     let time = resolver.resolve(&header.boot_uuid, sd.continuous_time, 1);
                     let timezone_name = extract_timezone_name(header.timezone_path);
+
+                    // Process info from the catalog's main executable UUIDText,
+                    // resolved only when the associated DSC file is available
+                    // (parity with the shared-strings extraction, PR #136).
+                    let entry_info = current_catalog
+                        .as_ref()
+                        .and_then(|c| c.get_process_info(sd.first_proc_id, sd.second_proc_id as u32));
+                    let main_uuid = entry_info.map_or(Uuid::nil(), |e| e.main_uuid);
+                    let (process, process_uuid) = entry_info
+                        .and_then(|e| e.dsc_uuid)
+                        .and_then(|dsc_uuid| strings.get_dsc(&dsc_uuid))
+                        .map_or((None, Uuid::nil()), |_| {
+                            (
+                                strings.get_uuidtext(&main_uuid).and_then(|u| u.image_path()),
+                                main_uuid,
+                            )
+                        });
+
                     callback(LogEntry {
                         subsystem: Some(sd.subsystem),
                         category: None,
@@ -238,8 +265,8 @@ fn flush_deferred_entries<'a>(
                         time,
                         event_type: EventType::Simpledump,
                         log_type: LogType::Simpledump,
-                        process: None,
-                        process_uuid: sd.dsc_uuid,
+                        process,
+                        process_uuid,
                         format_string: None,
                         boot_uuid: header.boot_uuid,
                         timezone_name,
