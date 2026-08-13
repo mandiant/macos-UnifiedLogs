@@ -1,5 +1,5 @@
-use std::path::PathBuf;
 use clap::Subcommand;
+use std::path::PathBuf;
 
 #[derive(Subcommand, Debug)]
 pub(crate) enum Commands {
@@ -10,10 +10,9 @@ pub(crate) enum Commands {
         archive: Option<PathBuf>,
         /// Only output timesync data
         #[clap(long)]
-        timesync:bool,
+        timesync: bool,
         // Parse specific tracev3 log files
         //#[clap(long, value_delimiter = ',')]
         //trace_files:Option<Vec<PathBuf>>
-        
     },
 }

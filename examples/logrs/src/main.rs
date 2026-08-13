@@ -92,12 +92,11 @@ fn process_logs(command: Commands, writer: &mut OutputWriter) {
 fn live(writer: &mut OutputWriter, only_timesync: bool) {
     if only_timesync {
         let provider = LiveSystemProvider::new();
-        let timesync_data =
-            load_timesync_data(&provider).expect("Could not parse timesync files");
+        let timesync_data = load_timesync_data(&provider).expect("Could not parse timesync files");
         writer.write_timesync(timesync_data).unwrap();
         return;
     }
-    
+
     let mut index = 0;
     visit_live_system(|entry| {
         writer.write_log(index, &entry).unwrap();
@@ -109,8 +108,7 @@ fn live(writer: &mut OutputWriter, only_timesync: bool) {
 fn logarchive(path: PathBuf, writer: &mut OutputWriter, only_timesync: bool) {
     if only_timesync {
         let provider = LogarchiveProvider::new(&path);
-        let timesync_data =
-            load_timesync_data(&provider).expect("Could not parse timesync files");
+        let timesync_data = load_timesync_data(&provider).expect("Could not parse timesync files");
         writer.write_timesync(timesync_data).unwrap();
         return;
     }
