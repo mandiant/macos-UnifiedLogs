@@ -386,7 +386,8 @@ impl CatalogChunk {
 
         // The first part of the persona data seems to align with 8 byte offsets
         // So there may be padding at the end
-        let padding_size = padding_size_8((count * 12 as u16) as u64);
+        let persona_header_size = 12;
+        let padding_size = padding_size_8(u64::from(count * persona_header_size));
         let (remaining, _padding) = take(padding_size)(input)?;
         input = remaining;
 
@@ -405,7 +406,7 @@ impl CatalogChunk {
             input = remaining;
         }
 
-        let padding_size = padding_size_8((count * uuid_string_size as u16) as u64);
+        let padding_size = padding_size_8(u64::from(count * u16::from(uuid_string_size)));
         let (remaining, _padding) = take(padding_size)(input)?;
         input = remaining;
 

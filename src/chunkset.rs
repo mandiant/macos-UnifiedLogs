@@ -204,7 +204,6 @@ mod tests {
     use super::ChunksetChunk;
     use crate::catalog::CatalogChunk;
     use crate::unified_log::UnifiedLogCatalogData;
-    use std::collections::HashMap;
     use std::fs;
     use std::path::PathBuf;
 
