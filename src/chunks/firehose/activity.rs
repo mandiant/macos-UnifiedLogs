@@ -19,6 +19,7 @@ pub struct FirehoseActivity {
     pub sentinal: u32,      // always 0x80000000?
     pub pid: u64,           // if flag 0x0010
     pub activity_id_2: u32, // if flag 0x0001
+    pub persona_id: u32,
     pub sentinal_2: u32,    // always 0x80000000? only if flag 0x0001
     pub activity_id_3: u32, // if flag 0x0200
     pub sentinal_3: u32,    // always 0x80000000? only if flag 0x0200
@@ -73,6 +74,17 @@ impl FirehoseActivity {
             input = firehose_input;
         }
 
+        let has_persona = 0x40;
+        if (firehose_flags & has_persona) != 0 {
+            debug!("[macos-unifiedlogs] Activity Firehose log chunk has has_persona flag");
+            let (firehose_input, persona_id) = le_u32(input)?;
+
+            activity.persona_id = persona_id;
+            activity.flags.push(MessageFlags::HasPersona);
+
+            input = firehose_input;
+        }
+
         let activity_id_other = 0x200; // has_other_current_aid flag. In Activity log entries this is another activity id flag
         if (firehose_flags & activity_id_other) != 0 {
             debug!(
@@ -97,6 +109,10 @@ impl FirehoseActivity {
             &mut activity.flags,
         )?;
         activity.firehose_formatters = formatters;
+
+        if activity.flags.contains(&MessageFlags::HasPersona) {
+            panic!("{activity:?}");
+        }
         Ok((input, activity))
     }
 

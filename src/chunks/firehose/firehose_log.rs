@@ -118,6 +118,8 @@ pub enum MessageFlags {
     HasPrivateData,
     HasOversize,
     HasSubsystem,
+    /// Added in Golden Gate/iOS 27
+    HasPersona,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -2856,7 +2858,7 @@ mod tests {
         assert_eq!(firehose.continous_time_delta_upper, 16);
         assert_eq!(firehose.data_size, 99);
         assert_eq!(firehose.firehose_non_activity.activity_id, 64444);
-        assert_eq!(firehose.firehose_non_activity.sentinal, 2147483648);
+        assert_eq!(firehose.firehose_non_activity.sentinel, 2147483648);
         assert_eq!(firehose.firehose_non_activity.private_strings_offset, 0);
         assert_eq!(firehose.firehose_non_activity.private_strings_size, 0);
         assert_eq!(firehose.firehose_non_activity.message_string_ref, 0);
@@ -3010,7 +3012,7 @@ mod tests {
         assert_eq!(firehose.public_data[0].data_size, 16);
 
         assert_eq!(firehose.public_data[0].firehose_non_activity.activity_id, 0);
-        assert_eq!(firehose.public_data[0].firehose_non_activity.sentinal, 0);
+        assert_eq!(firehose.public_data[0].firehose_non_activity.sentinel, 0);
         assert_eq!(
             firehose.public_data[0]
                 .firehose_non_activity

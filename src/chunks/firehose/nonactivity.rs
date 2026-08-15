@@ -15,8 +15,9 @@ use nom::number::complete::{le_u8, le_u16, le_u32};
 
 #[derive(Debug, Clone, Default)]
 pub struct FirehoseNonActivity {
-    pub activity_id: u32,            // if flag 0x0001
-    pub sentinal: u32,               // always 0x80000000? if flag 0x0001
+    pub activity_id: u32, // if flag 0x0001
+    pub sentinel: u32,    // always 0x80000000? if flag 0x0001
+    pub persona_id: u32,
     pub private_strings_offset: u16, // if flag 0x0100
     pub private_strings_size: u16,   // if flag 0x0100
     pub message_string_ref: u32,     // if flag 0x0008
@@ -45,8 +46,19 @@ impl FirehoseNonActivity {
             let (firehose_input, firehose_activity_id) = le_u32(input)?;
             let (firehose_input, firehose_unknown_sentinel) = le_u32(firehose_input)?;
             non_activity.activity_id = firehose_activity_id;
-            non_activity.sentinal = firehose_unknown_sentinel;
+            non_activity.sentinel = firehose_unknown_sentinel;
             non_activity.flags.push(MessageFlags::HasCurrentAid);
+            input = firehose_input;
+        }
+
+        let has_persona = 0x40;
+        if (firehose_flags & has_persona) != 0 {
+            debug!("[macos-unifiedlogs] Non-Activity Firehose log chunk has has_persona flag");
+            let (firehose_input, persona_id) = le_u32(input)?;
+
+            non_activity.persona_id = persona_id;
+            non_activity.flags.push(MessageFlags::HasPersona);
+
             input = firehose_input;
         }
 
@@ -138,7 +150,10 @@ impl FirehoseNonActivity {
 #[cfg(test)]
 mod tests {
     use super::FirehoseNonActivity;
-    use crate::{filesystem::LogarchiveProvider, parser::parse_log};
+    use crate::{
+        chunks::firehose::firehose_log::MessageFlags, filesystem::LogarchiveProvider,
+        parser::parse_log,
+    };
     use std::path::PathBuf;
 
     #[test]
@@ -153,7 +168,7 @@ mod tests {
         let (_, nonactivity_results) =
             FirehoseNonActivity::parse_non_activity(&test_data, test_flags).unwrap();
         assert_eq!(nonactivity_results.activity_id, 0);
-        assert_eq!(nonactivity_results.sentinal, 0);
+        assert_eq!(nonactivity_results.sentinel, 0);
         assert_eq!(nonactivity_results.private_strings_offset, 0);
         assert_eq!(nonactivity_results.private_strings_size, 0);
         assert_eq!(nonactivity_results.message_string_ref, 0);
@@ -225,5 +240,31 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn test_persona_flag() {
+        let test = [
+            200, 0, 0, 0, 72, 5, 91, 0, 6, 0, 34, 6, 0, 8, 16, 148, 64, 1, 1, 0, 0, 0, 34, 4, 0, 0,
+            11, 0, 0, 4, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 4, 1, 0, 0, 0, 34, 4, 11, 0, 54, 0, 97,
+            99, 116, 105, 118, 97, 116, 105, 110, 103, 0, 99, 111, 109, 46, 97, 112, 112, 108, 101,
+            46, 99, 102, 112, 114, 101, 102, 115, 100, 46, 100, 97, 101, 109, 111, 110, 46, 115,
+            121, 115, 116, 101, 109, 46, 112, 101, 101, 114, 91, 54, 53, 93, 46, 48, 120, 49, 48,
+            49, 52, 48, 57, 52, 49, 48, 0,
+        ];
+        let flags = 580;
+        let (_, result) = FirehoseNonActivity::parse_non_activity(&test, flags).unwrap();
+        assert_eq!(
+            result.flags,
+            vec![
+                MessageFlags::HasPersona,
+                MessageFlags::SharedCache,
+                MessageFlags::HasSubsystem
+            ]
+        );
+        assert_eq!(result.persona_id, 200);
+        assert_eq!(result.subsystem_value, 6);
+        assert!(result.firehose_formatters.shared_cache);
+        assert_eq!(result.pc_id, 5965128);
     }
 }
