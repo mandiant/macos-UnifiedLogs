@@ -120,7 +120,7 @@ pub struct SubsystemInfo {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct CatalogPersona {
     persona_id: u32,
-    persona_count: u32,
+    persona_type: u32,
     uuid_offset: u32,
     uuid: String,
 }
@@ -362,7 +362,7 @@ impl CatalogChunk {
 
     /// Added in Golden Gate and iOS 27
     ///
-    /// New Catalog section data.
+    /// New Catalog section data. This may match with Kernel Persona info from the umtool?
     fn parse_catalog_persona(data: &[u8], count: u16) -> IResult<&[u8], Vec<CatalogPersona>> {
         let mut persona_data_count = 0;
         let mut input = data;
@@ -372,15 +372,15 @@ impl CatalogChunk {
             // Persona ID always matches with a UUID?
             // 0xc8 is always "FEEDEEEE-DDDD-CCCC-BBBB-5555000001F5"?
             // 0xc7 is always "FEEDEEEE-DDDD-CCCC-BBBB-550000000000"?
-            // These are guest personas?
+            // These are guest personas? However, 0x1F5 = 501 which is a common UID
             let (remaining, persona_id) = le_u32(input)?;
-            // This value always seems to decrease for each persona entry.
-            // Always starts at 6? At least for the guest UUID values seen so far
-            let (remaining, persona_count) = le_u32(remaining)?;
+            // I think these are kernel persona id types
+            // https://github.com/apple/darwin-xnu/blob/2ff845c2e033bd0ff64b5b6aa6063a1f8f65aa32/bsd/sys/persona.h#L38
+            let (remaining, persona_type) = le_u32(remaining)?;
             let (remaining, uuid_offset) = le_u32(remaining)?;
             let persona = CatalogPersona {
                 persona_id,
-                persona_count,
+                persona_type,
                 uuid_offset,
                 uuid: String::new(),
             };
@@ -803,19 +803,19 @@ mod tests {
             vec![
                 CatalogPersona {
                     persona_id: 16,
-                    persona_count: 6,
+                    persona_type: 6,
                     uuid_offset: 0,
                     uuid: String::from("YEEDEEEE-DDDD-CCCC-BBBB-5555000001F5"),
                 },
                 CatalogPersona {
                     persona_id: 25576,
-                    persona_count: 5,
+                    persona_type: 5,
                     uuid_offset: 37,
                     uuid: String::from("YEEDEEEE-DDDD-CCCC-BBBB-0000000001F5")
                 },
                 CatalogPersona {
                     persona_id: 101,
-                    persona_count: 4,
+                    persona_type: 4,
                     uuid_offset: 74,
                     uuid: String::from("YEEDEEEE-DDDD-CCCC-BBBB-3333000001F5")
                 }
