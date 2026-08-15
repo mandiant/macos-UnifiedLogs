@@ -110,9 +110,6 @@ impl FirehoseActivity {
         )?;
         activity.firehose_formatters = formatters;
 
-        if activity.flags.contains(&MessageFlags::HasPersona) {
-            panic!("{activity:?}");
-        }
         Ok((input, activity))
     }
 
