@@ -55,7 +55,12 @@ pub struct ProcessInfoEntry {
     pub pid: u32,
     /// euid
     pub effective_user_id: u32,
-    pub unknown2: u32,
+    /// This may be Persona ID. Added in Golden Gate/iOS 27
+    ///
+    /// So far log raw-dump sets this to zero
+    ///
+    /// But similar values seen in the Persona section. Ex: 0xC8 and 0x3e8
+    pub persona_id: u32,
     pub number_uuids_entries: u32,
     pub unknown3: u32,
     /// Catalog process information UUID information entry
@@ -227,11 +232,12 @@ impl CatalogChunk {
         let mut catlog_tup = (le_u16, le_u16);
         let (input, (index, unknown)) = catlog_tup.parse(input)?;
         let (input, (catalog_main_uuid_index, catalog_dsc_uuid_index)) = catlog_tup.parse(input)?;
+
         let mut proc_tup = (le_u64, le_u32);
         let (input, (first_number_proc_id, second_number_proc_id)) = proc_tup.parse(input)?;
 
         let mut id_tup = (le_u32, le_u32, le_u32, le_u32, le_u32);
-        let (input, (pid, effective_user_id, unknown2, number_uuids_entries, unknown3)) =
+        let (input, (pid, effective_user_id, persona_id, number_uuids_entries, unknown3)) =
             id_tup.parse(input)?;
 
         let (input, uuid_info_entries) =
@@ -292,7 +298,7 @@ impl CatalogChunk {
                 second_number_proc_id,
                 pid,
                 effective_user_id,
-                unknown2,
+                persona_id,
                 number_uuids_entries,
                 unknown3,
                 uuid_info_entries,
@@ -400,9 +406,8 @@ impl CatalogChunk {
             let (remaining, uuid_data) = take(uuid_string_size)(input)?;
             let (_, uuid) = extract_string(uuid_data)?;
 
-            debug!("Persona info: '{entry:?}'");
-
             entry.uuid = uuid;
+            debug!("Persona info: '{entry:?}'");
             input = remaining;
         }
 
@@ -652,7 +657,7 @@ mod tests {
         assert_eq!(process_entry.second_number_proc_id, 311);
         assert_eq!(process_entry.pid, 158);
         assert_eq!(process_entry.effective_user_id, 88);
-        assert_eq!(process_entry.unknown2, 0);
+        assert_eq!(process_entry.persona_id, 0);
         assert_eq!(process_entry.number_uuids_entries, 0);
         assert_eq!(process_entry.unknown3, 0);
         assert_eq!(process_entry.uuid_info_entries.len(), 0);
