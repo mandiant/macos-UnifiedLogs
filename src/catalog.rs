@@ -5,10 +5,8 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-use std::collections::HashMap;
-
 use crate::{preamble::LogPreamble, util::*};
-use log::error;
+use log::{debug, error};
 use nom::{
     IResult, Parser,
     bytes::complete::take,
@@ -17,6 +15,7 @@ use nom::{
     multi::many_m_n,
     number::complete::{be_u128, le_u16, le_u32, le_u64},
 };
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Default)]
 pub struct CatalogChunk {
@@ -31,8 +30,10 @@ pub struct CatalogChunk {
     /// offset relative to start of catalog UUIDs
     pub catalog_offset_sub_chunks: u16,
     pub number_sub_chunks: u16,
-    /// unknown 6 bytes, padding? alignment?
-    pub unknown: Vec<u8>,
+    pub persona_offset: u16,
+    pub persona_count: u16,
+    // Added in Golden Gate/iOS 27
+    pub personas: Vec<CatalogPersona>,
     pub earliest_firehose_timestamp: u64,
     /// array of UUIDs in big endian
     pub catalog_uuids: Vec<String>,
@@ -54,7 +55,12 @@ pub struct ProcessInfoEntry {
     pub pid: u32,
     /// euid
     pub effective_user_id: u32,
-    pub unknown2: u32,
+    /// This may be Persona ID. Added in Golden Gate/iOS 27
+    ///
+    /// So far log raw-dump sets this to zero
+    ///
+    /// But similar values seen in the Persona section. Ex: 0xC8 and 0x3e8
+    pub persona_id: u32,
     pub number_uuids_entries: u32,
     pub unknown3: u32,
     /// Catalog process information UUID information entry
@@ -82,7 +88,7 @@ pub struct ProcessUUIDEntry {
 /// Part of `ProcessInfoEntry`
 #[derive(Debug, Clone)]
 pub struct ProcessInfoSubsystem {
-    pub identifer: u16,
+    pub identifier: u16,
     /// Represents the offset to the subsystem from the start of the subsystem entries
     pub subsystem_offset: u16,
     /// Represents the offset to the subsystem category from the start of the subsystem entries
@@ -95,7 +101,7 @@ pub struct CatalogSubchunk {
     pub start: u64,
     pub end: u64,
     pub uncompressed_size: u32,
-    /// Should always be LZ4 (value 0x100)
+    /// Should always be LZ4 (0x100) or LZBITMAP (0x700)
     pub compression_algorithm: u32,
     pub number_index: u32,
     /// indexes size = `number_index` * u16
@@ -111,11 +117,21 @@ pub struct SubsystemInfo {
     pub category: String,
 }
 
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct CatalogPersona {
+    persona_id: u32,
+    persona_type: u32,
+    uuid_offset: u32,
+    uuid: String,
+}
+
 impl CatalogChunk {
     /// Parse log Catalog data. The log Catalog contains metadata related to log entries such as Process info, Subsystem info, and the compressed log entries
     pub fn parse_catalog(input: &[u8]) -> IResult<&[u8], Self> {
         let (input, preamble) = LogPreamble::parse(input)?;
-        let mut tup = (le_u16, le_u16, le_u16, le_u16, le_u16);
+        let mut tup = (
+            le_u16, le_u16, le_u16, le_u16, le_u16, le_u16, le_u16, le_u16,
+        );
         let (
             input,
             (
@@ -124,12 +140,14 @@ impl CatalogChunk {
                 number_process_information_entries,
                 catalog_offset_sub_chunks,
                 number_sub_chunks,
+                persona_offset,
+                persona_count,
+                _unknown,
             ),
         ) = tup.parse(input)?;
 
-        const UNKNOWN_LENGTH: u8 = 6;
-        let (input, unknown) = map(take(UNKNOWN_LENGTH), |v: &[u8]| v.to_vec()).parse(input)?;
-        let (input, earliest_firehose_timestamp) = le_u64(input)?;
+        let (data_start, earliest_firehose_timestamp) = le_u64(input)?;
+        // All offsets start after the earliest firehose timestamp
 
         const UUID_LENGTH: usize = 16;
         let number_catalog_uuids = catalog_subsystem_strings_offset as usize / UUID_LENGTH;
@@ -139,14 +157,14 @@ impl CatalogChunk {
             number_catalog_uuids,
             map(be_u128, |x| format!("{x:032X}")),
         )
-        .parse(input)?;
+        .parse(data_start)?;
 
         let subsystems_strings_length =
             catalog_process_info_entries_offset - catalog_subsystem_strings_offset;
         let (input, subsystem_strings_data) = take(subsystems_strings_length)(input)?;
         let catalog_subsystem_strings = subsystem_strings_data.to_vec();
 
-        let (input, catalog_process_info_entries_vec) = many_m_n(
+        let (mut input, catalog_process_info_entries_vec) = many_m_n(
             number_process_information_entries as usize,
             number_process_information_entries as usize,
             |input| Self::parse_catalog_process_entry(input, &catalog_uuids),
@@ -163,6 +181,20 @@ impl CatalogChunk {
                 entry,
             );
         }
+
+        let personas = if persona_count != 0 {
+            // Persona data occurs prior to catalog subchunk offset
+            // We can determine the size by subtracting persona offset from the catalog subchunk offset
+            let persona_data_size = catalog_offset_sub_chunks - persona_offset;
+            let (remaining, persona_data) = take(persona_data_size)(input)?;
+
+            let (_, personas) = CatalogChunk::parse_catalog_persona(persona_data, persona_count)?;
+            input = remaining;
+            personas
+        } else {
+            Vec::new()
+        };
+
         let (input, catalog_subchunks) = many_m_n(
             number_sub_chunks as usize,
             number_sub_chunks as usize,
@@ -180,7 +212,9 @@ impl CatalogChunk {
                 number_process_information_entries,
                 catalog_offset_sub_chunks,
                 number_sub_chunks,
-                unknown,
+                persona_offset,
+                persona_count,
+                personas,
                 earliest_firehose_timestamp,
                 catalog_uuids,
                 catalog_subsystem_strings,
@@ -198,11 +232,12 @@ impl CatalogChunk {
         let mut catlog_tup = (le_u16, le_u16);
         let (input, (index, unknown)) = catlog_tup.parse(input)?;
         let (input, (catalog_main_uuid_index, catalog_dsc_uuid_index)) = catlog_tup.parse(input)?;
+
         let mut proc_tup = (le_u64, le_u32);
         let (input, (first_number_proc_id, second_number_proc_id)) = proc_tup.parse(input)?;
 
         let mut id_tup = (le_u32, le_u32, le_u32, le_u32, le_u32);
-        let (input, (pid, effective_user_id, unknown2, number_uuids_entries, unknown3)) =
+        let (input, (pid, effective_user_id, persona_id, number_uuids_entries, unknown3)) =
             id_tup.parse(input)?;
 
         let (input, uuid_info_entries) =
@@ -263,7 +298,7 @@ impl CatalogChunk {
                 second_number_proc_id,
                 pid,
                 effective_user_id,
-                unknown2,
+                persona_id,
                 number_uuids_entries,
                 unknown3,
                 uuid_info_entries,
@@ -314,25 +349,86 @@ impl CatalogChunk {
     /// Parse the Catalog Subsystem metadata. This helps get the subsystem (App Bundle ID) and the log entry category
     fn parse_process_info_subystem(input: &[u8]) -> IResult<&[u8], ProcessInfoSubsystem> {
         let mut tup = (le_u16, le_u16, le_u16);
-        let (input, (identifer, subsystem_offset, category_offset)) = tup.parse(input)?;
+        let (input, (identifier, subsystem_offset, category_offset)) = tup.parse(input)?;
         Ok((
             input,
             ProcessInfoSubsystem {
-                identifer,
+                identifier,
                 subsystem_offset,
                 category_offset,
             },
         ))
     }
 
+    /// Added in Golden Gate and iOS 27
+    ///
+    /// New Catalog section data. This may match with Kernel Persona info from the umtool?
+    fn parse_catalog_persona(data: &[u8], count: u16) -> IResult<&[u8], Vec<CatalogPersona>> {
+        let mut persona_data_count = 0;
+        let mut input = data;
+
+        let mut personas = Vec::new();
+        while persona_data_count < count {
+            // Persona ID always matches with a UUID?
+            // 0xc8 is always "FEEDEEEE-DDDD-CCCC-BBBB-5555000001F5"?
+            // 0xc7 is always "FEEDEEEE-DDDD-CCCC-BBBB-550000000000"?
+            // These are guest personas? However, 0x1F5 = 501 which is a common UID
+            let (remaining, persona_id) = le_u32(input)?;
+            // I think these are kernel persona id types
+            // https://github.com/apple/darwin-xnu/blob/2ff845c2e033bd0ff64b5b6aa6063a1f8f65aa32/bsd/sys/persona.h#L38
+            let (remaining, persona_type) = le_u32(remaining)?;
+            let (remaining, uuid_offset) = le_u32(remaining)?;
+            let persona = CatalogPersona {
+                persona_id,
+                persona_type,
+                uuid_offset,
+                uuid: String::new(),
+            };
+
+            persona_data_count += 1;
+            input = remaining;
+            personas.push(persona);
+        }
+
+        // The first part of the persona data seems to align with 8 byte offsets
+        // So there may be padding at the end
+        let persona_header_size = 12;
+        let padding_size = padding_size_8(u64::from(count * persona_header_size));
+        let (remaining, _padding) = take(padding_size)(input)?;
+        input = remaining;
+
+        // Includes end of string character
+        let uuid_string_size: u8 = 37;
+
+        // Now get the UUIDs
+        // Each is 37 bytes in size (UUID size + end of string character ('0'))
+        for entry in &mut personas {
+            let (remaining, uuid_data) = take(uuid_string_size)(input)?;
+            let (_, uuid) = extract_string(uuid_data)?;
+
+            entry.uuid = uuid;
+            debug!("Persona info: '{entry:?}'");
+            input = remaining;
+        }
+
+        let padding_size = padding_size_8(u64::from(count * u16::from(uuid_string_size)));
+        let (remaining, _padding) = take(padding_size)(input)?;
+        input = remaining;
+
+        Ok((input, personas))
+    }
+
     /// Parse the Catalog Subchunk metadata. This metadata is related to the compressed (typically) Chunkset data
-    fn parse_catalog_subchunk(input: &[u8]) -> IResult<&[u8], CatalogSubchunk> {
+    fn parse_catalog_subchunk(data: &[u8]) -> IResult<&[u8], CatalogSubchunk> {
         let mut tup = (le_u64, le_u64, le_u32, le_u32, le_u32);
-        let (input, (start, end, uncompressed_size, compression_algorithmn, number_index)) =
-            tup.parse(input)?;
+        let (input, (start, end, uncompressed_size, compression_algorithm, number_index)) =
+            tup.parse(data)?;
 
         const LZ4_COMPRESSION: u32 = 256;
-        if compression_algorithmn != LZ4_COMPRESSION {
+        const LZBITMAP_COMPRESSION: u32 = 1792;
+        if compression_algorithm != LZ4_COMPRESSION && compression_algorithm != LZBITMAP_COMPRESSION
+        {
+            error!("[macos-unifiedlogs] Unexpected compression aglorithm: {compression_algorithm}");
             return Err(nom::Err::Error(make_error(input, ErrorKind::OneOf)));
         }
 
@@ -371,7 +467,7 @@ impl CatalogChunk {
                 start,
                 end,
                 uncompressed_size,
-                compression_algorithm: compression_algorithmn,
+                compression_algorithm,
                 number_index,
                 indexes,
                 number_string_offsets,
@@ -397,7 +493,7 @@ impl CatalogChunk {
             .get(&format!("{first_proc_id}_{second_proc_id}"))
         {
             for subsystems in &entry.subsystem_entries {
-                if subsystem_value == subsystems.identifer {
+                if subsystem_value == subsystems.identifier {
                     let subsystem_data: &[u8] = &self.catalog_subsystem_strings;
                     let (input, _) = take(subsystems.subsystem_offset)(subsystem_data)?;
                     let (_, subsystem_string) = extract_string(input)?;
@@ -446,6 +542,7 @@ impl CatalogChunk {
 #[cfg(test)]
 mod tests {
     use super::CatalogChunk;
+    use crate::catalog::CatalogPersona;
     use std::fs;
     use std::path::PathBuf;
 
@@ -485,7 +582,8 @@ mod tests {
         assert_eq!(catalog_data.number_process_information_entries, 1);
         assert_eq!(catalog_data.catalog_offset_sub_chunks, 160);
         assert_eq!(catalog_data.number_sub_chunks, 7);
-        assert_eq!(catalog_data.unknown, [0, 0, 0, 0, 0, 0]);
+        assert_eq!(catalog_data.persona_offset, 0);
+        assert_eq!(catalog_data.persona_count, 0);
         assert_eq!(catalog_data.earliest_firehose_timestamp, 820223379547412);
         assert_eq!(
             catalog_data.catalog_uuids,
@@ -559,7 +657,7 @@ mod tests {
         assert_eq!(process_entry.second_number_proc_id, 311);
         assert_eq!(process_entry.pid, 158);
         assert_eq!(process_entry.effective_user_id, 88);
-        assert_eq!(process_entry.unknown2, 0);
+        assert_eq!(process_entry.persona_id, 0);
         assert_eq!(process_entry.number_uuids_entries, 0);
         assert_eq!(process_entry.unknown3, 0);
         assert_eq!(process_entry.uuid_info_entries.len(), 0);
@@ -590,12 +688,12 @@ mod tests {
 
         let (data, subsystems) =
             CatalogChunk::parse_process_info_subystem(test_subsystem_data).unwrap();
-        assert_eq!(subsystems.identifer, 87);
+        assert_eq!(subsystems.identifier, 87);
         assert_eq!(subsystems.subsystem_offset, 0);
         assert_eq!(subsystems.category_offset, 19);
 
         let (_, subsystems) = CatalogChunk::parse_process_info_subystem(data).unwrap();
-        assert_eq!(subsystems.identifer, 78);
+        assert_eq!(subsystems.identifier, 78);
         assert_eq!(subsystems.subsystem_offset, 0);
         assert_eq!(subsystems.category_offset, 47);
     }
@@ -684,5 +782,44 @@ mod tests {
             .unwrap();
         assert_eq!(results.subsystem, "com.apple.containermanager");
         assert_eq!(results.category, "xpc");
+    }
+
+    #[test]
+    fn test_parse_catalog_persona() {
+        let test = [
+            16, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0, 232, 99, 0, 0, 5, 0, 0, 0, 37, 0, 0, 0, 101, 0, 0,
+            0, 4, 0, 0, 0, 74, 0, 0, 0, 0, 0, 0, 0, 89, 69, 69, 68, 69, 69, 69, 69, 45, 68, 68, 68,
+            68, 45, 67, 67, 67, 67, 45, 66, 66, 66, 66, 45, 53, 53, 53, 53, 48, 48, 48, 48, 48, 49,
+            70, 53, 0, 89, 69, 69, 68, 69, 69, 69, 69, 45, 68, 68, 68, 68, 45, 67, 67, 67, 67, 45,
+            66, 66, 66, 66, 45, 48, 48, 48, 48, 48, 48, 48, 48, 48, 49, 70, 53, 0, 89, 69, 69, 68,
+            69, 69, 69, 69, 45, 68, 68, 68, 68, 45, 67, 67, 67, 67, 45, 66, 66, 66, 66, 45, 51, 51,
+            51, 51, 48, 48, 48, 48, 48, 49, 70, 53, 0, 0,
+        ];
+
+        let (_, results) = CatalogChunk::parse_catalog_persona(&test, 3).unwrap();
+        assert_eq!(results.len(), 3);
+        assert_eq!(
+            results,
+            vec![
+                CatalogPersona {
+                    persona_id: 16,
+                    persona_type: 6,
+                    uuid_offset: 0,
+                    uuid: String::from("YEEDEEEE-DDDD-CCCC-BBBB-5555000001F5"),
+                },
+                CatalogPersona {
+                    persona_id: 25576,
+                    persona_type: 5,
+                    uuid_offset: 37,
+                    uuid: String::from("YEEDEEEE-DDDD-CCCC-BBBB-0000000001F5")
+                },
+                CatalogPersona {
+                    persona_id: 101,
+                    persona_type: 4,
+                    uuid_offset: 74,
+                    uuid: String::from("YEEDEEEE-DDDD-CCCC-BBBB-3333000001F5")
+                }
+            ]
+        )
     }
 }
