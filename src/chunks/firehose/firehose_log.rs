@@ -149,14 +149,16 @@ impl FirehosePreamble {
         let (input, chunk_tag) = le_u32(firehose_input_data)?;
         let (input, chunk_sub_tag) = le_u32(input)?;
         let (input, chunk_data_size) = le_u64(input)?;
-        let (input, first_proc_id) = le_u64(input)?;
+        let (remaining, chunk_data) = take(chunk_data_size)(input)?;
+        let (input, first_proc_id) = le_u64(chunk_data)?;
         let (input, second_proc_id) = le_u32(input)?;
         let (input, ttl) = le_u8(input)?;
         let (input, collapsed) = le_u8(input)?;
+        let (data_start, unknown) = take(size_of::<u16>())(input)?;
 
-        let (input, unknown) = take(size_of::<u16>())(input)?;
-
-        let (input, public_data_size) = le_u16(input)?;
+        // Private data offset starts here
+        // Public data size includes itself
+        let (input, public_data_size) = le_u16(data_start)?;
         let (input, private_data_virtual_offset) = le_u16(input)?;
         let (input, unknown2) = le_u16(input)?;
         let (input, unknown3) = le_u16(input)?;
@@ -178,80 +180,53 @@ impl FirehosePreamble {
         firehose_data.unknown3 = unknown3;
         firehose_data.base_continous_time = base_continous_time;
 
-        // firehose_public_data_size includes the 16 bytes before the public data offset
-        let public_data_size_offset = 16;
-        let (mut input, mut public_data) =
-            take(public_data_size - public_data_size_offset)(log_data)?;
+        // firehose_public_data_size includes itself and the metadata we nommed above (16 bytes)
+        let public_data_nommed_size = 16;
+        let (public_remaining, mut public_data) =
+            take(public_data_size - public_data_nommed_size)(log_data)?;
 
         // Go through all the public data associated with log Firehose entry
         while !public_data.is_empty() {
+            // Start parsing all of them public data
             let (firehose_input, firehose_public_data) =
                 FirehosePreamble::parse_firehose(public_data)?;
             public_data = firehose_input;
+
+            // If not enough data remaining. End early
             if !Self::LOG_TYPES.contains(&firehose_public_data.log_activity_type)
                 || public_data.len() < 24
             {
                 if Self::REMNANT_DATA == firehose_public_data.log_activity_type {
                     break;
                 }
-                if private_data_virtual_offset != 0x1000 {
-                    let private_offst = 0x1000;
-                    let private_data_offset = private_offst - private_data_virtual_offset;
-                    // Calculate start of private data. If the remaining input is greater than private data offset.
-                    // Remove any padding/junk data in front of the private data
-                    if input.len() > private_data_offset as usize && public_data.is_empty() {
-                        let leftover_data = input.len() - private_data_offset as usize;
-                        let (private_data, _) = take(leftover_data)(input)?;
-                        input = private_data;
-                    } else {
-                        // If log data and public data are the same size. Use private data offset to calculate the private data
-                        if log_data.len() == (public_data_size - public_data_size_offset) as usize {
-                            let (private_input_data, _) = take(
-                                (private_data_virtual_offset - public_data_size_offset) as usize
-                                    - public_data.len(),
-                            )(log_data)?;
-                            input = private_input_data;
-                        } else {
-                            // If we have private data, then any leftover public data is actually prepended to the private data
-                            /*
-                            buffer:             2736 bytes
-                                00000000: b0 0a aa 0a 00 00 00 03 19 6d c9 a4 1d 08 00 00 .........m......
-                                ...
-                                00000a90: ce fa d2 b0 10 00 12 00 aa 0a 4b 00 35 60 00 00 ..........K.5`..
-                                00000aa0: 01 00 43 01 21 04 00 00 4b 00 43 6f 6e 66 69 67 ..C.!...K.Config <- Config is actually in private data
-                            privdata:           1366 bytes
-                                00000000: 43 6f 6e 66 69 67 52 65 73 6f 6c 76 65 72 73 3a ConfigResolvers:
-                                00000010: 20 55 6e 73 63 6f 70 65 64 20 72 65 73 6f 6c 76  Unscoped resolv
-                                00000020: 65 72 5b 35 5d 20 64 6f 6d 61 69 6e 20 61 2e 65 er[5] domain a.e
-                                00000030: 2e 66 2e 69 70 36 2e 61 72 70 61 20 6e 5f 6e 61 .f.ip6.arpa n_na
-                                00000040: 6d 65 73 65 72 76 65 72 20 30 00 43 6f 6e 66 69 meserver 0.Confi
-                            */
-                            let (private_input_data, _) = take(
-                                (public_data_size - public_data_size_offset) as usize
-                                    - public_data.len(),
-                            )(log_data)?;
-                            input = private_input_data;
-                        }
-                    }
-                }
                 firehose_data.public_data.push(firehose_public_data);
                 break;
             }
+
             firehose_data.public_data.push(firehose_public_data);
         }
 
+        let private_data_offset_default = 0x1000;
         // If there is private data, go through and update any logs that have private data items
-        if private_data_virtual_offset != 0x1000 {
+        if private_data_virtual_offset != private_data_offset_default {
+            // If Firehose data has been collapsed. Then private data needs to be calculated slightly differently
+            // We need to subtract the private data offset for this chunk from the default private data offset (4096)
+            // And then take whatever is remaining from the public data
+            //
+            // See: https://github.com/libyal/dtformats/blob/main/documentation/Apple%20Unified%20Logging%20and%20Activity%20Tracing%20formats.asciidoc#27-firehose-chunk
+            let private_data = if firehose_data.collapsed == 1
+                || private_data_virtual_offset as usize > data_start.len()
+            {
+                let private_data_size = private_data_offset_default - private_data_virtual_offset;
+                let (_, data) = take(private_data_size)(public_remaining)?;
+                data
+            } else {
+                // Jump to start of private data
+                let (private_data, _) = take(private_data_virtual_offset)(data_start)?;
+                private_data
+            };
+
             debug!("[macos-unifiedlogs] Parsing Private Firehose Data");
-            // Nom any padding
-            let (mut private_input, _) = take_while(|b: u8| b == 0)(input)?;
-
-            // if we nom the rest of the data (all zeros) then the private data is actually zeros
-            // Or if the firehose data is collapsed, then there was no padding
-            if private_input.is_empty() || firehose_data.collapsed == 1 {
-                private_input = input;
-            }
-
             for data in &mut firehose_data.public_data {
                 // Only non-activity firehose entries appears to have private strings
                 if data.firehose_non_activity.private_strings_size == 0 {
@@ -260,13 +235,13 @@ impl FirehosePreamble {
                 // Get the start of private string data
                 let string_offset =
                     data.firehose_non_activity.private_strings_offset - private_data_virtual_offset;
-                let (private_string_start, _) = take(string_offset)(private_input)?;
+                let (private_string_start, _) = take(string_offset)(private_data)?;
                 let _ =
                     FirehosePreamble::parse_private_data(private_string_start, &mut data.message);
             }
-            input = private_input;
         }
-        Ok((input, firehose_data))
+
+        Ok((remaining, firehose_data))
     }
 
     /// Collect all the Firehose items (log message entries) in the log entry (chunk)
@@ -289,7 +264,7 @@ impl FirehosePreamble {
         let number_item_type = [0x0, 0x2];
         // Dynamic precision item types?
         let precision_items = [0x10, 0x12];
-        //  Likely related to private string. Seen only "<private>" values
+        // Likely related to private string. Seen only "<private>" values
         let sensitive_items = [0x45, 0x85];
         let object_items = [0x40, 0x42];
 
@@ -418,6 +393,8 @@ impl FirehosePreamble {
         let mut private_string_start = data;
         // Go through all firehose items, for each private item entry get the private value
         for firehose_info in &mut firehose_item_data.item_info {
+            let private_bitwise_set = 0x8000;
+
             if private_strings.contains(&firehose_info.item_type) {
                 // Base64 encode arbitrary data. Need to further parse them based on base string formatters
                 if firehose_info.item_type == private_strings[3]
@@ -438,11 +415,24 @@ impl FirehosePreamble {
                     firehose_info.message_strings = encode_standard(pointer_object);
                     continue;
                 }
+
                 let null_private = 0;
+
                 // Even null values are marked private
                 if firehose_info.item_size == null_private {
                     firehose_info.message_strings = String::from("<private>");
                 } else {
+                    if (private_bitwise_set & firehose_info.item_size) != 0 {
+                        // If most significate bit is set (0x8000)
+                        // We need to clear it to get the real size
+                        // Ex: 0x83f8 is really 0x3f8
+                        let real_size = firehose_info.item_size & 0x7fff;
+                        let (private_data, private_string) =
+                            extract_string_size(private_string_start, u64::from(real_size))?;
+                        private_string_start = private_data;
+                        firehose_info.message_strings = format!("{private_string}");
+                        continue;
+                    }
                     let (private_data, private_string) = extract_string_size(
                         private_string_start,
                         u64::from(firehose_info.item_size),
@@ -454,9 +444,8 @@ impl FirehosePreamble {
             } else if firehose_info.item_type == Self::PRIVATE_NUMBER
                 || firehose_info.item_type == Self::SENSITIVE_NUMBER
             {
-                let private_number = 0x8000;
                 // Numbers can also be private
-                if firehose_info.item_size == private_number || firehose_info.item_size == 0 {
+                if firehose_info.item_size == private_bitwise_set || firehose_info.item_size == 0 {
                     firehose_info.message_strings = String::from("<private>")
                 } else {
                     let (private_data, private_string) = FirehosePreamble::parse_item_number(
@@ -671,7 +660,7 @@ impl FirehosePreamble {
             item.item = FirehoseItem::Precision;
         }
 
-        const SENSITIVE_ITEMS: [u8; 3] = [0x5, 0x45, 0x85];
+        const SENSITIVE_ITEMS: [u8; 3] = [05, 0x45, 0x85];
         if SENSITIVE_ITEMS.contains(&item.item_type) {
             let (input, message_offset) = le_u16(firehose_input)?;
             let (input, message_size) = le_u16(input)?;
@@ -681,6 +670,7 @@ impl FirehosePreamble {
             item.item = FirehoseItem::Sensitive;
             firehose_input = input;
         }
+
         Ok((firehose_input, item))
     }
 
