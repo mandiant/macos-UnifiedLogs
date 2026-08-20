@@ -71,7 +71,7 @@ pub struct Firehose {
     pub message: FirehoseItemData,
 }
 
-#[derive(Debug, Default, Clone, Serialize)]
+#[derive(Debug, Default, Clone, Serialize, PartialEq)]
 pub struct FirehoseItemType {
     /// Type of item: strings, numbers, objects, precision
     pub item_type: u8,
@@ -94,6 +94,7 @@ pub enum FirehoseItem {
     Precision,
     Sensitive,
     Object,
+    SensitiveNumber,
     #[default]
     Unknown,
 }
@@ -122,7 +123,7 @@ pub enum MessageFlags {
     HasPersona,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct FirehoseItemData {
     pub item_info: Vec<FirehoseItemType>,
     pub backtrace_strings: Vec<String>,
@@ -133,6 +134,7 @@ impl FirehosePreamble {
     /// Remaining data (if any) contains strings for the string item types
     const STRING_ITEM: [u8; 8] = [0x20, 0x22, 0x40, 0x42, 0x30, 0x31, 0x32, 0xf2];
     const PRIVATE_NUMBER: u8 = 0x1;
+    const SENSITIVE_NUMBER: u8 = 0x5;
     /// 0x81 and 0xf1 Added in macOS Sequioa
     const PRIVATE_STRINGS: [u8; 7] = [0x21, 0x25, 0x35, 0x31, 0x41, 0x81, 0xf1];
     const LOG_TYPES: [u8; 5] = [0x2, 0x6, 0x4, 0x7, 0x3];
@@ -287,13 +289,12 @@ impl FirehosePreamble {
         let number_item_type = [0x0, 0x2];
         // Dynamic precision item types?
         let precision_items = [0x10, 0x12];
-        //  Likely realted to private string. Seen only "<private>" values
-        // 0x85 and 0x5 added in macOS Sequioa
-        let sensitive_items = [0x5, 0x45, 0x85];
+        //  Likely related to private string. Seen only "<private>" values
+        let sensitive_items = [0x45, 0x85];
         let object_items = [0x40, 0x42];
 
         while item_count < firehose_number_items {
-            // Get non-number values first since the values are at the end of the of the log (chunk) entry data
+            // Get non-number values first since the values are at the end of the (chunk) entry data
             let (item_value_input, mut item) =
                 FirehosePreamble::get_firehose_items(firehose_input)?;
             firehose_input = item_value_input;
@@ -367,6 +368,12 @@ impl FirehosePreamble {
                 continue;
             }
 
+            if item.item_type == Self::SENSITIVE_NUMBER {
+                item.item = FirehoseItem::SensitiveNumber;
+                item.message_strings = String::from("<private>");
+                continue;
+            }
+
             if item.item_type == Self::PRIVATE_NUMBER {
                 continue;
             }
@@ -407,7 +414,6 @@ impl FirehosePreamble {
         firehose_item_data: &mut FirehoseItemData,
     ) -> nom::IResult<&'a [u8], ()> {
         let private_strings: Vec<u8> = vec![0x21, 0x25, 0x41, 0x35, 0x31, 0x81, 0xf1];
-        let private_number = 0x1;
 
         let mut private_string_start = data;
         // Go through all firehose items, for each private item entry get the private value
@@ -445,10 +451,12 @@ impl FirehosePreamble {
                     private_string_start = private_data;
                     firehose_info.message_strings = private_string;
                 }
-            } else if firehose_info.item_type == private_number {
+            } else if firehose_info.item_type == Self::PRIVATE_NUMBER
+                || firehose_info.item_type == Self::SENSITIVE_NUMBER
+            {
                 let private_number = 0x8000;
                 // Numbers can also be private
-                if firehose_info.item_size == private_number {
+                if firehose_info.item_size == private_number || firehose_info.item_size == 0 {
                     firehose_info.message_strings = String::from("<private>")
                 } else {
                     let (private_data, private_string) = FirehosePreamble::parse_item_number(
@@ -572,7 +580,7 @@ impl FirehosePreamble {
             }
         };
         let (mut input, _) = take(padding_data)(input)?;
-        if (padding_data as usize) > taken_data.len() {
+        if padding_data > taken_data.len() {
             input = remaining_data;
         }
 
@@ -636,12 +644,11 @@ impl FirehosePreamble {
         const STRING_ITEM: [u8; 14] = [
             0x20, 0x21, 0x22, 0x25, 0x40, 0x41, 0x42, 0x30, 0x31, 0x32, 0xf2, 0x35, 0x81, 0xf1,
         ];
-        const PRIVATE_NUMBER: u8 = 0x1;
 
         // String and private number items metadata is 4 bytes
         // first two (2) bytes point to the offset of the string data
         // last two (2) bytes is the size of of string
-        if STRING_ITEM.contains(&item.item_type) || item.item_type == PRIVATE_NUMBER {
+        if STRING_ITEM.contains(&item.item_type) || item.item_type == Self::PRIVATE_NUMBER {
             // The offset is relative to start of string data (after all other firehose items)
             let (input, message_offset) = le_u16(firehose_input)?;
             let (input, message_size) = le_u16(input)?;
@@ -652,7 +659,7 @@ impl FirehosePreamble {
             firehose_input = input;
         }
 
-        if item.item_type == PRIVATE_NUMBER {
+        if item.item_type == Self::PRIVATE_NUMBER {
             item.item = FirehoseItem::PrivateNumber;
         }
 
@@ -725,11 +732,9 @@ impl FirehosePreamble {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs::File, io::Read, path::PathBuf};
-
-    use crate::chunks::firehose::firehose_log::{FirehoseItem, FirehoseItemType};
-
     use super::{FirehoseItemData, FirehosePreamble};
+    use crate::chunks::firehose::firehose_log::{FirehoseItem, FirehoseItemType};
+    use std::{fs::File, io::Read, path::PathBuf};
 
     #[test]
     fn test_parse_firehose_preamble() {
@@ -3163,6 +3168,44 @@ mod tests {
     }
 
     #[test]
+    fn test_collect_items_sensitive_number() {
+        let test = [37, 4, 0, 0, 0, 0, 5, 4, 0, 0, 0, 128, 37, 4, 0, 0, 0, 0];
+        let (_, results) = FirehosePreamble::collect_items(&test, 3, 548).unwrap();
+        assert_eq!(
+            results,
+            FirehoseItemData {
+                item_info: vec![
+                    FirehoseItemType {
+                        item_type: 37,
+                        item_type_size: 4,
+                        offset: 0,
+                        item_size: 0,
+                        message_strings: String::from("<private>"),
+                        item: FirehoseItem::PrivateString
+                    },
+                    FirehoseItemType {
+                        item_type: 5,
+                        item_type_size: 4,
+                        offset: 0,
+                        item_size: 32768,
+                        message_strings: String::from("<private>"),
+                        item: FirehoseItem::SensitiveNumber
+                    },
+                    FirehoseItemType {
+                        item_type: 37,
+                        item_type_size: 4,
+                        offset: 0,
+                        item_size: 0,
+                        message_strings: String::from("<private>"),
+                        item: FirehoseItem::PrivateString
+                    }
+                ],
+                backtrace_strings: Vec::new()
+            }
+        );
+    }
+
+    #[test]
     fn test_parse_firehose_preamble_private_public_values() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         test_path.push("tests/test_data/Chunkset Tests/private_public_data.raw");
@@ -3529,5 +3572,40 @@ mod tests {
             }
             panic!("Got wrong message strings: {entry:?}");
         }
+    }
+
+    #[test]
+    fn test_parse_private_data_sensitive_number() {
+        let mut items = FirehoseItemData {
+            item_info: vec![
+                FirehoseItemType {
+                    item_type: 37,
+                    item_type_size: 4,
+                    offset: 0,
+                    item_size: 0,
+                    message_strings: String::from("<private>"),
+                    item: FirehoseItem::PrivateString,
+                },
+                FirehoseItemType {
+                    item_type: 5,
+                    item_type_size: 4,
+                    offset: 0,
+                    item_size: 32768,
+                    message_strings: String::from("<private>"),
+                    item: FirehoseItem::SensitiveNumber,
+                },
+                FirehoseItemType {
+                    item_type: 37,
+                    item_type_size: 4,
+                    offset: 0,
+                    item_size: 0,
+                    message_strings: String::from("<private>"),
+                    item: FirehoseItem::PrivateString,
+                },
+            ],
+            backtrace_strings: Vec::new(),
+        };
+
+        FirehosePreamble::parse_private_data(&[], &mut items).unwrap();
     }
 }
