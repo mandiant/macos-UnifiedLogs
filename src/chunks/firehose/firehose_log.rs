@@ -660,7 +660,7 @@ impl FirehosePreamble {
             item.item = FirehoseItem::Precision;
         }
 
-        const SENSITIVE_ITEMS: [u8; 3] = [05, 0x45, 0x85];
+        const SENSITIVE_ITEMS: [u8; 3] = [0x5, 0x45, 0x85];
         if SENSITIVE_ITEMS.contains(&item.item_type) {
             let (input, message_offset) = le_u16(firehose_input)?;
             let (input, message_size) = le_u16(input)?;
