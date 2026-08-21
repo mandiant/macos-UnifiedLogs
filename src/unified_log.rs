@@ -126,7 +126,7 @@ where
         (?:{[^}]+}?)                      # Get String formatters with %{<variable>}<variable> values. Ex: %{public}#llx with team ID %{public}@
         (?:[-+0#]{0,5})                   # optional flags
         (?:\d+|\*)?                       # width
-        (?:\.(?:\d+|\*))?                 # precision
+        (?:\.(?:\d+|\*)?)?                 # precision
         (?:h|hh|l|ll|t|q|w|I|z|I32|I64)?  # size
         [cCdiouxXeEfgGaAnpsSZPm@}]       # type
 
@@ -134,13 +134,13 @@ where
 
         (?:[-+0 #]{0,5})                  # optional flags
         (?:\d+|\*)?                       # width
-        (?:\.(?:\d+|\*))?                 # precision
+        (?:\.(?:\d+|\*)?)?                 # precision
         (?:h|hh|l|ll|w|I|t|q|z|I32|I64)?  # size
         [cCdiouxXeEfgGaAnpsSZPm@%]        # type
         ))
         */
         let message_re_result = Regex::new(
-            r"(%(?:(?:\{[^}]+}?)(?:[-+0#]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*))?(?:h|hh|l|ll|w|I|z|t|q|I32|I64)?[cmCdiouxXeEfgGaAnpsSZP@}]|(?:[-+0 #]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*))?(?:h|hh|l||q|t|ll|w|I|z|I32|I64)?[cmCdiouxXeEfgGaAnpsSZP@%]))",
+            r"(%(?:(?:\{[^}]+}?)(?:[-+0#]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*)?)?(?:h|hh|l|ll|w|I|z|t|q|I32|I64)?[cmCdiouxXeEfgGaAnpsSZP@}]|(?:[-+0 #]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*)?)?(?:h|hh|l||q|t|ll|w|I|z|I32|I64)?[cmCdiouxXeEfgGaAnpsSZP@%]))",
         );
         let message_re = match message_re_result {
             Ok(message_re) => message_re,

@@ -996,7 +996,7 @@ fn parse_int(message: String) -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use crate::chunks::firehose::firehose_log::FirehoseItemType;
+    use crate::chunks::firehose::firehose_log::{FirehoseItem, FirehoseItemType};
     use crate::message::{
         Alignment, MessageFormatters, NumberFormat, Padding, format_firehose_log_message,
         format_message, format_message_padding, parse_float, parse_formatter, parse_int,
@@ -1017,6 +1017,69 @@ mod tests {
 
         let log_string = format_firehose_log_message(test_data, &item_message, &message_re);
         assert_eq!(log_string, "opendirectoryd (build 796.100) launched...")
+    }
+
+    #[test]
+    fn test_format_firehose_log_message_tricky() {
+        let test = String::from(
+            "<%{public}@:%p> creating new multiplexing view controller controller <%{public}@:%p> for %{public}@ at level: %.f",
+        );
+        let items = vec![
+            FirehoseItemType {
+                item_type: 66,
+                item_type_size: 4,
+                offset: 0,
+                item_size: 23,
+                message_strings: String::from("SBHMultiplexingManager"),
+                item: FirehoseItem::String,
+            },
+            FirehoseItemType {
+                item_type: 0,
+                item_type_size: 8,
+                offset: 0,
+                item_size: 0,
+                message_strings: String::from("936749223363120960"),
+                item: FirehoseItem::Number,
+            },
+            FirehoseItemType {
+                item_type: 66,
+                item_type_size: 4,
+                offset: 23,
+                item_size: 30,
+                message_strings: String::from("SBHMultiplexingViewController"),
+                item: FirehoseItem::String,
+            },
+            FirehoseItemType {
+                item_type: 0,
+                item_type_size: 8,
+                offset: 0,
+                item_size: 0,
+                message_strings: String::from("1008806817370365440"),
+                item: FirehoseItem::Number,
+            },
+            FirehoseItemType {
+                item_type: 66,
+                item_type_size: 4,
+                offset: 53,
+                item_size: 37,
+                message_strings: String::from("D8F2438E-AACF-4ED9-AD47-F5A1598215C7"),
+                item: FirehoseItem::String,
+            },
+            FirehoseItemType {
+                item_type: 0,
+                item_type_size: 8,
+                offset: 0,
+                item_size: 0,
+                message_strings: String::from("0"),
+                item: FirehoseItem::Number,
+            },
+        ];
+        let message_re = Regex::new(r"(%(?:(?:\{[^}]+}?)(?:[-+0#]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*)?)?(?:h|hh|l|ll|w|I|z|t|q|I32|I64)?[cmCdiouxXeEfgGaAnpsSZP@%}]|(?:[-+0 #]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*)?)?(?:h|hh|l||q|t|ll|w|I|z|I32|I64)?[cmCdiouxXeEfgGaAnpsSZP@%]))").unwrap();
+        let log_string = format_firehose_log_message(test, &items, &message_re);
+        assert_eq!(
+            log_string,
+            "<SBHMultiplexingManager:D0000749E2E8F40> creating new multiplexing view controller controller <SBHMultiplexingViewController:E0000749C5A5E00> for D8F2438E-AACF-4ED9-AD47-F5A1598215C7 at level: 0"
+        )
     }
 
     #[test]

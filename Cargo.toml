@@ -11,23 +11,23 @@ keywords = ["forensics", "macOS", "unifiedlog"]
 
 [dependencies]
 nom = "8.0.0"
-serde_json = "1.0.149"
-serde = { version = "1.0.228", features = ["derive"] }
-log = "0.4.29"
-lz4_flex = "0.13.0"
+serde_json = "1.0.151"
+serde = { version = "1.0.229", features = ["derive"] }
+log = "0.4.33"
+lz4_flex = "0.14.0"
 byteorder = "1.5.0"
-plist = "1.9.0"
-regex = "1.12.3"
-base64 = "0.22.1"
-chrono = "0.4.44"
+plist = "1.10.0"
+regex = "1.13.1"
+base64 = "0.23.1"
+chrono = "0.4.45"
 walkdir = "2.5.0"
 sunlight = "0.1.5"
 
 [dev-dependencies]
-chrono = "0.4.44"
+chrono = "0.4.45"
 criterion = "0.8.2"
-anyhow = "1.0.102"
-test-case = "3.3"
+anyhow = "1.0.104"
+test-case = "3.3.1"
 
 [[bench]]
 name = "high_sierra_benchmark"
