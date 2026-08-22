@@ -36,6 +36,7 @@ impl FirehoseActivity {
         data: &[u8],
         firehose_flags: u16,
         firehose_log_type: u8,
+        catalog_persona: Option<u32>,
     ) -> nom::IResult<&[u8], FirehoseActivity> {
         let mut activity = FirehoseActivity::default();
         let mut input = data;
@@ -77,12 +78,18 @@ impl FirehoseActivity {
         let has_persona = 0x40;
         if (firehose_flags & has_persona) != 0 {
             debug!("[macos-unifiedlogs] Activity Firehose log chunk has has_persona flag");
-            let (firehose_input, persona_id) = le_u32(input)?;
-
-            activity.persona_id = persona_id;
             activity.flags.push(MessageFlags::HasPersona);
 
-            input = firehose_input;
+            // The persona is inline only when the catalog does not already record one for this
+            // process. When it does, the flag is still set but no field follows it.
+            match catalog_persona {
+                Some(persona_id) => activity.persona_id = persona_id,
+                None => {
+                    let (firehose_input, persona_id) = le_u32(input)?;
+                    activity.persona_id = persona_id;
+                    input = firehose_input;
+                }
+            }
         }
 
         let activity_id_other = 0x200; // has_other_current_aid flag. In Activity log entries this is another activity id flag
@@ -157,7 +164,7 @@ mod tests {
         let test_flags = 573;
         let log_type: u8 = 0x1;
         let (_, results) =
-            FirehoseActivity::parse_activity(&test_data, test_flags, log_type).unwrap();
+            FirehoseActivity::parse_activity(&test_data, test_flags, log_type, None).unwrap();
         assert_eq!(results.activity_id, 64434);
         assert_eq!(results.sentinal, 2147483648);
         assert_eq!(results.pid, 236);
