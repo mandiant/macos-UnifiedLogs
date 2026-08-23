@@ -125,7 +125,31 @@ pub struct CatalogPersona {
     uuid: String,
 }
 
+impl ProcessInfoEntry {
+    /// `persona_id` values that mean the catalog records no persona for the process.
+    ///
+    /// `0xFFFFFFFF` is what `log` itself renders as `NOPERSONA`; `0xAAAAAAAA` is an
+    /// uninitialized-memory pattern seen in the same field.
+    const NO_PERSONA: [u32; 2] = [0xFFFF_FFFF, 0xAAAA_AAAA];
+
+    /// The persona a `persona_id` field names, or `None` when it holds a sentinel.
+    pub(crate) fn persona(persona_id: u32) -> Option<u32> {
+        (!Self::NO_PERSONA.contains(&persona_id)).then_some(persona_id)
+    }
+}
+
 impl CatalogChunk {
+    /// The persona the catalog records for a process, if it records one.
+    ///
+    /// A firehose tracepoint carries its persona id inline only when this is `None`. When the
+    /// catalog already knows the persona, the entry still sets the `has_persona` flag but no
+    /// field follows it -- reading one anyway consumes the start of the item list and shifts
+    /// every field after it. See `FirehosePreamble::parse_firehose`.
+    pub fn persona_for(&self, first_proc_id: u64, second_proc_id: u32) -> Option<u32> {
+        self.catalog_process_info_entries
+            .get(&format!("{first_proc_id}_{second_proc_id}"))
+            .and_then(|entry| ProcessInfoEntry::persona(entry.persona_id))
+    }
     /// Parse log Catalog data. The log Catalog contains metadata related to log entries such as Process info, Subsystem info, and the compressed log entries
     pub fn parse_catalog(input: &[u8]) -> IResult<&[u8], Self> {
         let (input, preamble) = LogPreamble::parse(input)?;
@@ -543,6 +567,7 @@ impl CatalogChunk {
 mod tests {
     use super::CatalogChunk;
     use crate::catalog::CatalogPersona;
+    use crate::catalog::ProcessInfoEntry;
     use std::fs;
     use std::path::PathBuf;
 
@@ -821,5 +846,13 @@ mod tests {
                 }
             ]
         )
+    }
+
+    #[test]
+    fn persona_sentinels_are_not_personas() {
+        assert_eq!(ProcessInfoEntry::persona(99), Some(99));
+        assert_eq!(ProcessInfoEntry::persona(1000), Some(1000));
+        assert_eq!(ProcessInfoEntry::persona(0xFFFF_FFFF), None);
+        assert_eq!(ProcessInfoEntry::persona(0xAAAA_AAAA), None);
     }
 }

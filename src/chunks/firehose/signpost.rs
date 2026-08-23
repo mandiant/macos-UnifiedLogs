@@ -36,6 +36,7 @@ impl FirehoseSignpost {
     pub fn parse_signpost(
         data: &[u8],
         firehose_flags: u16,
+        catalog_persona: Option<u32>,
     ) -> nom::IResult<&[u8], FirehoseSignpost> {
         let mut firehose_signpost = FirehoseSignpost::default();
 
@@ -55,12 +56,18 @@ impl FirehoseSignpost {
         let has_persona = 0x40;
         if (firehose_flags & has_persona) != 0 {
             debug!("[macos-unifiedlogs] Signpost Firehose has has_persona flag");
-            let (firehose_input, persona_id) = le_u32(input)?;
-
-            firehose_signpost.persona_id = persona_id;
             firehose_signpost.flags.push(MessageFlags::HasPersona);
 
-            input = firehose_input;
+            // The persona is inline only when the catalog does not already record one for this
+            // process. When it does, the flag is still set but no field follows it.
+            match catalog_persona {
+                Some(persona_id) => firehose_signpost.persona_id = persona_id,
+                None => {
+                    let (firehose_input, persona_id) = le_u32(input)?;
+                    firehose_signpost.persona_id = persona_id;
+                    input = firehose_input;
+                }
+            }
         }
 
         let private_string_range = 0x100; // has_private_data flag
@@ -181,7 +188,7 @@ mod tests {
             225, 244, 2, 0, 1, 0, 238, 238, 178, 178, 181, 176, 238, 238, 176, 63, 27, 0, 0, 0,
         ];
         let test_flags = 33282;
-        let (_, results) = FirehoseSignpost::parse_signpost(&test_data, test_flags).unwrap();
+        let (_, results) = FirehoseSignpost::parse_signpost(&test_data, test_flags, None).unwrap();
         assert_eq!(results.pc_id, 193761);
         assert_eq!(results.activity_id, 0);
         assert_eq!(results.sentinel, 0);
@@ -259,7 +266,7 @@ mod tests {
             219, 90, 1, 0, 0, 3, 0, 4, 1, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 4, 10, 0, 0, 0,
         ];
         let flags = 33380;
-        let (_, result) = FirehoseSignpost::parse_signpost(&test, flags).unwrap();
+        let (_, result) = FirehoseSignpost::parse_signpost(&test, flags, None).unwrap();
         assert_eq!(
             result.flags,
             vec![
