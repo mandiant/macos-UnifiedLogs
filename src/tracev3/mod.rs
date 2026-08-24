@@ -19,46 +19,12 @@ use super::timesync::TimestampResolver;
 use super::traits::FileProvider;
 use log::warn;
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
 use uuid::Uuid;
 
-// ---------------------------------------------------------------------------
-// OversizeCache
-// ---------------------------------------------------------------------------
-
-/// Cache for oversize log entries, threaded across chunksets and tracev3 files.
-///
-/// Oversize entries carry strings too large for regular firehose entries.
-/// They must be cached and looked up when a firehose entry references them
-/// via `data_ref`.
-#[derive(Debug, Default)]
-pub struct OversizeCache {
-    pub(crate) entries: HashMap<(u32, u64, u32), Vec<u8>>,
-}
-
-impl OversizeCache {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    fn insert(&mut self, oversize: &RawOversize<'_>) {
-        self.entries
-            .entry((
-                oversize.data_ref_index,
-                oversize.first_proc_id,
-                oversize.second_proc_id,
-            ))
-            .or_insert_with(|| oversize.oversize_data.to_vec());
-    }
-
-    fn get(&self, data_ref: u32, first_proc_id: u64, second_proc_id: u32) -> Option<&[u8]> {
-        self.entries
-            .get(&(data_ref, first_proc_id, second_proc_id))
-            .map(|v| v.as_slice())
-    }
-}
+mod oversize;
+pub use oversize::OversizeCache;
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -73,7 +39,7 @@ pub fn visit_tracev3<'d, 's: 'd>(
     data: &'d [u8],
     resolver: &TimestampResolver,
     strings: &StringCatalog<'s, impl FileProvider>,
-    oversize_cache: &mut OversizeCache,
+    oversize_cache: &OversizeCache<'_>,
     evidence: Rc<PathBuf>,
     mut callback: impl for<'b> FnMut(LogEntry<'d, 'b>),
 ) -> Result<(), ParseError> {
@@ -405,7 +371,7 @@ fn visit_firehose_entries<'d: 'b, 'b, 's: 'd>(
     catalog: &RawCatalogChunk<'d>,
     resolver: &TimestampResolver,
     strings: &StringCatalog<'s, impl FileProvider>,
-    oversize_cache: &'b OversizeCache,
+    oversize_cache: &'b OversizeCache<'_>,
     evidence: &Rc<PathBuf>,
     callback: &mut impl FnMut(LogEntry<'d, 'b>),
 ) {
@@ -635,7 +601,7 @@ fn visit_firehose_entries<'d: 'b, 'b, 's: 'd>(
         };
         let message_flags = message_flags_for_body(&body, entry.flags, &formatter);
         let items = if let Some(data_ref) = data_ref {
-            match oversize_cache.get(data_ref, fh.first_proc_id, fh.second_proc_id) {
+            match oversize_cache.get_or_harvest(data_ref, fh.first_proc_id, fh.second_proc_id) {
                 Some(d) => ItemsData::Regular {
                     data: d,
                     flags: entry.flags,
@@ -1167,32 +1133,5 @@ mod tests {
     #[test_case(""                                           => ""         ; "empty")]
     fn test_extract_timezone_name(input: &str) -> &str {
         extract_timezone_name(input)
-    }
-
-    // --- OversizeCache tests ---
-
-    #[test]
-    fn test_oversize_cache_insert_and_get() {
-        let mut cache = OversizeCache::new();
-        cache.entries.insert((1, 100, 200), vec![1, 2, 3, 4]);
-        assert_eq!(cache.get(1, 100, 200), Some(&[1, 2, 3, 4][..]));
-    }
-
-    #[test]
-    fn test_oversize_cache_miss() {
-        let cache = OversizeCache::new();
-        assert_eq!(cache.get(1, 100, 200), None);
-    }
-
-    #[test]
-    fn test_oversize_cache_different_key() {
-        let mut cache = OversizeCache::new();
-        cache.entries.insert((1, 100, 200), vec![1, 2, 3]);
-        // Different data_ref
-        assert_eq!(cache.get(2, 100, 200), None);
-        // Different first_proc_id
-        assert_eq!(cache.get(1, 101, 200), None);
-        // Different second_proc_id
-        assert_eq!(cache.get(1, 100, 201), None);
     }
 }

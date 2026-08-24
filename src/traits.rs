@@ -21,8 +21,12 @@ use uuid::Uuid;
 pub trait FileProvider {
     /// Provides an iterator of `.tracev3` sources in deterministic processing order.
     ///
-    /// For the built-in providers this is `HighVolume` -> `Persist` -> `Signpost` ->
-    /// `Special` -> `logdata.LiveData.tracev3`, each directory sorted by file name.
+    /// The filesystem-backed providers sort files chronologically by each
+    /// file's header start time with `logdata.LiveData.tracev3` last, so
+    /// oversize payloads are usually seen before the entries referencing them
+    /// (falling back to `HighVolume` -> `Persist` -> `Signpost` -> `Special`,
+    /// name-sorted, for unreadable headers). [`crate::filesystem::InMemoryProvider`]
+    /// yields files in caller-provided order.
     fn tracev3_files(&self) -> impl Iterator<Item = impl SourceFile>;
 
     /// Provides an iterator of `.timesync` sources.

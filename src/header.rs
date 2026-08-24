@@ -6,6 +6,9 @@ use nom::{
 use std::mem::size_of;
 use uuid::Uuid;
 
+/// The size of the raw header chunk in bytes (without the preamble).
+pub const RAW_HEADER_CHUNK_SIZE: usize = 208;
+
 #[derive(Debug, Clone)]
 pub struct RawHeaderChunk<'a> {
     pub mach_time_numerator: u32,

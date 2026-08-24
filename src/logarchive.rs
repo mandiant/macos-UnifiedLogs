@@ -109,7 +109,7 @@ pub fn visit_provider_with_options(
     let resolver = TimestampResolver::new(timesync_data);
 
     // 2. Oversize entries (owned) survive storage reclaims
-    let mut oversize_cache = OversizeCache::new();
+    let oversize_cache = OversizeCache::with_provider(provider);
     let mut sources = provider.tracev3_files();
 
     // 3. Process all tracev3 sources, one storage generation at a time.
@@ -133,11 +133,12 @@ pub fn visit_provider_with_options(
                 continue;
             }
 
+            oversize_cache.mark_covered(source.source_path());
             if let Err(e) = visit_tracev3(
                 &data,
                 &resolver,
                 &strings,
-                &mut oversize_cache,
+                &oversize_cache,
                 Rc::new(PathBuf::from(source.source_path())),
                 |entry| {
                     callback(entry);
@@ -189,16 +190,18 @@ pub fn visit_logarchive_tracev3_files<P: AsRef<Path>>(
     let resolver = TimestampResolver::new(timesync_data);
     let storage = StringStorage::new(&provider);
     let strings = StringCatalog::new(&storage);
-    let mut oversize_cache = OversizeCache::new();
+    let oversize_cache = OversizeCache::with_provider(&provider);
 
     for (index, tracev3_path) in tracev3_paths.iter().enumerate() {
         let evidence = logarchive_path.join(tracev3_path);
         let data = std::fs::read(&evidence)?;
+        // Must match LocalFile's source_path() string for the same file
+        oversize_cache.mark_covered(&evidence.to_string_lossy());
         visit_tracev3(
             &data,
             &resolver,
             &strings,
-            &mut oversize_cache,
+            &oversize_cache,
             Rc::new(evidence),
             |entry| callback(index, entry),
         )?;

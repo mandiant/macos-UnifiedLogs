@@ -351,14 +351,14 @@ fn parse_single_file(
     let resolver = TimestampResolver::new(HashMap::new());
     let storage = StringStorage::new(InMemoryProvider::default());
     let strings = StringCatalog::new(&storage);
-    let mut oversize_cache = OversizeCache::new();
+    let oversize_cache = OversizeCache::new();
 
     let mut parse_context = ParseContext::new(writer, &bookmark, resume);
     if let Err(e) = visit_tracev3(
         &data,
         &resolver,
         &strings,
-        &mut oversize_cache,
+        &oversize_cache,
         Rc::new(path.to_path_buf()),
         |entry| parse_context.handle(&entry),
     ) {
@@ -402,10 +402,10 @@ fn parse_trace_file(
     // String files (UUIDText/dsc) load lazily as log entries reference them
     let storage = StringStorage::new(provider);
     let strings = StringCatalog::new(&storage);
-    // We need to persist the Oversize log entries (they contain large strings that don't fit in normal log entries)
-    // Some log entries have Oversize strings located in different tracev3 files.
-    // This is very rare. Seen in ~20 log entries out of ~700,000. Seen in ~700 out of ~18 million
-    let mut oversize_cache = OversizeCache::new();
+    // Oversize entries (large strings that don't fit in normal log entries) persist
+    // across files; rare backward references to not-yet-visited tracev3 files
+    // (~700 out of ~18 million entries) are resolved by harvesting on demand.
+    let oversize_cache = OversizeCache::with_provider(provider);
 
     let mut parse_context = ParseContext::new(writer, &bookmark, resume);
     // Loop through all tracev3 files in Persist directory
@@ -423,6 +423,8 @@ fn parse_trace_file(
             .file_name()
             .is_some_and(|f| f.to_str().unwrap_or_default().starts_with("._"))
         {
+            // Keep the oversize harvester away from AppleDouble files too
+            oversize_cache.mark_covered(source.source_path());
             continue;
         }
         info!("Parsing: {path}", path = source.source_path());
@@ -434,11 +436,12 @@ fn parse_trace_file(
             continue;
         }
         let evidence = Rc::new(PathBuf::from(source.source_path()));
+        oversize_cache.mark_covered(source.source_path());
         if let Err(e) = visit_tracev3(
             &data,
             &resolver,
             &strings,
-            &mut oversize_cache,
+            &oversize_cache,
             evidence,
             |entry| parse_context.handle(&entry),
         ) {

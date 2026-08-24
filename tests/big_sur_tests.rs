@@ -524,7 +524,8 @@ fn test_big_sur_missing_oversize_strings() {
 
     let mut data_len = 0;
     let mut missing_strings = 0;
-    // livedata may have oversize string data in other tracev3 on disk
+    // livedata has oversize string data in other tracev3 files on disk;
+    // the oversize harvester resolves those 23 references on demand
     visit_logarchive_tracev3_file(&test_path, "logdata.LiveData.tracev3", |results| {
         data_len += 1;
         if results.message().contains("<Missing message data>") {
@@ -534,9 +535,9 @@ fn test_big_sur_missing_oversize_strings() {
     .unwrap();
 
     assert_eq!(data_len, 101566);
-    // There should be only 29 entries that have actual missing data
-    // 23 strings are in other trave3 files. 23 + 29 = 52
-    assert_eq!(missing_strings, 52);
+    // Only the 29 entries whose oversize data exists nowhere in the archive
+    // (rolled logs) remain missing
+    assert_eq!(missing_strings, 29);
 }
 
 #[test]
@@ -568,5 +569,38 @@ fn test_big_sur_oversize_strings_in_another_file() {
     assert_eq!(data_len, 101566);
     // 29 log entries actually have missing data
     // Apple displays as: <decode: missing data>
+    assert_eq!(missing_strings, 29);
+}
+
+#[test]
+fn test_big_sur_oversize_strings_resolved_backward() {
+    let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    test_path.push("tests/test_data/system_logs_big_sur.logarchive");
+
+    // LiveData visited FIRST: its oversize references point at files not yet
+    // visited, so resolution relies entirely on the on-miss harvester.
+    let mut data_len = 0;
+    let mut missing_strings = 0;
+    visit_logarchive_tracev3_files(
+        &test_path,
+        &[
+            "logdata.LiveData.tracev3",
+            "Persist/0000000000000005.tracev3",
+            "Special/0000000000000005.tracev3",
+        ],
+        |index, results| {
+            if index != 0 {
+                return;
+            }
+            data_len += 1;
+            if results.message().contains("<Missing message data>") {
+                missing_strings += 1;
+            }
+        },
+    )
+    .unwrap();
+
+    assert_eq!(data_len, 101566);
+    // Same 29 truly-missing entries as in forward order
     assert_eq!(missing_strings, 29);
 }

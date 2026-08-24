@@ -13,6 +13,8 @@ use std::path::{Component, Path, PathBuf};
 
 use uuid::Uuid;
 
+use crate::chunks::{ChunkPreamble, ChunkTag, PREAMBLE_SIZE};
+use crate::header::{RAW_HEADER_CHUNK_SIZE, RawHeaderChunk};
 use crate::traits::SourceFile;
 
 /// A [`SourceFile`] backed by a local file, remembering its original path.
@@ -272,8 +274,12 @@ const TRACE_SUBDIRS: &[&str] = &["HighVolume", "Persist", "Signpost", "Special"]
 /// The base path may be either a `.logarchive` root or the live macOS diagnostics
 /// directory (`/private/var/db/diagnostics`).
 ///
-/// Order: `HighVolume` -> `Persist` -> `Signpost` -> `Special` ->
-/// `logdata.LiveData.tracev3`. Within each directory, files are sorted by name.
+/// Files are ordered chronologically by each file's header start time so that
+/// oversize payloads are usually seen before the entries referencing them,
+/// with `logdata.LiveData.tracev3` always last (it holds the newest entries
+/// but its header carries an older start time). Files whose header cannot be
+/// read fall back to the fixed directory order (`HighVolume` -> `Persist` ->
+/// `Signpost` -> `Special`, name-sorted within each directory).
 pub fn collect_tracev3_paths(base: &Path) -> Vec<PathBuf> {
     let mut paths = Vec::new();
 
@@ -292,12 +298,39 @@ pub fn collect_tracev3_paths(base: &Path) -> Vec<PathBuf> {
         }
     }
 
+    // Stable sort: files with unreadable headers keep their relative
+    // fixed-order position at the end.
+    paths.sort_by_key(|path| tracev3_sort_key(path).unwrap_or((u64::MAX, u64::MAX)));
+
     let live_data = base.join("logdata.LiveData.tracev3");
     if live_data.is_file() {
         paths.push(live_data);
     }
 
     paths
+}
+
+/// Chronological sort key for a tracev3 file: `(unknown_time, continous_time)`
+/// from its header chunk.
+///
+/// `unknown_time` is the file's wall-clock start time in Unix epoch seconds;
+/// sibling files rotated in the same second are ordered by the mach continuous
+/// time. `None` if the file cannot be read or does not start with a header chunk.
+pub(crate) fn tracev3_sort_key(path: &Path) -> Option<(u64, u64)> {
+    const SIZE: usize = PREAMBLE_SIZE + RAW_HEADER_CHUNK_SIZE;
+    let size = u64::try_from(SIZE).ok()?;
+    let mut buffer = Vec::new();
+    File::open(path)
+        .ok()?
+        .take(size)
+        .read_to_end(&mut buffer)
+        .ok()?;
+    let (body, preamble) = ChunkPreamble::parse(&buffer).ok()?;
+    if preamble.tag != ChunkTag::Header {
+        return None;
+    }
+    let (_, header) = RawHeaderChunk::parse(body).ok()?;
+    Some((header.unknown_time, header.continous_time))
 }
 
 /// Collect all `.timesync` file paths, sorted by name.
@@ -436,6 +469,16 @@ mod tests {
         assert!(
             last.contains("LiveData"),
             "last tracev3 should be LiveData, got: {last}"
+        );
+
+        // All but LiveData (forced last) are chronological by header start time
+        let keys: Vec<_> = paths[..paths.len() - 1]
+            .iter()
+            .map(|p| tracev3_sort_key(p).expect("test archive headers should parse"))
+            .collect();
+        assert!(
+            keys.windows(2).all(|w| w[0] <= w[1]),
+            "tracev3 paths should be sorted chronologically, got keys: {keys:?}"
         );
     }
 

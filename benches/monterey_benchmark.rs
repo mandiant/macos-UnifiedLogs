@@ -23,12 +23,12 @@ fn visit_file(
     evidence: &Rc<PathBuf>,
     format_messages: bool,
 ) {
-    let mut oversize_cache = OversizeCache::new();
+    let oversize_cache = OversizeCache::new();
     visit_tracev3(
         data,
         resolver,
         strings,
-        &mut oversize_cache,
+        &oversize_cache,
         Rc::clone(evidence),
         |entry| {
             if format_messages {
