@@ -8,7 +8,11 @@ check:
 
 alias t:= test
 test: 
-    cargo t --release --lib --bins --tests --examples 
+    cargo t --release --lib --bins --tests --examples
+
+alias b:= bench
+bench:
+    cargo bench
 
 dump path="tests/test_data/system_logs_big_sur_private_enabled.logarchive" dump_file="dump.txt":
     time cargo run --release --manifest-path examples/Cargo.toml -p dump -- "{{path}}" > "{{dump_file}}"
