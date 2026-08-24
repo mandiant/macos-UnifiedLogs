@@ -14,8 +14,6 @@ Example binaries live in `examples/`:
   into a JSONL or CSV file, with bookmark/resume support. The output file will be
   quite large.
 - `dump` - Minimal JSONL dump of a logarchive.
-- `logrs` - JSONL output for a logarchive or live system, including a
-  timesync-only mode.
 
 ```bash
 cargo run --release --manifest-path examples/Cargo.toml -p unifiedlog_iterator -- --mode log-archive --input system_logs.logarchive

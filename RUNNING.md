@@ -4,7 +4,6 @@ Three example binaries live in the `examples/` workspace (see `BUILDING.md` to b
 
 - `unifiedlog_iterator` — parses a logarchive or a live macOS system into JSONL or CSV, with bookmark/resume support
 - `dump` — minimal JSONL dump of a logarchive
-- `logrs` — JSONL output for a logarchive or live system, including a timesync-only mode
 
 Run from the repository root (`--manifest-path` keeps relative input paths working):
 
