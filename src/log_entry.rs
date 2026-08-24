@@ -433,25 +433,41 @@ fn format_statedump_object(data: &[u8], title_name: &str) -> String {
 
 impl Serialize for LogEntry<'_, '_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut state = serializer.serialize_struct("LogEntry", 20)?;
+        // UUIDs as uppercase hex without hyphens, matching the historical
+        // output format (and the CSV output)
+        let mut uuid_buffer = Uuid::encode_buffer();
+        let mut state = serializer.serialize_struct("LogEntry", 21)?;
         state.serialize_field("subsystem", &self.subsystem)?;
         state.serialize_field("category", &self.category)?;
         state.serialize_field("thread_id", &self.thread_id)?;
         state.serialize_field("pid", &self.pid)?;
         state.serialize_field("euid", &self.euid)?;
         state.serialize_field("library", &self.library)?;
-        state.serialize_field("library_uuid", &self.library_uuid)?;
+        state.serialize_field(
+            "library_uuid",
+            &*self.library_uuid.simple().encode_upper(&mut uuid_buffer),
+        )?;
         state.serialize_field("activity_id", &self.activity_id)?;
         state.serialize_field("parent_activity_id", &self.parent_activity_id)?;
         state.serialize_field("time", &self.time)?;
+        // RFC3339 rendering of `time`, matching the historical output format
+        let timestamp = DateTime::from_timestamp_nanos(self.time as i64)
+            .to_rfc3339_opts(chrono::SecondsFormat::Nanos, true);
+        state.serialize_field("timestamp", timestamp.as_str())?;
         state.serialize_field("event_type", &self.event_type)?;
         state.serialize_field("log_type", &self.log_type)?;
         state.serialize_field("process", &self.process)?;
-        state.serialize_field("process_uuid", &self.process_uuid)?;
+        state.serialize_field(
+            "process_uuid",
+            &*self.process_uuid.simple().encode_upper(&mut uuid_buffer),
+        )?;
         let message = self.message();
         state.serialize_field("message", message.as_str())?;
         state.serialize_field("format_string", &self.effective_format_string())?;
-        state.serialize_field("boot_uuid", &self.boot_uuid)?;
+        state.serialize_field(
+            "boot_uuid",
+            &*self.boot_uuid.simple().encode_upper(&mut uuid_buffer),
+        )?;
         state.serialize_field("timezone_name", self.timezone_name)?;
         let evidence = self.evidence.to_string_lossy();
         state.serialize_field("evidence", evidence.as_ref())?;

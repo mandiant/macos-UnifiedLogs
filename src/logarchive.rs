@@ -174,9 +174,7 @@ pub fn visit_logarchive_tracev3_file<O: VisitOutcome>(
     tracev3_path: impl AsRef<Path>,
     mut callback: impl for<'a, 'b> FnMut(LogEntry<'a, 'b>) -> O,
 ) -> Result<(), VisitTracev3FileError> {
-    visit_logarchive_tracev3_files(logarchive_path, &[tracev3_path], |_, entry| {
-        callback(entry);
-    })
+    visit_logarchive_tracev3_files(logarchive_path, &[tracev3_path], |_, entry| callback(entry))
 }
 
 /// Helper function to process selected tracev3 files from a logarchive in the provided order.
@@ -277,6 +275,53 @@ mod tests {
     use super::*;
     use crate::filesystem::collect_tracev3_paths;
     use crate::helpers::tests::test_data_path;
+
+    #[test]
+    fn test_log_entry_json_schema() {
+        let base = test_data_path().join("system_logs_big_sur.logarchive");
+
+        let mut first: Option<serde_json::Value> = None;
+        let mut count = 0_usize;
+        visit_logarchive_tracev3_file(&base, "Persist/0000000000000001.tracev3", |entry| {
+            first = Some(serde_json::to_value(&entry).unwrap());
+            count += 1;
+            ControlFlow::Break(())
+        })
+        .unwrap();
+        assert_eq!(count, 1, "Break must stop after the first entry");
+        let entry = first.unwrap();
+
+        // UUIDs are uppercase hex without hyphens, matching CSV and the
+        // historical JSONL format
+        for field in ["library_uuid", "process_uuid", "boot_uuid"] {
+            let uuid = entry[field].as_str().unwrap();
+            assert_eq!(uuid.len(), 32, "{field} should be bare hex: {uuid}");
+            assert!(
+                uuid.chars()
+                    .all(|c| c.is_ascii_digit() || c.is_ascii_uppercase()),
+                "{field} should be uppercase hex: {uuid}"
+            );
+        }
+        assert_eq!(
+            entry["boot_uuid"].as_str().unwrap(),
+            "9A6A3124274A44B29ABF2BC9E4599B3B"
+        );
+
+        // RFC3339 timestamp restored, consistent with the nanosecond `time`
+        let timestamp = entry["timestamp"].as_str().unwrap();
+        let parsed = chrono::DateTime::parse_from_rfc3339(timestamp).unwrap();
+        let time = entry["time"].as_f64().unwrap();
+        let delta = (parsed.timestamp_nanos_opt().unwrap() as f64 - time).abs();
+        assert!(
+            delta < 1_000.0,
+            "timestamp {timestamp} should match time {time}"
+        );
+
+        // Renames/removals locked in
+        assert!(entry.get("format_string").is_some());
+        assert!(entry.get("raw_message").is_none());
+        assert!(entry.get("message_entries").is_none());
+    }
 
     #[test]
     fn test_visit_early_exit_breaks_mid_archive() {

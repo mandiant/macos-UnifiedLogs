@@ -1,0 +1,6 @@
+kind: Fixed
+body: |
+  JSONL output: UUID fields (`library_uuid`, `process_uuid`, `boot_uuid`) serialize as uppercase hex
+  without hyphens again, matching the CSV output and the historical JSONL format; the RFC3339
+  `timestamp` field (nanosecond precision, UTC `Z`) is restored alongside the nanosecond `time` field.
+time: 2026-08-24T00:00:03.000000000Z

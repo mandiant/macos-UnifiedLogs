@@ -1,0 +1,6 @@
+kind: Changed
+body: |
+  JSONL output: `raw_message` is renamed to `format_string` (same value, the printf-style format string);
+  `message_entries` (the parsed argument list) is no longer emitted; `parent_activity_id` is `null`
+  when absent (was `0`).
+time: 2026-08-24T00:00:04.000000000Z
