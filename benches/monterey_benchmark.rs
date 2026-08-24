@@ -24,7 +24,7 @@ fn visit_file(
     format_messages: bool,
 ) {
     let oversize_cache = OversizeCache::new();
-    visit_tracev3(
+    let _ = visit_tracev3(
         data,
         resolver,
         strings,

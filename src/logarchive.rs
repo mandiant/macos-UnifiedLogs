@@ -11,10 +11,11 @@ use super::filesystem::{LiveSystemProvider, LogarchiveProvider};
 use super::log_entry::LogEntry;
 use super::timesync::{RawTimesyncBoot, TimestampResolver, parse_timesync_file};
 use super::tracev3::{OversizeCache, visit_tracev3};
-use super::traits::{FileProvider, SourceFile};
-use log::warn;
+use super::traits::{FileProvider, SourceFile, VisitOutcome};
+use log::{info, warn};
 use std::collections::HashMap;
 use std::io::Read;
+use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use uuid::Uuid;
@@ -32,9 +33,9 @@ pub enum VisitTracev3FileError {
 /// The callback receives each `LogEntry` as it is produced. Individual file or parse
 /// failures are logged as warnings and skipped — only a missing timesync directory
 /// is a hard error.
-pub fn visit_logarchive(
+pub fn visit_logarchive<O: VisitOutcome>(
     path: &Path,
-    callback: impl for<'a, 'b> FnMut(LogEntry<'a, 'b>),
+    callback: impl for<'a, 'b> FnMut(LogEntry<'a, 'b>) -> O,
 ) -> Result<(), std::io::Error> {
     let provider = LogarchiveProvider::new(path);
     visit_provider(&provider, callback)
@@ -44,8 +45,8 @@ pub fn visit_logarchive(
 ///
 /// This reads tracev3/timesync data from `/private/var/db/diagnostics` and UUIDText/DSC
 /// support files from `/private/var/db/uuidtext`.
-pub fn visit_live_system(
-    callback: impl for<'a, 'b> FnMut(LogEntry<'a, 'b>),
+pub fn visit_live_system<O: VisitOutcome>(
+    callback: impl for<'a, 'b> FnMut(LogEntry<'a, 'b>) -> O,
 ) -> Result<(), std::io::Error> {
     let provider = LiveSystemProvider::new();
     visit_provider(&provider, callback)
@@ -57,9 +58,9 @@ pub fn visit_live_system(
 /// failures are logged as warnings and skipped — only missing timesync data
 /// is a hard error. `UUIDText`/DSC files are read on demand as entries
 /// reference them, keeping memory proportional to what the logs actually use.
-pub fn visit_provider(
+pub fn visit_provider<O: VisitOutcome>(
     provider: &impl FileProvider,
-    callback: impl for<'a, 'b> FnMut(LogEntry<'a, 'b>),
+    callback: impl for<'a, 'b> FnMut(LogEntry<'a, 'b>) -> O,
 ) -> Result<(), std::io::Error> {
     visit_provider_with_options(provider, VisitOptions::default(), callback)
 }
@@ -67,9 +68,9 @@ pub fn visit_provider(
 /// Like [`visit_provider`], but eagerly loads every `UUIDText`/DSC file up front.
 ///
 /// Maximum throughput at maximum memory — the pre-lazy-loading behavior.
-pub fn visit_provider_preloaded(
+pub fn visit_provider_preloaded<O: VisitOutcome>(
     provider: &impl FileProvider,
-    callback: impl for<'a, 'b> FnMut(LogEntry<'a, 'b>),
+    callback: impl for<'a, 'b> FnMut(LogEntry<'a, 'b>) -> O,
 ) -> Result<(), std::io::Error> {
     visit_provider_with_options(
         provider,
@@ -99,10 +100,14 @@ pub struct VisitOptions {
 }
 
 /// Like [`visit_provider`], with explicit [`VisitOptions`].
-pub fn visit_provider_with_options(
+///
+/// The callback may return [`ControlFlow::Break`] to stop the visit early
+/// (see [`VisitOutcome`]); the remaining entries and files are skipped and
+/// the function returns `Ok(())`.
+pub fn visit_provider_with_options<O: VisitOutcome>(
     provider: &impl FileProvider,
     options: VisitOptions,
-    mut callback: impl for<'a, 'b> FnMut(LogEntry<'a, 'b>),
+    mut callback: impl for<'a, 'b> FnMut(LogEntry<'a, 'b>) -> O,
 ) -> Result<(), std::io::Error> {
     // 1. Timesync → TimestampResolver
     let timesync_data = load_timesync_data(provider)?;
@@ -126,6 +131,7 @@ pub fn visit_provider_with_options(
             let Some(mut source) = sources.next() else {
                 break 'generations;
             };
+            info!("Parsing: {}", source.source_path());
             let mut data = Vec::new();
             let read_result = source.reader().read_to_end(&mut data);
             if let Err(e) = read_result {
@@ -134,17 +140,17 @@ pub fn visit_provider_with_options(
             }
 
             oversize_cache.mark_covered(source.source_path());
-            if let Err(e) = visit_tracev3(
+            match visit_tracev3(
                 &data,
                 &resolver,
                 &strings,
                 &oversize_cache,
                 Rc::new(PathBuf::from(source.source_path())),
-                |entry| {
-                    callback(entry);
-                },
+                |entry| callback(entry).into_flow(),
             ) {
-                warn!("Failed to process {}: {e}", source.source_path());
+                Ok(ControlFlow::Break(())) => return Ok(()),
+                Ok(ControlFlow::Continue(())) => {}
+                Err(e) => warn!("Failed to process {}: {e}", source.source_path()),
             }
 
             if let Some(budget) = options.memory_budget
@@ -163,10 +169,10 @@ pub fn visit_provider_with_options(
 /// The tracev3 path is resolved relative to `logarchive_path`. This helper loads
 /// the logarchive's timesync, DSC, and `UUIDText` support files before visiting the
 /// selected tracev3 file.
-pub fn visit_logarchive_tracev3_file(
+pub fn visit_logarchive_tracev3_file<O: VisitOutcome>(
     logarchive_path: &Path,
     tracev3_path: impl AsRef<Path>,
-    mut callback: impl for<'a, 'b> FnMut(LogEntry<'a, 'b>),
+    mut callback: impl for<'a, 'b> FnMut(LogEntry<'a, 'b>) -> O,
 ) -> Result<(), VisitTracev3FileError> {
     visit_logarchive_tracev3_files(logarchive_path, &[tracev3_path], |_, entry| {
         callback(entry);
@@ -180,10 +186,10 @@ pub fn visit_logarchive_tracev3_file(
 /// Special, and `LiveData` files when oversize payloads are referenced across files.
 /// The callback receives the zero-based index of the tracev3 path that produced
 /// each entry.
-pub fn visit_logarchive_tracev3_files<P: AsRef<Path>>(
+pub fn visit_logarchive_tracev3_files<P: AsRef<Path>, O: VisitOutcome>(
     logarchive_path: &Path,
     tracev3_paths: &[P],
-    mut callback: impl for<'a, 'b> FnMut(usize, LogEntry<'a, 'b>),
+    mut callback: impl for<'a, 'b> FnMut(usize, LogEntry<'a, 'b>) -> O,
 ) -> Result<(), VisitTracev3FileError> {
     let provider = LogarchiveProvider::new(logarchive_path);
     let timesync_data = load_timesync_data(&provider)?;
@@ -197,14 +203,18 @@ pub fn visit_logarchive_tracev3_files<P: AsRef<Path>>(
         let data = std::fs::read(&evidence)?;
         // Must match LocalFile's source_path() string for the same file
         oversize_cache.mark_covered(&evidence.to_string_lossy());
-        visit_tracev3(
+        if visit_tracev3(
             &data,
             &resolver,
             &strings,
             &oversize_cache,
             Rc::new(evidence),
-            |entry| callback(index, entry),
-        )?;
+            |entry| callback(index, entry).into_flow(),
+        )?
+        .is_break()
+        {
+            return Ok(());
+        }
     }
 
     Ok(())
@@ -267,6 +277,52 @@ mod tests {
     use super::*;
     use crate::filesystem::collect_tracev3_paths;
     use crate::helpers::tests::test_data_path;
+
+    #[test]
+    fn test_visit_early_exit_breaks_mid_archive() {
+        let base = test_data_path().join("system_logs_big_sur.logarchive");
+
+        let mut count = 0_usize;
+        visit_logarchive(&base, |_entry| {
+            count += 1;
+            if count == 100 {
+                ControlFlow::Break(())
+            } else {
+                ControlFlow::Continue(())
+            }
+        })
+        .unwrap();
+
+        // The first tracev3 file alone holds far more than 100 entries,
+        // so an exact count proves the visit stopped mid-file.
+        assert_eq!(count, 100);
+    }
+
+    #[test]
+    fn test_visit_files_break_stops_path_loop() {
+        let base = test_data_path().join("system_logs_big_sur.logarchive");
+
+        let mut count = 0_usize;
+        visit_logarchive_tracev3_files(
+            &base,
+            &[
+                "Persist/0000000000000001.tracev3",
+                "Persist/0000000000000002.tracev3",
+            ],
+            |index, _entry| {
+                assert_eq!(index, 0, "Break during file 0 must skip file 1");
+                count += 1;
+                if count == 10 {
+                    ControlFlow::Break(())
+                } else {
+                    ControlFlow::Continue(())
+                }
+            },
+        )
+        .unwrap();
+
+        assert_eq!(count, 10);
+    }
 
     #[test]
     fn test_visit_logarchive_big_sur() {

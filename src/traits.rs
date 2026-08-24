@@ -7,8 +7,59 @@
 //! Built-in implementations live in [`crate::filesystem`].
 
 use std::io::{Error, Read};
+use std::ops::ControlFlow;
 
 use uuid::Uuid;
+
+mod sealed {
+    pub trait Sealed {}
+    impl Sealed for () {}
+    impl Sealed for std::ops::ControlFlow<()> {}
+}
+
+/// Return type accepted from visit callbacks.
+///
+/// Implemented for `()` (always continue — plain closures work unchanged) and
+/// for [`ControlFlow<()>`] (return [`ControlFlow::Break`] to stop the visit
+/// early, mid-file included).
+///
+/// ```no_run
+/// use macos_unifiedlogs::logarchive::visit_logarchive;
+/// use std::ops::ControlFlow;
+/// use std::path::Path;
+///
+/// // Plain closure: visits everything
+/// visit_logarchive(Path::new("archive.logarchive"), |entry| {
+///     println!("{}", entry.message());
+/// })?;
+///
+/// // Breaking closure: stops after the first 100 entries
+/// let mut count = 0;
+/// visit_logarchive(Path::new("archive.logarchive"), |entry| {
+///     count += 1;
+///     println!("{}", entry.message());
+///     if count == 100 { ControlFlow::Break(()) } else { ControlFlow::Continue(()) }
+/// })?;
+/// # Ok::<(), std::io::Error>(())
+/// ```
+pub trait VisitOutcome: sealed::Sealed {
+    /// Normalize into a [`ControlFlow`].
+    fn into_flow(self) -> ControlFlow<()>;
+}
+
+impl VisitOutcome for () {
+    #[inline]
+    fn into_flow(self) -> ControlFlow<()> {
+        ControlFlow::Continue(())
+    }
+}
+
+impl VisitOutcome for ControlFlow<()> {
+    #[inline]
+    fn into_flow(self) -> ControlFlow<()> {
+        self
+    }
+}
 
 /// Implementing this trait allows library consumers to provide the files required by the parser in
 /// arbitrary formats — no real filesystem or specific directory layout is required.

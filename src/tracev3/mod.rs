@@ -16,9 +16,10 @@ use super::header::RawHeaderChunk;
 use super::log_entry::{EventType, ItemsData, LogEntry, LogType, MessageFlags, PrivateDataContext};
 use super::resolve::resolve_strings;
 use super::timesync::TimestampResolver;
-use super::traits::FileProvider;
+use super::traits::{FileProvider, VisitOutcome};
 use log::warn;
 use std::cell::RefCell;
+use std::ops::ControlFlow;
 use std::path::PathBuf;
 use std::rc::Rc;
 use uuid::Uuid;
@@ -35,14 +36,20 @@ pub use oversize::OversizeCache;
 /// The callback receives each log entry as it is produced. Entry-level errors
 /// (bad body parse, missing oversize data) are logged as warnings and skipped.
 /// The same evidence path is attached to every emitted `LogEntry`.
-pub fn visit_tracev3<'d, 's: 'd>(
+///
+/// The callback may return [`ControlFlow::Break`] to stop the visit early (see
+/// [`VisitOutcome`]): the remainder of the file — deferred simpledump and
+/// statedump entries included — is not emitted, and the function returns
+/// `Ok(ControlFlow::Break(()))`.
+pub fn visit_tracev3<'d, 's: 'd, O: VisitOutcome>(
     data: &'d [u8],
     resolver: &TimestampResolver,
     strings: &StringCatalog<'s, impl FileProvider>,
     oversize_cache: &OversizeCache<'_>,
     evidence: Rc<PathBuf>,
-    mut callback: impl for<'b> FnMut(LogEntry<'d, 'b>),
-) -> Result<(), ParseError> {
+    mut callback: impl for<'b> FnMut(LogEntry<'d, 'b>) -> O,
+) -> Result<ControlFlow<()>, ParseError> {
+    let mut callback = move |entry: LogEntry<'d, '_>| callback(entry).into_flow();
     let mut current_header: Option<RawHeaderChunk<'d>> = None;
     let mut current_catalog: Option<RawCatalogChunk<'d>> = None;
     let mut deferred_readers: Vec<ChunkSetReader<'d>> = Vec::new();
@@ -58,7 +65,7 @@ pub fn visit_tracev3<'d, 's: 'd>(
         match top_chunk {
             TopChunk::Header(h) => {
                 // Flush deferred simpledump/statedump before switching header context
-                flush_deferred_entries(
+                if flush_deferred_entries(
                     &mut deferred_readers,
                     &current_header,
                     &current_catalog,
@@ -66,13 +73,17 @@ pub fn visit_tracev3<'d, 's: 'd>(
                     strings,
                     &evidence,
                     &mut callback,
-                );
+                )
+                .is_break()
+                {
+                    return Ok(ControlFlow::Break(()));
+                }
                 current_header = Some(h);
             }
             TopChunk::Catalog(c) => {
                 // Flush deferred simpledump/statedump at catalog boundary —
                 // legacy groups firehose→simpledump→statedump per catalog, not per chunkset.
-                flush_deferred_entries(
+                if flush_deferred_entries(
                     &mut deferred_readers,
                     &current_header,
                     &current_catalog,
@@ -80,7 +91,11 @@ pub fn visit_tracev3<'d, 's: 'd>(
                     strings,
                     &evidence,
                     &mut callback,
-                );
+                )
+                .is_break()
+                {
+                    return Ok(ControlFlow::Break(()));
+                }
                 current_catalog = Some(c);
             }
             TopChunk::Chunkset(mut reader) => {
@@ -118,7 +133,7 @@ pub fn visit_tracev3<'d, 's: 'd>(
                                 continue;
                             };
 
-                            visit_firehose_entries(
+                            if visit_firehose_entries(
                                 &fh,
                                 header,
                                 catalog,
@@ -127,7 +142,11 @@ pub fn visit_tracev3<'d, 's: 'd>(
                                 oversize_cache,
                                 &evidence,
                                 &mut callback,
-                            );
+                            )
+                            .is_break()
+                            {
+                                return Ok(ControlFlow::Break(()));
+                            }
                         }
                         ChunkTag::Simpledump | ChunkTag::Statedump => has_deferred = true,
                         _ => {}
@@ -145,7 +164,7 @@ pub fn visit_tracev3<'d, 's: 'd>(
     }
 
     // Flush remaining deferred entries at EOF
-    flush_deferred_entries(
+    if flush_deferred_entries(
         &mut deferred_readers,
         &current_header,
         &current_catalog,
@@ -153,9 +172,13 @@ pub fn visit_tracev3<'d, 's: 'd>(
         strings,
         &evidence,
         &mut callback,
-    );
+    )
+    .is_break()
+    {
+        return Ok(ControlFlow::Break(()));
+    }
 
-    Ok(())
+    Ok(ControlFlow::Continue(()))
 }
 
 // ---------------------------------------------------------------------------
@@ -173,10 +196,10 @@ fn flush_deferred_entries<'d, 's: 'd>(
     resolver: &TimestampResolver,
     strings: &StringCatalog<'s, impl FileProvider>,
     evidence: &Rc<PathBuf>,
-    callback: &mut impl for<'b> FnMut(LogEntry<'d, 'b>),
-) {
+    callback: &mut impl for<'b> FnMut(LogEntry<'d, 'b>) -> ControlFlow<()>,
+) -> ControlFlow<()> {
     if deferred_readers.is_empty() {
-        return;
+        return ControlFlow::Continue(());
     }
 
     // --- Simpledump pass ---
@@ -248,7 +271,7 @@ fn flush_deferred_entries<'d, 's: 'd>(
                         signpost_name: 0,
                         resolved_message: RefCell::new(None),
                         format_string_error: None,
-                    });
+                    })?;
                 }
                 Err(e) => {
                     warn!("Failed to parse simpledump chunk: {}", e.to_parse_error())
@@ -309,7 +332,7 @@ fn flush_deferred_entries<'d, 's: 'd>(
                         signpost_name: 0,
                         resolved_message: RefCell::new(None),
                         format_string_error: None,
-                    });
+                    })?;
                 }
                 Err(e) => {
                     warn!("Failed to parse statedump chunk: {}", e.to_parse_error())
@@ -319,6 +342,7 @@ fn flush_deferred_entries<'d, 's: 'd>(
     }
 
     deferred_readers.clear();
+    ControlFlow::Continue(())
 }
 
 fn legacy_private_data_start<'a>(fh: &RawFirehose<'a>) -> Option<&'a [u8]> {
@@ -373,8 +397,8 @@ fn visit_firehose_entries<'d: 'b, 'b, 's: 'd>(
     strings: &StringCatalog<'s, impl FileProvider>,
     oversize_cache: &'b OversizeCache<'_>,
     evidence: &Rc<PathBuf>,
-    callback: &mut impl FnMut(LogEntry<'d, 'b>),
-) {
+    callback: &mut impl FnMut(LogEntry<'d, 'b>) -> ControlFlow<()>,
+) -> ControlFlow<()> {
     let boot_uuid = header.boot_uuid;
     let timezone_name = extract_timezone_name(header.timezone_path);
 
@@ -492,7 +516,7 @@ fn visit_firehose_entries<'d: 'b, 'b, 's: 'd>(
                     signpost_name: 0,
                     resolved_message: RefCell::new(None),
                     format_string_error: None,
-                });
+                })?;
                 continue;
             }
             RawFirehoseBody::Unknown(_) => {
@@ -535,7 +559,7 @@ fn visit_firehose_entries<'d: 'b, 'b, 's: 'd>(
                     signpost_name: 0,
                     resolved_message: RefCell::new(Some(Rc::new(String::new()))),
                     format_string_error: None,
-                });
+                })?;
                 continue;
             }
         };
@@ -668,7 +692,7 @@ fn visit_firehose_entries<'d: 'b, 'b, 's: 'd>(
             signpost_name,
             resolved_message: RefCell::new(None),
             format_string_error,
-        });
+        })?;
     }
 
     emit_embedded_unknown_markers(
@@ -680,7 +704,7 @@ fn visit_firehose_entries<'d: 'b, 'b, 's: 'd>(
         &emitted_unknown_markers,
         evidence,
         callback,
-    );
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -695,8 +719,8 @@ fn emit_embedded_unknown_markers<'a: 'b, 'b>(
     timezone_name: &'a str,
     emitted_unknown_markers: &[(u64, u32, u16)],
     evidence: &Rc<PathBuf>,
-    callback: &mut impl FnMut(LogEntry<'a, 'b>),
-) {
+    callback: &mut impl FnMut(LogEntry<'a, 'b>) -> ControlFlow<()>,
+) -> ControlFlow<()> {
     const HEADER_SIZE: usize = 24;
 
     let public_data = fh.public_data();
@@ -766,8 +790,9 @@ fn emit_embedded_unknown_markers<'a: 'b, 'b>(
             signpost_name: 0,
             resolved_message: RefCell::new(Some(Rc::new(String::new()))),
             format_string_error: None,
-        });
+        })?;
     }
+    ControlFlow::Continue(())
 }
 
 fn message_flags_for_body(

@@ -10,15 +10,16 @@ use log::{LevelFilter, error, info, warn};
 use macos_unifiedlogs::cache::{StringCatalog, StringStorage};
 use macos_unifiedlogs::filesystem::{InMemoryProvider, LiveSystemProvider, LogarchiveProvider};
 use macos_unifiedlogs::log_entry::LogEntry;
-use macos_unifiedlogs::logarchive::load_timesync_data;
+use macos_unifiedlogs::logarchive::{VisitOptions, visit_provider_with_options};
 use macos_unifiedlogs::timesync::TimestampResolver;
 use macos_unifiedlogs::tracev3::{OversizeCache, visit_tracev3};
-use macos_unifiedlogs::traits::{FileProvider, SourceFile};
+use macos_unifiedlogs::traits::FileProvider;
 use simplelog::{ColorChoice, Config, TermLogger, TerminalMode};
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
-use std::io::{Read, Write};
+use std::io::Write;
+use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -50,7 +51,6 @@ struct ParseContext<'a> {
     max_seen_timestamp: f64,
     log_count: usize,
     skipped_count: usize,
-    broken_pipe: bool,
 }
 
 impl<'a> ParseContext<'a> {
@@ -67,15 +67,16 @@ impl<'a> ParseContext<'a> {
             max_seen_timestamp: 0.0,
             log_count: 0,
             skipped_count: 0,
-            broken_pipe: false,
         }
     }
 
     /// Handle one log entry: bookmark filter, write, track counters.
     /// When resume is false, no filtering is performed and bookmark is not updated.
-    fn handle(&mut self, entry: &LogEntry<'_, '_>) {
-        if self.broken_pipe {
-            return;
+    /// Returns `Break` when the output consumer closed (broken pipe) or on SIGINT.
+    fn handle(&mut self, entry: &LogEntry<'_, '_>) -> ControlFlow<()> {
+        if SIGINT_RECEIVED.load(Ordering::SeqCst) {
+            info!("Interrupted by signal, stopping log parsing");
+            return ControlFlow::Break(());
         }
         // Track max timestamp seen (including filtered) to advance bookmark even if all filtered
         if entry.time > self.max_seen_timestamp {
@@ -84,16 +85,17 @@ impl<'a> ParseContext<'a> {
         // Filter results using the timestamp captured at the start of the run.
         if self.resume && entry.time <= self.resume_timestamp {
             self.skipped_count += 1;
-            return;
+            return ControlFlow::Continue(());
         }
         match self.writer.write_record(entry) {
             Ok(()) => self.log_count += 1,
             Err(e) if is_broken_pipe(e.as_ref()) => {
                 info!("Broken pipe detected, stopping output");
-                self.broken_pipe = true;
+                return ControlFlow::Break(());
             }
             Err(e) => error!("Error writing record: {e}"),
         }
+        ControlFlow::Continue(())
     }
 
     /// Update bookmark with max timestamp seen (not just written) to avoid re-scanning.
@@ -389,65 +391,17 @@ fn parse_live_system(
 }
 
 // Use the timesync data and lazily-loaded string files to parse the Unified Log data from the provider.
-// Mirrors `logarchive::visit_provider`, but drives the per-file loop itself so it can stop
-// between files on SIGINT or a broken pipe.
+// `ParseContext::handle` returns `Break` on SIGINT or broken pipe, stopping the visit mid-file.
 fn parse_trace_file(
     provider: &impl FileProvider,
     writer: &mut OutputWriter,
     bookmark: Arc<Mutex<Bookmark>>,
     resume: bool,
 ) -> Result<(), Box<dyn Error>> {
-    let timesync_data = load_timesync_data(provider)?;
-    let resolver = TimestampResolver::new(timesync_data);
-    // String files (UUIDText/dsc) load lazily as log entries reference them
-    let storage = StringStorage::new(provider);
-    let strings = StringCatalog::new(&storage);
-    // Oversize entries (large strings that don't fit in normal log entries) persist
-    // across files; rare backward references to not-yet-visited tracev3 files
-    // (~700 out of ~18 million entries) are resolved by harvesting on demand.
-    let oversize_cache = OversizeCache::with_provider(provider);
-
     let mut parse_context = ParseContext::new(writer, &bookmark, resume);
-    // Loop through all tracev3 files in Persist directory
-    for mut source in provider.tracev3_files() {
-        // Check for interrupt signal
-        if SIGINT_RECEIVED.load(Ordering::SeqCst) {
-            info!("Interrupted by signal, stopping log parsing");
-            break;
-        }
-        // Stop when the output consumer closed (broken pipe)
-        if parse_context.broken_pipe {
-            break;
-        }
-        if Path::new(source.source_path())
-            .file_name()
-            .is_some_and(|f| f.to_str().unwrap_or_default().starts_with("._"))
-        {
-            // Keep the oversize harvester away from AppleDouble files too
-            oversize_cache.mark_covered(source.source_path());
-            continue;
-        }
-        info!("Parsing: {path}", path = source.source_path());
-
-        let mut data = Vec::new();
-        let read_result = source.reader().read_to_end(&mut data);
-        if let Err(e) = read_result {
-            error!("Failed to read {path}: {e}", path = source.source_path());
-            continue;
-        }
-        let evidence = Rc::new(PathBuf::from(source.source_path()));
-        oversize_cache.mark_covered(source.source_path());
-        if let Err(e) = visit_tracev3(
-            &data,
-            &resolver,
-            &strings,
-            &oversize_cache,
-            evidence,
-            |entry| parse_context.handle(&entry),
-        ) {
-            error!("Failed to parse {path}: {e}", path = source.source_path());
-        }
-    }
+    visit_provider_with_options(provider, VisitOptions::default(), |entry| {
+        parse_context.handle(&entry)
+    })?;
     parse_context.finish(&bookmark);
 
     info!("Finished parsing Unified Log data.");
