@@ -3,7 +3,7 @@ use dump_helpers::{DumpEntry, memory_budget, no_output_enabled, write_entry};
 use macos_unifiedlogs::{
     filesystem::LogarchiveProvider,
     log_entry::{EventType, LogEntry},
-    logarchive::{VisitOptions, visit_provider_with_options},
+    logarchive::{StringLoading, VisitOptions, visit_provider_with_options},
 };
 use std::path::PathBuf;
 
@@ -13,8 +13,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let path = argument_path()?;
     let no_output = no_output_enabled();
     let options = VisitOptions {
-        memory_budget: memory_budget(),
-        ..VisitOptions::default()
+        string_loading: memory_budget().map_or(StringLoading::Lazy, StringLoading::Budgeted),
     };
     let mut result: Result<(), Box<dyn std::error::Error>> = Ok(());
     let mut index = 0;

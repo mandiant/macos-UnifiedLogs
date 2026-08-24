@@ -1,0 +1,8 @@
+kind: Changed
+body: |
+  `VisitOptions`'s `preload`/`memory_budget` fields are replaced by a single
+  `string_loading: StringLoading` enum (`Lazy` default, `Preload`, `Budgeted(bytes)`).
+  The strategies were mutually exclusive by nature; the old struct allowed the pathological
+  `preload + memory_budget` combination, which re-read every UUIDText/DSC file once per
+  tracev3 file. The invalid state is now unrepresentable.
+time: 2026-08-24T00:00:05.000000000Z

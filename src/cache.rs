@@ -12,7 +12,7 @@
 //! slices from the stored buffers (zero-copy), so within one storage the
 //! memory ceiling is exactly the eager footprint. For a bounded footprint in
 //! long-running processes, drop and recreate the storage at points where no
-//! entries are alive — `logarchive::VisitOptions::memory_budget` automates
+//! entries are alive — `logarchive::StringLoading::Budgeted` automates
 //! this between tracev3 files, driven by [`StringStorage::loaded_bytes`].
 
 use std::cell::{Cell, RefCell};
@@ -54,7 +54,7 @@ impl<P: FileProvider> StringStorage<P> {
 
     /// Total bytes of `UUIDText`/DSC file data loaded so far.
     ///
-    /// Drives `logarchive::VisitOptions::memory_budget`; also useful for
+    /// Drives `logarchive::StringLoading::Budgeted`; also useful for
     /// callers implementing their own reclaim policy.
     pub fn loaded_bytes(&self) -> usize {
         self.loaded.get()

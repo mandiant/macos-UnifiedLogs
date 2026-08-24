@@ -75,20 +75,27 @@ pub fn visit_provider_preloaded<O: VisitOutcome>(
     visit_provider_with_options(
         provider,
         VisitOptions {
-            preload: true,
-            ..VisitOptions::default()
+            string_loading: StringLoading::Preload,
         },
         callback,
     )
 }
 
-/// Tuning knobs for [`visit_provider_with_options`].
-#[derive(Debug, Clone, Copy, Default)]
-pub struct VisitOptions {
-    /// Eagerly load every `UUIDText`/DSC file up front instead of on demand.
-    pub preload: bool,
-    /// Reclaim string storage once the loaded `UUIDText`/DSC bytes exceed this
-    /// soft threshold. `None` (the default) never reclaims.
+/// How `UUIDText`/DSC string data is loaded during a visit.
+///
+/// One axis, because the strategies are mutually exclusive: preloading pays
+/// maximum memory for maximum throughput, while budgeting bounds memory by
+/// reclaiming — combining them could only re-read every support file over
+/// and over.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum StringLoading {
+    /// Load files on demand as log entries reference them (default).
+    #[default]
+    Lazy,
+    /// Eagerly load every file up front: maximum throughput, maximum memory.
+    Preload,
+    /// Load on demand, reclaiming the string storage once the loaded
+    /// `UUIDText`/DSC bytes exceed this soft threshold.
     ///
     /// The check runs between tracev3 files — the only points where no log
     /// entry borrows the storage — so a single file's working set may
@@ -96,7 +103,14 @@ pub struct VisitOptions {
     /// re-read and re-parsed if later entries reference them again: lower
     /// thresholds trade throughput for a bounded footprint in long-running
     /// processes.
-    pub memory_budget: Option<usize>,
+    Budgeted(usize),
+}
+
+/// Tuning knobs for [`visit_provider_with_options`].
+#[derive(Debug, Clone, Copy, Default)]
+pub struct VisitOptions {
+    /// How `UUIDText`/DSC string data is loaded.
+    pub string_loading: StringLoading,
 }
 
 /// Like [`visit_provider`], with explicit [`VisitOptions`].
@@ -122,7 +136,8 @@ pub fn visit_provider_with_options<O: VisitOutcome>(
     // two files is safe; the budget decides when a fresh generation starts.
     'generations: loop {
         let storage = StringStorage::new(provider);
-        if options.preload {
+        if options.string_loading == StringLoading::Preload {
+            // Preload never starts a second generation, so this runs once
             storage.preload();
         }
         let strings = StringCatalog::new(&storage);
@@ -153,7 +168,7 @@ pub fn visit_provider_with_options<O: VisitOutcome>(
                 Err(e) => warn!("Failed to process {}: {e}", source.source_path()),
             }
 
-            if let Some(budget) = options.memory_budget
+            if let StringLoading::Budgeted(budget) = options.string_loading
                 && storage.loaded_bytes() > budget
             {
                 break; // start a new generation, dropping all loaded strings
@@ -468,8 +483,7 @@ mod tests {
 
         // 1-byte budget: a fresh storage generation after every tracev3 file.
         let options = VisitOptions {
-            memory_budget: Some(1),
-            ..VisitOptions::default()
+            string_loading: StringLoading::Budgeted(1),
         };
         let mut count = 0_usize;
         let mut messages = 0_usize;
