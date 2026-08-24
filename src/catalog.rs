@@ -449,8 +449,9 @@ impl CatalogChunk {
             tup.parse(data)?;
 
         const LZ4_COMPRESSION: u32 = 256;
-        const LZBITMAP_COMPRESSION: u32 = 1792;
-        if compression_algorithm != LZ4_COMPRESSION && compression_algorithm != LZBITMAP_COMPRESSION
+        const LZBITMAP_COMPRESSION: [u32; 2] = [1792, 1793];
+        if compression_algorithm != LZ4_COMPRESSION
+            && !LZBITMAP_COMPRESSION.contains(&compression_algorithm)
         {
             error!("[macos-unifiedlogs] Unexpected compression aglorithm: {compression_algorithm}");
             return Err(nom::Err::Error(make_error(input, ErrorKind::OneOf)));
