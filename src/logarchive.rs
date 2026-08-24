@@ -31,8 +31,8 @@ pub enum VisitTracev3FileError {
 /// Process all tracev3 files in a logarchive directory, emitting log entries via callback.
 ///
 /// The callback receives each `LogEntry` as it is produced. Individual file or parse
-/// failures are logged as warnings and skipped — only a missing timesync directory
-/// is a hard error.
+/// failures are logged as warnings and skipped; missing timesync data is warned
+/// and timestamps are left unresolved.
 pub fn visit_logarchive<O: VisitOutcome>(
     path: &Path,
     callback: impl for<'a, 'b> FnMut(LogEntry<'a, 'b>) -> O,
@@ -55,9 +55,9 @@ pub fn visit_live_system<O: VisitOutcome>(
 /// Process all tracev3 files from a provider, loading string data lazily.
 ///
 /// The callback receives each `LogEntry` as it is produced. Individual file or parse
-/// failures are logged as warnings and skipped — only missing timesync data
-/// is a hard error. `UUIDText`/DSC files are read on demand as entries
-/// reference them, keeping memory proportional to what the logs actually use.
+/// failures are logged as warnings and skipped; missing timesync data is warned
+/// and timestamps are left unresolved. `UUIDText`/DSC files are read on demand as
+/// entries reference them, keeping memory proportional to what the logs actually use.
 pub fn visit_provider<O: VisitOutcome>(
     provider: &impl FileProvider,
     callback: impl for<'a, 'b> FnMut(LogEntry<'a, 'b>) -> O,
@@ -239,17 +239,17 @@ pub fn visit_logarchive_tracev3_files<P: AsRef<Path>, O: VisitOutcome>(
 
 /// Load and merge all `.timesync` sources from the provider.
 ///
-/// Errors with [`std::io::ErrorKind::NotFound`] when the provider yields no
-/// timesync sources at all — without timesync data no timestamp can be
-/// resolved. (Unreadable/unparsable individual files are warned and skipped.)
+/// Yields an empty collection (with a warning) when the provider has no
+/// usable timesync data — parsing then proceeds with unresolved timestamps
+/// (raw mach continuous time), matching the legacy behavior. Partial
+/// acquisitions without a `timesync/` directory still produce every entry.
+/// (Unreadable/unparsable individual files are warned and skipped.)
 pub fn load_timesync_data(
     provider: &impl FileProvider,
 ) -> Result<HashMap<Uuid, RawTimesyncBoot>, std::io::Error> {
     let mut all_data: HashMap<Uuid, RawTimesyncBoot> = HashMap::new();
-    let mut found_any = false;
 
     for mut source in provider.timesync_files() {
-        found_any = true;
         let mut buffer = Vec::new();
         let read_result = source.reader().read_to_end(&mut buffer);
         if let Err(e) = read_result {
@@ -272,11 +272,8 @@ pub fn load_timesync_data(
         }
     }
 
-    if !found_any {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "no timesync files found",
-        ));
+    if all_data.is_empty() {
+        warn!("No timesync data found; timestamps will be unresolved mach continuous time");
     }
     Ok(all_data)
 }
@@ -519,9 +516,36 @@ mod tests {
     }
 
     #[test]
-    fn test_load_timesync_data_errors_without_sources() {
+    fn test_load_timesync_data_empty_without_sources() {
         let provider = crate::filesystem::InMemoryProvider::default();
-        let err = load_timesync_data(&provider).unwrap_err();
-        assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
+        let times = load_timesync_data(&provider).unwrap();
+        assert!(times.is_empty());
+    }
+
+    #[test]
+    fn test_visit_without_timesync_emits_unresolved_entries() {
+        // Partial acquisition: tracev3 files carved out, no timesync directory
+        let base = test_data_path().join("system_logs_big_sur.logarchive");
+        let tracev3 = std::fs::read(base.join("Persist/0000000000000001.tracev3")).unwrap();
+        let provider = crate::filesystem::InMemoryProvider {
+            tracev3: vec![("Persist/0000000000000001.tracev3".to_string(), tracev3)],
+            ..Default::default()
+        };
+
+        let mut count = 0_usize;
+        let mut max_time = 0.0_f64;
+        visit_provider(&provider, |entry| {
+            count += 1;
+            max_time = max_time.max(entry.time);
+        })
+        .unwrap();
+
+        assert_eq!(count, 7_927, "all entries should still be emitted");
+        // Timestamps are unresolved mach continuous time, far below epoch
+        // nanoseconds (~1.6e18 for this 2022 archive)
+        assert!(
+            max_time < 1e15,
+            "expected unresolved (relative) timestamps, got {max_time}"
+        );
     }
 }
