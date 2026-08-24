@@ -507,24 +507,25 @@ impl OutputWriter {
                 csv_writer.write_record(&[
                     record
                         .timestamp()
-                        .to_rfc3339_opts(SecondsFormat::Millis, true),
-                    format!("{:?}", record.event_type),
-                    format!("{:?}", record.log_type),
-                    record.subsystem.unwrap_or_default().to_string(),
-                    record.thread_id.to_string(),
-                    record.pid.to_string(),
-                    record.euid.to_string(),
-                    record.library.unwrap_or_default().to_string(),
-                    format_uuid(record.library_uuid),
-                    record.activity_id.to_string(),
-                    record.parent_activity_id.unwrap_or(0).to_string(),
-                    record.category.unwrap_or_default().to_string(),
-                    record.process.unwrap_or_default().to_string(),
-                    format_uuid(record.process_uuid),
-                    record.message().to_string(),
-                    record.raw_message().to_string(),
-                    format_uuid(record.boot_uuid),
-                    record.timezone_name.to_string(),
+                        .to_rfc3339_opts(SecondsFormat::Millis, true)
+                        .as_str(),
+                    &format!("{:?}", record.event_type),
+                    &format!("{:?}", record.log_type),
+                    record.subsystem.unwrap_or_default(),
+                    &record.thread_id.to_string(),
+                    &record.pid.to_string(),
+                    &record.euid.to_string(),
+                    &record.library.unwrap_or_default(),
+                    &format_uuid(record.library_uuid),
+                    &record.activity_id.to_string(),
+                    &record.parent_activity_id.unwrap_or(0).to_string(),
+                    &record.category.unwrap_or_default(),
+                    &record.process.unwrap_or_default(),
+                    &format_uuid(record.process_uuid),
+                    &record.message(),
+                    record.raw_message(),
+                    &format_uuid(record.boot_uuid),
+                    &record.timezone_name,
                 ])?;
             }
             OutputWriterEnum::Json(json_writer) => {
