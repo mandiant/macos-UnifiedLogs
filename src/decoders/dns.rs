@@ -309,8 +309,8 @@ fn parse_svcb(input: &[u8]) -> nom::IResult<&[u8], DnsSvcbRecord> {
     const DNS_OVER_HTTPS: u32 = 0x800000;
     if unknown_type == DNS_OVER_HTTPS {
         let (input, url_size) = be_u8(input)?;
-        let (input, url) = extract_string_size(input, url_size.into())?;
-        return Ok((input, DnsSvcbRecord::Url(url)));
+        let (input, url) = extract_string_size(input, usize::from(url_size))?;
+        return Ok((input, DnsSvcbRecord::Url(url.to_string())));
     }
 
     // ALPN = Application Layer Protocol Negotation

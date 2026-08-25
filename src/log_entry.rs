@@ -15,7 +15,7 @@ use uuid::Uuid;
 use super::decoders::{config, location};
 
 use super::chunks::firehose::flags::FirehoseFlags;
-use super::chunks::firehose::item::fill_private_data_compat;
+use super::chunks::firehose::item::fill_private_data;
 use super::chunks::firehose::item::{parse_items_data, parse_trace_items};
 use super::format::format_message;
 
@@ -243,7 +243,7 @@ impl<'a, 'b> LogEntry<'a, 'b> {
                     ..
                 } = &self.items
                 {
-                    fill_private_data_compat(
+                    fill_private_data(
                         &mut items,
                         ctx.private_data,
                         ctx.private_strings_offset,
@@ -251,7 +251,7 @@ impl<'a, 'b> LogEntry<'a, 'b> {
                         ctx.collapsed,
                     );
                 } else if !remaining_private_data.is_empty() {
-                    fill_private_data_compat(&mut items, remaining_private_data, 0, 0, 1);
+                    fill_private_data(&mut items, remaining_private_data, 0, 0, 1);
                 }
                 let msg = format_message(fmt_str, &items);
                 self.apply_parity_prefix(msg, if *is_oversize { None } else { backtrace })

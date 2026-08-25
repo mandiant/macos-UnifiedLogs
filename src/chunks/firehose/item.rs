@@ -5,7 +5,7 @@ use nom::{
     },
 };
 
-use super::super::super::helpers::{padding_size, utf8_str_sized};
+use super::super::super::helpers::{extract_string_size, padding_size, utf8_str_sized};
 use super::flags::FirehoseFlags;
 
 /// Classification of the `item_type` byte into parsing categories.
@@ -417,7 +417,10 @@ fn skip_backtrace(data: &[u8]) -> nom::IResult<&[u8], &[u8]> {
 /// - 0x01 with size == 0x8000 → stays `<private>`
 /// - 0x01 otherwise → parse LE number from private data
 /// - Other private types with size == 0 → stays `<private>`
-/// - Other private types with size > 0 → UTF-8 string
+/// - Other private types with size > 0 → UTF-8 string, or
+///   "Could not find path string" when the bytes are not UTF-8
+///
+/// Every filled value borrows from `private_data`; nothing is allocated.
 pub fn fill_private_data<'a>(
     items: &mut [RawFirehoseItem<'a>],
     private_data: &'a [u8],
@@ -426,89 +429,6 @@ pub fn fill_private_data<'a>(
     collapsed: u8,
 ) {
     // Strip leading zero padding (matching old pipeline firehose_log.rs:299-309)
-    let stripped = if collapsed != 1 {
-        let zeros = private_data.iter().take_while(|&&b| b == 0).count();
-        if zeros > 0 && zeros < private_data.len() {
-            &private_data[zeros..]
-        } else {
-            private_data
-        }
-    } else {
-        private_data
-    };
-
-    // Seek to this entry's private string region
-    let string_offset = private_strings_offset.saturating_sub(private_data_virtual_offset) as usize;
-    if string_offset > stripped.len() {
-        return;
-    }
-    let mut cursor = &stripped[string_offset..];
-
-    // Private string type bytes (from old pipeline constants)
-    const PRIVATE_STRING_TYPES: [u8; 7] = [0x21, 0x25, 0x41, 0x35, 0x31, 0x81, 0xf1];
-    const BASE64_TYPES: [u8; 2] = [0x35, 0x31];
-    const PRIVATE_NUMBER_TYPE: u8 = 0x01;
-    const PRIVATE_NUMBER_SIZE: u16 = 0x8000;
-
-    for item in items.iter_mut() {
-        let raw_type = match item.value {
-            RawItemValue::Private { raw_item_type } => raw_item_type,
-            _ => continue,
-        };
-
-        if PRIVATE_STRING_TYPES.contains(&raw_type) {
-            if BASE64_TYPES.contains(&raw_type) {
-                // Base64: take item_size bytes (clamp to available)
-                let size = item.item_size as usize;
-                let actual_size = size.min(cursor.len());
-                if actual_size == 0 {
-                    continue;
-                }
-                let (bytes, rest) = cursor.split_at(actual_size);
-                cursor = rest;
-                item.value = RawItemValue::Bytes(bytes);
-            } else {
-                // Regular private string
-                let size = item.item_size as usize;
-                if size == 0 {
-                    // Keep as <private>
-                    continue;
-                }
-                let actual_size = size.min(cursor.len());
-                if actual_size == 0 {
-                    continue;
-                }
-                let (bytes, rest) = cursor.split_at(actual_size);
-                cursor = rest;
-                item.value = RawItemValue::Str(utf8_str_sized(bytes));
-            }
-        } else if raw_type == PRIVATE_NUMBER_TYPE {
-            if item.item_size == PRIVATE_NUMBER_SIZE {
-                // Keep as <private>
-                continue;
-            }
-            let size = item.item_size;
-            if let Ok((rest, value)) = parse_item_number(cursor, size) {
-                cursor = rest;
-                item.value = value;
-            }
-        }
-        // Sensitive (0x05, 0x45, 0x85) and others: skip, keep as Private
-    }
-}
-
-/// Private-data fill variant that uses the old pipeline's `extract_string_size`
-/// so non-UTF8 private data produces "Could not find path string" and string
-/// offsets wrap on underflow, matching legacy/compat output.
-pub fn fill_private_data_compat<'a>(
-    items: &mut [RawFirehoseItem<'a>],
-    private_data: &'a [u8],
-    private_strings_offset: u16,
-    private_data_virtual_offset: u16,
-    collapsed: u8,
-) {
-    use crate::helpers::extract_string_size;
-
     let stripped = if collapsed != 1 {
         let zeros = private_data.iter().take_while(|&&b| b == 0).count();
         if zeros > 0 && zeros < private_data.len() {
@@ -529,6 +449,7 @@ pub fn fill_private_data_compat<'a>(
     }
     let mut cursor = &stripped[string_offset..];
 
+    // Private string type bytes (from old pipeline constants)
     const PRIVATE_STRING_TYPES: [u8; 7] = [0x21, 0x25, 0x41, 0x35, 0x31, 0x81, 0xf1];
     const BASE64_TYPES: [u8; 2] = [0x35, 0x31];
     const PRIVATE_NUMBER_TYPE: u8 = 0x01;
@@ -541,38 +462,32 @@ pub fn fill_private_data_compat<'a>(
         };
 
         if PRIVATE_STRING_TYPES.contains(&raw_type) {
+            let size = item.item_size as usize;
+            if size == 0 {
+                // Keep as <private>
+                continue;
+            }
             if BASE64_TYPES.contains(&raw_type) {
-                let size = item.item_size as usize;
-                let actual_size = size.min(cursor.len());
-                if actual_size == 0 {
+                // Base64: take item_size bytes (clamp to available)
+                let available = size.min(cursor.len());
+                if available == 0 {
                     continue;
                 }
-                let (bytes, rest) = cursor.split_at(actual_size);
+                let (bytes, rest) = cursor.split_at(available);
                 cursor = rest;
                 item.value = RawItemValue::Bytes(bytes);
             } else {
-                let size = item.item_size as usize;
-                if size == 0 {
-                    continue;
-                }
-                // Use old pipeline's extract_string_size which produces "Could not find path string"
-                // on non-UTF8 data, matching old pipeline behavior exactly.
-                match extract_string_size(cursor, u64::from(item.item_size)) {
-                    Ok((rest, s)) => {
-                        cursor = rest;
-                        // We need to store a &str but extract_string_size returns String.
-                        // Store as a leaked &str for compat mode only.
-                        item.value = RawItemValue::Str(leak_string(s));
-                    }
-                    Err(_) => {
-                        // Old pipeline propagates nom errors via `?`, bailing out of the
-                        // entire parse_private_data function. All remaining items stay as <private>.
-                        return;
-                    }
-                }
+                // Regular private string. On error the old pipeline bailed out of the
+                // whole fill (`?`), leaving the remaining items as <private>.
+                let Ok((rest, s)) = extract_string_size(cursor, size) else {
+                    return;
+                };
+                cursor = rest;
+                item.value = RawItemValue::Str(s);
             }
         } else if raw_type == PRIVATE_NUMBER_TYPE {
             if item.item_size == PRIVATE_NUMBER_SIZE {
+                // Keep as <private>
                 continue;
             }
             let size = item.item_size;
@@ -581,13 +496,8 @@ pub fn fill_private_data_compat<'a>(
                 item.value = value;
             }
         }
+        // Sensitive (0x05, 0x45, 0x85) and others: skip, keep as Private
     }
-}
-
-/// Leak a String to get a `&'static str`. Used only while materializing
-/// owned private strings into the borrowed item representation.
-fn leak_string(s: String) -> &'static str {
-    Box::leak(s.into_boxed_str())
 }
 
 #[cfg(test)]
@@ -816,6 +726,27 @@ mod tests {
             }
             other => panic!("expected Str, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn test_fill_private_data_private_string_invalid_utf8() {
+        // Non-UTF-8 private bytes keep the old pipeline's placeholder text.
+        let test_data: &[u8] = &[0xff, 0xfe, 0x41, 0x42];
+
+        let mut items = [RawFirehoseItem {
+            item_type: RawItemKind::PrivateString,
+            item_size: 4,
+            value: RawItemValue::Private {
+                raw_item_type: 0x21,
+            },
+        }];
+
+        fill_private_data(&mut items, test_data, 0, 0, 1);
+
+        assert_eq!(
+            items[0].value,
+            RawItemValue::Str("Could not find path string")
+        );
     }
 
     #[test]

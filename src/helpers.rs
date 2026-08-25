@@ -123,56 +123,40 @@ pub(crate) fn extract_string(data: &[u8]) -> nom::IResult<&[u8], &str> {
     }
 }
 
-/// Extract a size based on provided string size from Firehose string item entries
-pub(crate) fn extract_string_size(data: &[u8], message_size: u64) -> nom::IResult<&[u8], String> {
-    const NULL_STRING: u64 = 0;
-    if message_size == NULL_STRING {
-        return Ok((data, "(null)".to_string()));
+/// Extract a sized string (Firehose string items, DNS URLs). Trailing NUL
+/// padding is trimmed; non-UTF-8 bytes yield "Could not find path string",
+/// unless the data is also truncated, which is an error.
+pub(crate) fn extract_string_size(data: &[u8], size: usize) -> nom::IResult<&[u8], &str> {
+    if size == 0 {
+        return Ok((data, "(null)"));
     }
-
-    if data.len() < message_size as usize {
-        let (input, path) = take(data.len())(data)?;
-        let path_string = String::from_utf8(path.to_vec());
-        match path_string {
-            Ok(results) => {
-                return Ok((input, results.trim_end_matches(char::from(0)).to_string()));
+    let available = size.min(data.len());
+    let (input, bytes) = take(available)(data)?;
+    match from_utf8(bytes) {
+        Ok(s) => Ok((input, s.trim_end_matches('\0'))),
+        Err(err) => {
+            error!("[macos-unifiedlogs] Failed to get specific string: {err:?}");
+            if available < size {
+                return Err(nom::Err::Error(nom::error::Error::new(
+                    data,
+                    ErrorKind::Eof,
+                )));
             }
-            Err(err) => {
-                error!("[macos-unifiedlogs] Failed to get extract specific string size: {err:?}")
-            }
+            Ok((input, "Could not find path string"))
         }
     }
-
-    let message_size = match u64_to_usize(message_size) {
-        Some(m) => m,
-        None => {
-            error!("[macos-unifiedlogs] u64 is bigger than system usize");
-            return Err(nom::Err::Error(nom::error::Error::new(
-                data,
-                nom::error::ErrorKind::TooLarge,
-            )));
-        }
-    };
-
-    let (input, path) = take(message_size)(data)?;
-    let path_string = String::from_utf8(path.to_vec());
-    match path_string {
-        Ok(results) => return Ok((input, results.trim_end_matches(char::from(0)).to_string())),
-        Err(err) => error!("[macos-unifiedlogs] Failed to get specific string: {err:?}"),
-    }
-    Ok((input, String::from("Could not find path string")))
 }
 
 /// Extract an UTF8 string from a byte array, stops at `NULL_BYTE` or END OF STRING.
 /// Consumes the end byte. Fails if the string is empty.
-pub(crate) fn non_empty_cstring(input: &[u8]) -> nom::IResult<&[u8], String> {
+pub(crate) fn non_empty_cstring(input: &[u8]) -> nom::IResult<&[u8], &str> {
     if input.is_empty() {
-        return Ok((input, String::new()));
+        return Ok((input, ""));
     }
     let mut tup = (take_while(|b: u8| b != NULL_BYTE), opt(take(1_usize)));
     let (input, (str_part, _)) = tup.parse(input)?;
     match from_utf8(str_part) {
-        Ok(s) if !s.is_empty() => Ok((input, s.to_string())),
+        Ok(s) if !s.is_empty() => Ok((input, s)),
         _ => Err(nom::Err::Error(nom::error::Error {
             input,
             code: ErrorKind::Fail,

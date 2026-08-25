@@ -355,12 +355,12 @@ fn get_member_data(input: &[u8]) -> nom::IResult<&[u8], MemberDetails> {
         36 | 160 | 164 => {
             // USER
             let (input, name) = non_empty_cstring(input)?;
-            (input, MemberType::UserName(name))
+            (input, MemberType::UserName(name.to_string()))
         }
         68 => {
             // GROUP
             let (input, name) = non_empty_cstring(input)?;
-            (input, MemberType::GroupName(name))
+            (input, MemberType::GroupName(name.to_string()))
         }
         195 => {
             // GID
