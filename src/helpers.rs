@@ -200,7 +200,7 @@ pub mod tests {
     }
 
     /// Unwrap a nom result, keeping the (rest, value) pair.
-    fn ok<'a, T: std::fmt::Debug>(result: nom::IResult<&'a [u8], T>) -> (&'a [u8], T) {
+    fn ok<T: std::fmt::Debug>(result: nom::IResult<&[u8], T>) -> (&[u8], T) {
         result.expect("parser should succeed")
     }
 
