@@ -102,9 +102,15 @@ impl From<&Path> for LogFileType {
 }
 
 /// Filesystem provider for a `.logarchive` directory.
+///
+/// `UUIDText`/DSC files are indexed by their actual on-disk paths at
+/// construction (any filename casing works, including on case-sensitive
+/// filesystems); recreate the provider to pick up files added later.
 #[derive(Clone, Debug)]
 pub struct LogarchiveProvider {
     base: PathBuf,
+    uuidtext_index: HashMap<Uuid, PathBuf>,
+    dsc_index: HashMap<Uuid, PathBuf>,
 }
 
 impl LogarchiveProvider {
@@ -112,6 +118,8 @@ impl LogarchiveProvider {
     pub fn new(path: &Path) -> Self {
         Self {
             base: path.to_path_buf(),
+            uuidtext_index: index_uuidtext(path),
+            dsc_index: index_dsc(&path.join("dsc")),
         }
     }
 }
@@ -124,24 +132,29 @@ impl crate::traits::FileProvider for LogarchiveProvider {
         local_files(collect_timesync_paths(&self.base.join("timesync")))
     }
     fn read_uuidtext(&self, uuid: &Uuid) -> Result<Vec<u8>, Error> {
-        std::fs::read(uuidtext_path(&self.base, uuid))
+        read_indexed(&self.uuidtext_index, uuid)
     }
     fn read_dsc(&self, uuid: &Uuid) -> Result<Vec<u8>, Error> {
-        std::fs::read(dsc_path(&self.base.join("dsc"), uuid))
+        read_indexed(&self.dsc_index, uuid)
     }
     fn uuidtext_uuids(&self) -> impl Iterator<Item = Uuid> {
-        collect_uuidtext_uuids(&self.base).into_iter()
+        sorted_uuids(self.uuidtext_index.keys())
     }
     fn dsc_uuids(&self) -> impl Iterator<Item = Uuid> {
-        collect_dsc_uuids(&self.base.join("dsc")).into_iter()
+        sorted_uuids(self.dsc_index.keys())
     }
 }
 
 /// Filesystem provider for a live macOS system.
+///
+/// `UUIDText`/DSC files are indexed by their actual on-disk paths at
+/// construction (any filename casing works, including on case-sensitive
+/// filesystems); recreate the provider to pick up files added later.
 #[derive(Clone, Debug)]
 pub struct LiveSystemProvider {
     diagnostics_root: PathBuf,
-    uuidtext_root: PathBuf,
+    uuidtext_index: HashMap<Uuid, PathBuf>,
+    dsc_index: HashMap<Uuid, PathBuf>,
 }
 
 impl LiveSystemProvider {
@@ -157,7 +170,8 @@ impl LiveSystemProvider {
     pub fn with_roots(diagnostics_root: PathBuf, uuidtext_root: PathBuf) -> Self {
         Self {
             diagnostics_root,
-            uuidtext_root,
+            uuidtext_index: index_uuidtext(&uuidtext_root),
+            dsc_index: index_dsc(&uuidtext_root.join("dsc")),
         }
     }
 }
@@ -178,16 +192,16 @@ impl crate::traits::FileProvider for LiveSystemProvider {
         ))
     }
     fn read_uuidtext(&self, uuid: &Uuid) -> Result<Vec<u8>, Error> {
-        std::fs::read(uuidtext_path(&self.uuidtext_root, uuid))
+        read_indexed(&self.uuidtext_index, uuid)
     }
     fn read_dsc(&self, uuid: &Uuid) -> Result<Vec<u8>, Error> {
-        std::fs::read(dsc_path(&self.uuidtext_root.join("dsc"), uuid))
+        read_indexed(&self.dsc_index, uuid)
     }
     fn uuidtext_uuids(&self) -> impl Iterator<Item = Uuid> {
-        collect_uuidtext_uuids(&self.uuidtext_root).into_iter()
+        sorted_uuids(self.uuidtext_index.keys())
     }
     fn dsc_uuids(&self) -> impl Iterator<Item = Uuid> {
-        collect_dsc_uuids(&self.uuidtext_root.join("dsc")).into_iter()
+        sorted_uuids(self.dsc_index.keys())
     }
 }
 
@@ -346,29 +360,15 @@ pub fn collect_timesync_paths(dir: &Path) -> Vec<PathBuf> {
     )
 }
 
-/// Path of the `UUIDText` file for `uuid` under `root`:
-/// `{root}/{first 2 hex chars}/{remaining 30 hex chars}` (uppercase).
-fn uuidtext_path(root: &Path, uuid: &Uuid) -> PathBuf {
-    let mut buffer = Uuid::encode_buffer();
-    let hex = uuid.simple().encode_upper(&mut buffer);
-    root.join(&hex[..2]).join(&hex[2..])
-}
-
-/// Path of the DSC file for `uuid` under `dsc_dir`: `{dsc_dir}/{32 hex chars}` (uppercase).
-fn dsc_path(dsc_dir: &Path, uuid: &Uuid) -> PathBuf {
-    let mut buffer = Uuid::encode_buffer();
-    let hex = uuid.simple().encode_upper(&mut buffer);
-    dsc_dir.join(hex)
-}
-
-/// Enumerate `UUIDText` UUIDs from 2-char hex directories under `root`.
+/// Index `UUIDText` files by UUID from 2-char hex directories under `root`,
+/// keeping the actual on-disk path of each file.
 ///
 /// Directory layout: `{XX}/{YYYYYYYYYYYYYYYYYYYYYYYYYYYYYY}`
-/// Full UUID = `XX` + `YYYYYYYYYYYYYYYYYYYYYYYYYYYYYY` (32 hex chars).
-pub fn collect_uuidtext_uuids(root: &Path) -> Vec<Uuid> {
-    let mut uuids = Vec::new();
+/// Full UUID = `XX` + `YYYYYYYYYYYYYYYYYYYYYYYYYYYYYY` (32 hex chars, any case).
+fn index_uuidtext(root: &Path) -> HashMap<Uuid, PathBuf> {
+    let mut index = HashMap::new();
     let Ok(entries) = std::fs::read_dir(root) else {
-        return uuids;
+        return index;
     };
     let dir_paths = sorted_paths(entries.filter_map(|entry| entry.ok().map(|e| e.path())));
 
@@ -392,26 +392,50 @@ pub fn collect_uuidtext_uuids(root: &Path) -> Vec<Uuid> {
                 continue;
             };
             if let Ok(uuid) = Uuid::parse_str(&format!("{dir_name}{file_name}")) {
-                uuids.push(uuid);
+                index.insert(uuid, file_path);
             }
         }
     }
-    uuids
+    index
 }
 
-/// Enumerate DSC UUIDs from files named as 32 hex chars in `dsc_dir`.
-pub fn collect_dsc_uuids(dsc_dir: &Path) -> Vec<Uuid> {
+/// Index DSC files by UUID from files named as 32 hex chars (any case) in
+/// `dsc_dir`, keeping the actual on-disk path of each file.
+fn index_dsc(dsc_dir: &Path) -> HashMap<Uuid, PathBuf> {
     let Ok(entries) = std::fs::read_dir(dsc_dir) else {
-        return Vec::new();
+        return HashMap::new();
     };
     let paths = sorted_paths(entries.filter_map(|entry| entry.ok().map(|e| e.path())));
     paths
         .into_iter()
         .filter_map(|path| {
             let name = path.file_name()?.to_str()?;
-            Uuid::parse_str(name).ok()
+            let uuid = Uuid::parse_str(name).ok()?;
+            Some((uuid, path))
         })
         .collect()
+}
+
+/// Enumerate `UUIDText` UUIDs from 2-char hex directories under `root`, sorted.
+pub fn collect_uuidtext_uuids(root: &Path) -> Vec<Uuid> {
+    let mut uuids: Vec<Uuid> = index_uuidtext(root).into_keys().collect();
+    uuids.sort();
+    uuids
+}
+
+/// Enumerate DSC UUIDs from files named as 32 hex chars in `dsc_dir`, sorted.
+pub fn collect_dsc_uuids(dsc_dir: &Path) -> Vec<Uuid> {
+    let mut uuids: Vec<Uuid> = index_dsc(dsc_dir).into_keys().collect();
+    uuids.sort();
+    uuids
+}
+
+/// Read the bytes of the indexed file for `uuid`, at its discovered on-disk path.
+fn read_indexed(index: &HashMap<Uuid, PathBuf>, uuid: &Uuid) -> Result<Vec<u8>, Error> {
+    match index.get(uuid) {
+        Some(path) => std::fs::read(path),
+        None => Err(Error::from(ErrorKind::NotFound)),
+    }
 }
 
 /// Open paths as [`LocalFile`] sources, skipping (and logging) unreadable files.
@@ -480,6 +504,43 @@ mod tests {
             keys.windows(2).all(|w| w[0] <= w[1]),
             "tracev3 paths should be sorted chronologically, got keys: {keys:?}"
         );
+    }
+
+    #[test]
+    fn provider_reads_lowercase_named_support_files() {
+        // Non-canonical (lowercase) filenames, e.g. after extraction by a
+        // case-normalizing tool: must read fine on case-sensitive filesystems
+        let scratch =
+            std::env::temp_dir().join(format!("unifiedlogs_lowercase_test_{}", std::process::id()));
+        std::fs::create_dir_all(scratch.join("2e")).unwrap();
+        std::fs::create_dir_all(scratch.join("dsc")).unwrap();
+        std::fs::write(
+            scratch.join("2e/33403a2ff43e3CB4ae8e33b49d0e23"),
+            b"uuidtext-bytes",
+        )
+        .unwrap();
+        std::fs::write(
+            scratch.join("dsc/6d6a521b70df35D8b0a3ebb4c22fb0ae"),
+            b"dsc-bytes",
+        )
+        .unwrap();
+
+        let provider = LogarchiveProvider::new(&scratch);
+        let uuidtext_uuid = Uuid::parse_str("2e33403a2ff43e3cb4ae8e33b49d0e23").unwrap();
+        let dsc_uuid = Uuid::parse_str("6d6a521b70df35d8b0a3ebb4c22fb0ae").unwrap();
+
+        assert_eq!(
+            provider.uuidtext_uuids().collect::<Vec<_>>(),
+            vec![uuidtext_uuid]
+        );
+        assert_eq!(provider.dsc_uuids().collect::<Vec<_>>(), vec![dsc_uuid]);
+        assert_eq!(
+            provider.read_uuidtext(&uuidtext_uuid).unwrap(),
+            b"uuidtext-bytes"
+        );
+        assert_eq!(provider.read_dsc(&dsc_uuid).unwrap(), b"dsc-bytes");
+
+        std::fs::remove_dir_all(&scratch).unwrap();
     }
 
     #[test]
