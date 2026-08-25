@@ -390,20 +390,6 @@ fn index_dsc(dsc_dir: &Path) -> HashMap<Uuid, PathBuf> {
         .collect()
 }
 
-/// Enumerate `UUIDText` UUIDs from 2-char hex directories under `root`, sorted.
-pub fn collect_uuidtext_uuids(root: &Path) -> Vec<Uuid> {
-    let mut uuids: Vec<Uuid> = index_uuidtext(root).into_keys().collect();
-    uuids.sort();
-    uuids
-}
-
-/// Enumerate DSC UUIDs from files named as 32 hex chars in `dsc_dir`, sorted.
-pub fn collect_dsc_uuids(dsc_dir: &Path) -> Vec<Uuid> {
-    let mut uuids: Vec<Uuid> = index_dsc(dsc_dir).into_keys().collect();
-    uuids.sort();
-    uuids
-}
-
 /// Read the bytes of the indexed file for `uuid`, at its discovered on-disk path.
 fn read_indexed(index: &HashMap<Uuid, PathBuf>, uuid: &Uuid) -> Result<Vec<u8>, Error> {
     match index.get(uuid) {

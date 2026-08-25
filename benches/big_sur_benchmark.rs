@@ -35,8 +35,7 @@ fn visit_file(
                 let _ = entry.message();
             }
         },
-    )
-    .unwrap();
+    );
 }
 
 fn big_sur_benchmark(c: &mut Criterion) {

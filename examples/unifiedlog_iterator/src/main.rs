@@ -366,16 +366,14 @@ fn parse_single_file(
     let oversize_cache = OversizeCache::new();
 
     let mut parse_context = ParseContext::new(writer, &bookmark, resume);
-    if let Err(e) = visit_tracev3(
+    let _ = visit_tracev3(
         &data,
         &resolver,
         &strings,
         &oversize_cache,
         Rc::new(path.to_path_buf()),
         |entry| parse_context.handle(&entry),
-    ) {
-        error!("Failed to parse {path}: {e}", path = path.display());
-    }
+    );
     parse_context.finish(&bookmark)
 }
 

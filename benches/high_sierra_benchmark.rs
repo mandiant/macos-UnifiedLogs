@@ -35,8 +35,7 @@ fn visit_file(
                 let _ = entry.message();
             }
         },
-    )
-    .unwrap();
+    );
 }
 
 fn high_sierra_benchmark(c: &mut Criterion) {

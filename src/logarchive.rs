@@ -6,7 +6,6 @@
 //! to load everything up front instead.
 
 use super::cache::{StringCatalog, StringStorage};
-use super::error::ParseError;
 use super::filesystem::{LiveSystemProvider, LogarchiveProvider};
 use super::log_entry::LogEntry;
 use super::timesync::{RawTimesyncBoot, TimestampResolver, parse_timesync_file};
@@ -14,18 +13,9 @@ use super::tracev3::{OversizeCache, visit_tracev3};
 use super::traits::{FileProvider, SourceFile, VisitOutcome};
 use log::{info, warn};
 use std::collections::HashMap;
-use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use uuid::Uuid;
-
-#[derive(thiserror::Error, Debug)]
-pub enum VisitTracev3FileError {
-    #[error(transparent)]
-    Io(#[from] std::io::Error),
-    #[error(transparent)]
-    Parse(#[from] ParseError),
-}
 
 /// Process all tracev3 files in a logarchive directory, emitting log entries via callback.
 ///
@@ -114,7 +104,7 @@ pub struct VisitOptions {
 
 /// Like [`visit_provider`], with explicit [`VisitOptions`].
 ///
-/// The callback may return [`ControlFlow::Break`] to stop the visit early
+/// The callback may return [`std::ops::ControlFlow::Break`] to stop the visit early
 /// (see [`VisitOutcome`]); the remaining entries and files are skipped and
 /// the function returns `Ok(())`.
 ///
@@ -167,17 +157,17 @@ pub fn visit_provider_with_options<O: VisitOutcome>(
                 }
             };
 
-            match visit_tracev3(
+            if visit_tracev3(
                 &data,
                 &resolver,
                 &strings,
                 &oversize_cache,
                 Rc::new(PathBuf::from(source.source_path())),
                 |entry| callback(entry).into_flow(),
-            ) {
-                Ok(ControlFlow::Break(())) => return Ok(()),
-                Ok(ControlFlow::Continue(())) => {}
-                Err(e) => warn!("Failed to process {}: {e}", source.source_path()),
+            )
+            .is_break()
+            {
+                return Ok(());
             }
 
             if let StringLoading::Budgeted(budget) = options.string_loading
@@ -200,7 +190,7 @@ pub fn visit_logarchive_tracev3_file<O: VisitOutcome>(
     logarchive_path: &Path,
     tracev3_path: impl AsRef<Path>,
     mut callback: impl for<'a, 'b> FnMut(LogEntry<'a, 'b>) -> O,
-) -> Result<(), VisitTracev3FileError> {
+) -> Result<(), std::io::Error> {
     visit_logarchive_tracev3_files(logarchive_path, &[tracev3_path], |_, entry| callback(entry))
 }
 
@@ -215,7 +205,7 @@ pub fn visit_logarchive_tracev3_files<P: AsRef<Path>, O: VisitOutcome>(
     logarchive_path: &Path,
     tracev3_paths: &[P],
     mut callback: impl for<'a, 'b> FnMut(usize, LogEntry<'a, 'b>) -> O,
-) -> Result<(), VisitTracev3FileError> {
+) -> Result<(), std::io::Error> {
     let provider = LogarchiveProvider::new(logarchive_path);
     let timesync_data = load_timesync_data(&provider)?;
     let resolver = TimestampResolver::new(timesync_data);
@@ -235,7 +225,7 @@ pub fn visit_logarchive_tracev3_files<P: AsRef<Path>, O: VisitOutcome>(
             &oversize_cache,
             Rc::new(evidence),
             |entry| callback(index, entry).into_flow(),
-        )?
+        )
         .is_break()
         {
             return Ok(());
@@ -300,6 +290,7 @@ mod tests {
     use super::*;
     use crate::filesystem::collect_tracev3_paths;
     use crate::helpers::tests::test_data_path;
+    use std::ops::ControlFlow;
 
     #[test]
     fn test_log_entry_json_schema() {

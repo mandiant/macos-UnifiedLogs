@@ -11,7 +11,7 @@ use super::chunks::firehose::flags::{FirehoseFlags, FormatterType};
 use super::chunks::oversize::RawOversize;
 use super::chunks::simpledump::RawSimpleDump;
 use super::chunks::statedump::RawStatedump;
-use super::error::{NomExt, ParseError};
+use super::error::NomExt;
 use super::header::RawHeaderChunk;
 use super::log_entry::{EventType, ItemsData, LogEntry, LogType, MessageFlags, PrivateDataContext};
 use super::resolve::resolve_strings;
@@ -48,7 +48,7 @@ pub fn visit_tracev3<'d, 's: 'd, O: VisitOutcome>(
     oversize_cache: &OversizeCache<'_>,
     evidence: Rc<PathBuf>,
     mut callback: impl for<'b> FnMut(LogEntry<'d, 'b>) -> O,
-) -> Result<ControlFlow<()>, ParseError> {
+) -> ControlFlow<()> {
     let mut callback = move |entry: LogEntry<'d, '_>| callback(entry).into_flow();
     let mut current_header: Option<RawHeaderChunk<'d>> = None;
     let mut current_catalog: Option<RawCatalogChunk<'d>> = None;
@@ -76,7 +76,7 @@ pub fn visit_tracev3<'d, 's: 'd, O: VisitOutcome>(
                 )
                 .is_break()
                 {
-                    return Ok(ControlFlow::Break(()));
+                    return ControlFlow::Break(());
                 }
                 current_header = Some(h);
             }
@@ -94,7 +94,7 @@ pub fn visit_tracev3<'d, 's: 'd, O: VisitOutcome>(
                 )
                 .is_break()
                 {
-                    return Ok(ControlFlow::Break(()));
+                    return ControlFlow::Break(());
                 }
                 current_catalog = Some(c);
             }
@@ -149,7 +149,7 @@ pub fn visit_tracev3<'d, 's: 'd, O: VisitOutcome>(
                             )
                             .is_break()
                             {
-                                return Ok(ControlFlow::Break(()));
+                                return ControlFlow::Break(());
                             }
                         }
                         ChunkTag::Simpledump | ChunkTag::Statedump => has_deferred = true,
@@ -179,10 +179,10 @@ pub fn visit_tracev3<'d, 's: 'd, O: VisitOutcome>(
     )
     .is_break()
     {
-        return Ok(ControlFlow::Break(()));
+        return ControlFlow::Break(());
     }
 
-    Ok(ControlFlow::Continue(()))
+    ControlFlow::Continue(())
 }
 
 // ---------------------------------------------------------------------------
