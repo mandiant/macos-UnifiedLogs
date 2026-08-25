@@ -2,7 +2,8 @@ kind: Fixed
 body: |
   `UUIDText`/DSC support files are now read via the paths actually discovered on disk
   (indexed by UUID at provider construction) instead of reconstructed canonical uppercase
-  names, so archives with non-canonical filenames (e.g. lowercased by an extraction tool)
-  parse correctly on case-sensitive filesystems. The index is a snapshot: recreate the
-  provider to pick up support files added later.
+  names, so `UUIDText`/DSC files whose names have non-canonical case (e.g. lowercased by an
+  extraction tool) are found on case-sensitive filesystems. Directory names (`Persist`,
+  `Special`, `timesync`, `dsc`, ...) are still matched exactly. The index is a snapshot:
+  recreate the provider to pick up support files added later.
 time: 2026-08-24T00:00:07.000000000Z

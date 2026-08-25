@@ -328,6 +328,7 @@ fn main() {
 
     if let Err(e) = result {
         error!("Error during parsing: {e}");
+        std::process::exit(1);
     }
 }
 

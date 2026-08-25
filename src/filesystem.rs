@@ -6,6 +6,7 @@
 //! changing the lower-level `tracev3` parser. [`InMemoryProvider`] shows that
 //! no real filesystem is required at all.
 
+use log::{debug, warn};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Error, ErrorKind, Read};
@@ -298,18 +299,11 @@ pub fn collect_tracev3_paths(base: &Path) -> Vec<PathBuf> {
     let mut paths = Vec::new();
 
     for subdir in TRACE_SUBDIRS {
-        let dir = base.join(subdir);
-        if let Ok(entries) = std::fs::read_dir(&dir) {
-            let dir_paths = sorted_paths(
-                entries
-                    .filter_map(|entry| entry.ok())
-                    .map(|entry| entry.path())
-                    .filter(|path| {
-                        path.extension().and_then(|ext| ext.to_str()) == Some("tracev3")
-                    }),
-            );
-            paths.extend(dir_paths);
-        }
+        paths.extend(
+            dir_paths(&base.join(subdir))
+                .into_iter()
+                .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("tracev3")),
+        );
     }
 
     // Stable sort: files with unreadable headers keep their relative
@@ -349,15 +343,10 @@ pub(crate) fn tracev3_sort_key(path: &Path) -> Option<(u64, u64)> {
 
 /// Collect all `.timesync` file paths, sorted by name.
 pub fn collect_timesync_paths(dir: &Path) -> Vec<PathBuf> {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return Vec::new();
-    };
-    sorted_paths(
-        entries
-            .filter_map(|entry| entry.ok())
-            .map(|entry| entry.path())
-            .filter(|path| path.extension().and_then(|e| e.to_str()) == Some("timesync")),
-    )
+    dir_paths(dir)
+        .into_iter()
+        .filter(|path| path.extension().and_then(|e| e.to_str()) == Some("timesync"))
+        .collect()
 }
 
 /// Index `UUIDText` files by UUID from 2-char hex directories under `root`,
@@ -367,24 +356,14 @@ pub fn collect_timesync_paths(dir: &Path) -> Vec<PathBuf> {
 /// Full UUID = `XX` + `YYYYYYYYYYYYYYYYYYYYYYYYYYYYYY` (32 hex chars, any case).
 fn index_uuidtext(root: &Path) -> HashMap<Uuid, PathBuf> {
     let mut index = HashMap::new();
-    let Ok(entries) = std::fs::read_dir(root) else {
-        return index;
-    };
-    let dir_paths = sorted_paths(entries.filter_map(|entry| entry.ok().map(|e| e.path())));
-
-    for dir_path in dir_paths {
+    for dir_path in dir_paths(root) {
         let Some(dir_name) = dir_path.file_name().and_then(|n| n.to_str()) else {
             continue;
         };
         if dir_name.len() != 2 || !only_hex_chars(dir_name) || !dir_path.is_dir() {
             continue;
         }
-        let Ok(file_entries) = std::fs::read_dir(&dir_path) else {
-            continue;
-        };
-        let file_paths =
-            sorted_paths(file_entries.filter_map(|entry| entry.ok().map(|e| e.path())));
-        for file_path in file_paths {
+        for file_path in dir_paths(&dir_path) {
             if !file_path.is_file() {
                 continue;
             }
@@ -402,11 +381,7 @@ fn index_uuidtext(root: &Path) -> HashMap<Uuid, PathBuf> {
 /// Index DSC files by UUID from files named as 32 hex chars (any case) in
 /// `dsc_dir`, keeping the actual on-disk path of each file.
 fn index_dsc(dsc_dir: &Path) -> HashMap<Uuid, PathBuf> {
-    let Ok(entries) = std::fs::read_dir(dsc_dir) else {
-        return HashMap::new();
-    };
-    let paths = sorted_paths(entries.filter_map(|entry| entry.ok().map(|e| e.path())));
-    paths
+    dir_paths(dsc_dir)
         .into_iter()
         .filter_map(|path| {
             let name = path.file_name()?.to_str()?;
@@ -452,6 +427,24 @@ pub(crate) fn sorted_paths(paths: impl Iterator<Item = PathBuf>) -> Vec<PathBuf>
     let mut paths = paths.collect::<Vec<_>>();
     paths.sort();
     paths
+}
+
+/// Sorted paths of the entries of `dir`. A directory that cannot be read
+/// yields nothing: absent directories are normal (archives do not all have
+/// the same subdirectories) and only logged at debug level; any other error
+/// (permissions, I/O) is a warning.
+fn dir_paths(dir: &Path) -> Vec<PathBuf> {
+    match std::fs::read_dir(dir) {
+        Ok(entries) => sorted_paths(entries.filter_map(|entry| entry.ok().map(|e| e.path()))),
+        Err(e) if e.kind() == ErrorKind::NotFound => {
+            debug!("No directory {}", dir.display());
+            Vec::new()
+        }
+        Err(e) => {
+            warn!("Failed to read directory {}: {e}", dir.display());
+            Vec::new()
+        }
+    }
 }
 
 #[cfg(test)]

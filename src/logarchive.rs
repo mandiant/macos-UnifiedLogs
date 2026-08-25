@@ -118,18 +118,31 @@ pub struct VisitOptions {
 /// The callback may return [`ControlFlow::Break`] to stop the visit early
 /// (see [`VisitOutcome`]); the remaining entries and files are skipped and
 /// the function returns `Ok(())`.
+///
+/// # Errors
+///
+/// Returns [`std::io::ErrorKind::NotFound`] when the provider yields no
+/// tracev3 file at all — a wrong or unreadable path rather than an empty log.
+/// Individual files that fail to read or parse are logged and skipped.
 pub fn visit_provider_with_options<O: VisitOutcome>(
     provider: &impl FileProvider,
     options: VisitOptions,
     mut callback: impl for<'a, 'b> FnMut(LogEntry<'a, 'b>) -> O,
 ) -> Result<(), std::io::Error> {
+    let mut sources = provider.tracev3_files().peekable();
+    if sources.peek().is_none() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "no tracev3 files found",
+        ));
+    }
+
     // 1. Timesync → TimestampResolver
     let timesync_data = load_timesync_data(provider)?;
     let resolver = TimestampResolver::new(timesync_data);
 
     // 2. Oversize entries (owned) survive storage reclaims
     let oversize_cache = OversizeCache::with_provider(provider);
-    let mut sources = provider.tracev3_files();
 
     // 3. Process all tracev3 sources, one storage generation at a time.
     // Entries only live inside the callback, so dropping the storage between
@@ -520,6 +533,17 @@ mod tests {
         let provider = crate::filesystem::InMemoryProvider::default();
         let times = load_timesync_data(&provider).unwrap();
         assert!(times.is_empty());
+    }
+
+    #[test]
+    fn test_visit_without_tracev3_files_is_not_found() {
+        let missing = test_data_path().join("does_not_exist.logarchive");
+        let err = visit_logarchive(&missing, |_entry| {}).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
+
+        let empty = crate::filesystem::InMemoryProvider::default();
+        let err = visit_provider(&empty, |_entry| {}).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
     }
 
     #[test]
