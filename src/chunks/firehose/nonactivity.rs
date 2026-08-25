@@ -35,7 +35,6 @@ impl FirehoseNonActivity {
     pub fn parse_non_activity(
         data: &[u8],
         firehose_flags: u16,
-        catalog_persona: Option<u32>,
     ) -> nom::IResult<&[u8], FirehoseNonActivity> {
         let mut non_activity = FirehoseNonActivity::default();
 
@@ -55,18 +54,12 @@ impl FirehoseNonActivity {
         let has_persona = 0x40;
         if (firehose_flags & has_persona) != 0 {
             debug!("[macos-unifiedlogs] Non-Activity Firehose log chunk has has_persona flag");
+            let (firehose_input, persona_id) = le_u32(input)?;
+
+            non_activity.persona_id = persona_id;
             non_activity.flags.push(MessageFlags::HasPersona);
 
-            // The persona is inline only when the catalog does not already record one for this
-            // process. When it does, the flag is still set but no field follows it.
-            match catalog_persona {
-                Some(persona_id) => non_activity.persona_id = persona_id,
-                None => {
-                    let (firehose_input, persona_id) = le_u32(input)?;
-                    non_activity.persona_id = persona_id;
-                    input = firehose_input;
-                }
-            }
+            input = firehose_input;
         }
 
         let private_string_range = 0x100; // has_private_data flag
@@ -173,7 +166,7 @@ mod tests {
         ];
         let test_flags = 556;
         let (_, nonactivity_results) =
-            FirehoseNonActivity::parse_non_activity(&test_data, test_flags, None).unwrap();
+            FirehoseNonActivity::parse_non_activity(&test_data, test_flags).unwrap();
         assert_eq!(nonactivity_results.activity_id, 0);
         assert_eq!(nonactivity_results.sentinel, 0);
         assert_eq!(nonactivity_results.private_strings_offset, 0);
@@ -260,7 +253,7 @@ mod tests {
             49, 52, 48, 57, 52, 49, 48, 0,
         ];
         let flags = 580;
-        let (_, result) = FirehoseNonActivity::parse_non_activity(&test, flags, None).unwrap();
+        let (_, result) = FirehoseNonActivity::parse_non_activity(&test, flags).unwrap();
         assert_eq!(
             result.flags,
             vec![

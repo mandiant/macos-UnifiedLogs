@@ -5,7 +5,6 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-use crate::catalog::CatalogChunk;
 use crate::chunks::firehose::activity::FirehoseActivity;
 use crate::chunks::firehose::loss::FirehoseLoss;
 use crate::chunks::firehose::nonactivity::FirehoseNonActivity;
@@ -142,10 +141,9 @@ impl FirehosePreamble {
     const REMNANT_DATA: u8 = 0x0;
 
     /// Parse the start of the Firehose data
-    pub fn parse_firehose_preamble<'a>(
-        firehose_input_data: &'a [u8],
-        catalog: &CatalogChunk,
-    ) -> nom::IResult<&'a [u8], FirehosePreamble> {
+    pub fn parse_firehose_preamble(
+        firehose_input_data: &[u8],
+    ) -> nom::IResult<&[u8], FirehosePreamble> {
         let mut firehose_data = FirehosePreamble::default();
 
         let (input, chunk_tag) = le_u32(firehose_input_data)?;
@@ -188,14 +186,10 @@ impl FirehosePreamble {
             take(public_data_size - public_data_nommed_size)(log_data)?;
 
         // Go through all the public data associated with log Firehose entry
-        // Whether the persona is inline in each tracepoint depends on the emitting process, not
-        // on the tracepoint, so it is resolved once per chunk.
-        let catalog_persona = catalog.persona_for(first_proc_id, second_proc_id);
-
         while !public_data.is_empty() {
             // Start parsing all of them public data
             let (firehose_input, firehose_public_data) =
-                FirehosePreamble::parse_firehose(public_data, catalog_persona)?;
+                FirehosePreamble::parse_firehose(public_data)?;
             public_data = firehose_input;
 
             // If not enough data remaining. End early
@@ -467,7 +461,7 @@ impl FirehosePreamble {
     }
 
     /// Parse all the different types of Firehose data (activity, non-activity, loss, trace, signpost)
-    fn parse_firehose(data: &[u8], catalog_persona: Option<u32>) -> nom::IResult<&[u8], Firehose> {
+    fn parse_firehose(data: &[u8]) -> nom::IResult<&[u8], Firehose> {
         let mut firehose_results = Firehose::default();
 
         let (input, log_activity_type) = le_u8(data)?;
@@ -504,17 +498,17 @@ impl FirehosePreamble {
 
         if log_activity_type == activity {
             let (activity_data, activity) =
-                FirehoseActivity::parse_activity(firehose_input, flags, log_type, catalog_persona)?;
+                FirehoseActivity::parse_activity(firehose_input, flags, log_type)?;
             firehose_input = activity_data;
             firehose_results.firehose_activity = activity;
         } else if log_activity_type == nonactivity {
             let (non_activity_data, non_activity) =
-                FirehoseNonActivity::parse_non_activity(firehose_input, flags, catalog_persona)?;
+                FirehoseNonActivity::parse_non_activity(firehose_input, flags)?;
             firehose_input = non_activity_data;
             firehose_results.firehose_non_activity = non_activity;
         } else if log_activity_type == signpost {
             let (process_data, firehose_signpost) =
-                FirehoseSignpost::parse_signpost(firehose_input, flags, catalog_persona)?;
+                FirehoseSignpost::parse_signpost(firehose_input, flags)?;
             firehose_input = process_data;
             firehose_results.firehose_signpost = firehose_signpost;
         } else if log_activity_type == loss {
@@ -729,7 +723,6 @@ impl FirehosePreamble {
 #[cfg(test)]
 mod tests {
     use super::{FirehoseItemData, FirehosePreamble};
-    use crate::catalog::CatalogChunk;
     use crate::chunks::firehose::firehose_log::{FirehoseItem, FirehoseItemType};
     use std::{fs::File, io::Read, path::PathBuf};
 
@@ -2808,11 +2801,8 @@ mod tests {
             0, 0, 0, 0, 0, 2, 1, 4, 0, 48, 57, 126, 0, 179, 232, 0, 0, 0, 0, 0, 0, 40, 101, 197, 1,
             16, 0, 12, 0, 178, 249, 0, 0, 0, 0, 0, 128, 105, 67, 61, 0, 0, 0, 0, 0,
         ];
-        let (mut data, firehose) = FirehosePreamble::parse_firehose_preamble(
-            &test_firehose_data,
-            &CatalogChunk::default(),
-        )
-        .unwrap();
+        let (mut data, firehose) =
+            FirehosePreamble::parse_firehose_preamble(&test_firehose_data).unwrap();
         assert_eq!(firehose.chunk_tag, 0x6001);
         assert_eq!(firehose.chunk_sub_tag, 0);
         assert_eq!(firehose.chunk_data_size, 4032);
@@ -2829,8 +2819,7 @@ mod tests {
 
         let mut firehouse_result_count = firehose.public_data.len();
         while !data.is_empty() {
-            let (test_data, firehose) =
-                FirehosePreamble::parse_firehose_preamble(data, &CatalogChunk::default()).unwrap();
+            let (test_data, firehose) = FirehosePreamble::parse_firehose_preamble(data).unwrap();
             data = test_data;
             firehouse_result_count += firehose.public_data.len();
         }
@@ -2854,7 +2843,7 @@ mod tests {
             51, 53, 48, 52, 53, 48, 40, 53, 48, 49, 41, 62, 58, 54, 52, 49, 93, 0, 0, 0, 0, 0, 0,
         ];
 
-        let (_, firehose) = FirehosePreamble::parse_firehose(&test_firehose_data, None).unwrap();
+        let (_, firehose) = FirehosePreamble::parse_firehose(&test_firehose_data).unwrap();
         assert_eq!(firehose.log_activity_type, 4);
         assert_eq!(firehose.log_type, 0);
         assert_eq!(firehose.flags, 557);
@@ -2931,8 +2920,7 @@ mod tests {
             22, 0, 8, 0, 140, 94, 64, 6, 1, 0, 0, 0, 4, 0, 4, 2, 96, 153, 65, 6, 175, 149, 170, 0,
             0, 0, 0, 0, 167, 26, 131, 253, 22, 0, 8, 0, 216, 115, 64, 6, 1, 0, 0, 0, 0, 0,
         ];
-        let (_, results) =
-            FirehosePreamble::parse_firehose_preamble(&data, &CatalogChunk::default()).unwrap();
+        let (_, results) = FirehosePreamble::parse_firehose_preamble(&data).unwrap();
         assert_eq!(results.private_data_virtual_offset, 4094);
         assert_eq!(results.first_number_proc_id, 1189179);
         assert_eq!(results.second_number_proc_id, 2685254);
@@ -2993,9 +2981,7 @@ mod tests {
             99, 47, 115, 101, 99, 117, 114, 105, 116, 121, 45, 99, 104, 101, 99, 107, 115, 121,
             115, 116, 101, 109, 0,
         ];
-        let (_, firehose) =
-            FirehosePreamble::parse_firehose_preamble(&test_data, &CatalogChunk::default())
-                .unwrap();
+        let (_, firehose) = FirehosePreamble::parse_firehose_preamble(&test_data).unwrap();
         assert_eq!(firehose.chunk_tag, 0x6001);
         assert_eq!(firehose.chunk_sub_tag, 0);
         assert_eq!(firehose.chunk_data_size, 163);
@@ -3219,8 +3205,7 @@ mod tests {
         let mut buffer = Vec::new();
         open.read_to_end(&mut buffer).unwrap();
 
-        let (_, results) =
-            FirehosePreamble::parse_firehose_preamble(&buffer, &CatalogChunk::default()).unwrap();
+        let (_, results) = FirehosePreamble::parse_firehose_preamble(&buffer).unwrap();
 
         assert_eq!(results.public_data.len(), 51);
 
@@ -3493,9 +3478,7 @@ mod tests {
             0, 0, 0, 0,
         ];
 
-        let (mut data, firehose) =
-            FirehosePreamble::parse_firehose_preamble(&test_data, &CatalogChunk::default())
-                .unwrap();
+        let (mut data, firehose) = FirehosePreamble::parse_firehose_preamble(&test_data).unwrap();
         assert_eq!(firehose.chunk_tag, 0x6001);
         assert_eq!(firehose.chunk_sub_tag, 0);
         assert_eq!(firehose.chunk_data_size, 4104);
@@ -3512,8 +3495,7 @@ mod tests {
 
         let mut firehouse_result_count = firehose.public_data.len();
         while !data.is_empty() {
-            let (test_data, firehose) =
-                FirehosePreamble::parse_firehose_preamble(data, &CatalogChunk::default()).unwrap();
+            let (test_data, firehose) = FirehosePreamble::parse_firehose_preamble(data).unwrap();
             data = test_data;
             firehouse_result_count += firehose.public_data.len();
         }
@@ -3615,49 +3597,5 @@ mod tests {
         };
 
         FirehosePreamble::parse_private_data(&[], &mut items).unwrap();
-    }
-
-    /// A non-activity tracepoint from a process whose catalog `ProcessInfoEntry` records a real
-    /// persona (`persona_id = 99`). `flags` has `0x40` set, but because the catalog already
-    /// knows the persona the tracepoint carries **no** inline persona field.
-    ///
-    /// 24-byte header, the 129-byte body its `data_size` states, then 7 bytes of padding.
-    /// Apple's `log show` renders it as:
-    ///
-    /// ```text
-    /// Requesting container lookup; personaid = 4294967295, type = NOPERSONA, name = <unknown>,
-    ///   origin [pid = 519, personaid = 4294967295], proximate [pid = 519, personaid = 4294967295],
-    ///   class = 4, identifier = <private>, group_identifier = <private>,
-    ///   create = 0, temp = 0, euid = 501, uid = 501
-    /// ```
-    const PERSONA_ABSENT_ENTRY: [u8; 160] = [
-        4, 0, 69, 6, 111, 222, 77, 13, 54, 26, 0, 0, 0, 0, 0, 0, 68, 163, 39, 91, 0, 0, 129, 0,
-        229, 87, 1, 0, 0, 0, 0, 128, 52, 196, 76, 13, 50, 0, 7, 35, 14, 0, 4, 255, 255, 255, 255,
-        34, 4, 0, 0, 10, 0, 34, 4, 10, 0, 10, 0, 0, 4, 7, 2, 0, 0, 0, 4, 255, 255, 255, 255, 0, 4,
-        7, 2, 0, 0, 0, 4, 255, 255, 255, 255, 0, 8, 4, 0, 0, 0, 0, 0, 0, 0, 33, 4, 0, 0, 0, 0, 33,
-        4, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 4, 245, 1, 0, 0, 0, 4, 245, 1, 0, 0,
-        78, 79, 80, 69, 82, 83, 79, 78, 65, 0, 60, 117, 110, 107, 110, 111, 119, 110, 62, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0,
-    ];
-
-    #[test]
-    fn persona_field_is_absent_when_catalog_records_a_persona() {
-        let (_, firehose) =
-            FirehosePreamble::parse_firehose(&PERSONA_ABSENT_ENTRY, Some(99)).unwrap();
-
-        let items = &firehose.message.item_info;
-        assert_eq!(
-            items.len(),
-            14,
-            "expected the 14 items the format string takes"
-        );
-
-        let values: Vec<&str> = items.iter().map(|i| i.message_strings.as_str()).collect();
-        assert_eq!(values[1], "NOPERSONA");
-        assert_eq!(values[2], "<unknown>");
-        assert_eq!(values[3], "519");
-        assert_eq!(values[8], "<private>");
-        assert_eq!(values[12], "501");
-        assert_eq!(values[13], "501");
     }
 }
