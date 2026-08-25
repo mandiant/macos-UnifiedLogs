@@ -8,8 +8,8 @@
 //! disk out-of-band while the small referencing entry lingers in its process's
 //! in-memory buffer, so the referenced chunk may live in a tracev3 file that
 //! has not been visited yet. [`OversizeCache::with_provider`] resolves such
-//! backward references by lazily harvesting oversize chunks from
-//! not-yet-visited files on a miss.
+//! backward references by reading ahead in the provider's files on a miss,
+//! harvesting their oversize chunks.
 
 use crate::chunk::ChunkSetReader;
 use crate::chunks::oversize::RawOversize;
@@ -21,8 +21,7 @@ use crate::traits::{FileProvider, SourceFile};
 use elsa::FrozenMap;
 use log::warn;
 use std::cell::{Cell, RefCell};
-use std::collections::HashSet;
-use std::io::Read;
+use std::collections::VecDeque;
 use uuid::Uuid;
 
 /// Key identifying an oversize payload:
@@ -31,11 +30,14 @@ type OversizeKey = (Uuid, u32, u64, u32);
 
 /// Cache for oversize log entries, threaded across chunksets and tracev3 files.
 ///
-/// A cache built with [`Self::with_provider`] resolves backward cross-file
-/// references by harvesting oversize chunks from not-yet-visited files on a
-/// miss, one file at a time, stopping as soon as the wanted key appears. Each
-/// file is harvested at most once; once every file has been covered, misses
-/// are definitive (the referenced log rolled) and cost no further I/O.
+/// A cache built with [`Self::with_provider`] owns the provider's single
+/// enumeration of tracev3 files: visit loops pull files through
+/// [`Self::next_file`], and on a miss the cache reads ahead in that same
+/// sequence, harvesting oversize chunks one file at a time until the wanted
+/// key appears or the sequence ends. A file read ahead is handed back by
+/// `next_file` later (its bytes are not kept, it is read again), so every
+/// file is harvested at most once and misses past the end are definitive
+/// (the referenced log rolled) at zero I/O.
 ///
 /// The append-only map hands out `&[u8]` borrows that stay valid while new
 /// entries are inserted mid-visit (same pattern as
@@ -43,7 +45,11 @@ type OversizeKey = (Uuid, u32, u64, u32);
 pub struct OversizeCache<'p> {
     entries: FrozenMap<OversizeKey, Box<[u8]>>,
     inserted_bytes: Cell<usize>,
-    harvester: Box<dyn OversizeHarvester + 'p>,
+    /// The single enumeration of the provider's tracev3 files (empty without
+    /// a provider: misses are then final).
+    files: RefCell<Box<dyn Iterator<Item = QueuedFile<'p>> + 'p>>,
+    /// Files read ahead by a harvest, waiting to be handed to the visit loop.
+    pending: RefCell<VecDeque<QueuedFile<'p>>>,
 }
 
 impl OversizeCache<'_> {
@@ -52,7 +58,8 @@ impl OversizeCache<'_> {
         Self {
             entries: FrozenMap::new(),
             inserted_bytes: Cell::new(0),
-            harvester: Box::new(NoHarvester),
+            files: RefCell::new(Box::new(std::iter::empty())),
+            pending: RefCell::new(VecDeque::new()),
         }
     }
 }
@@ -64,30 +71,27 @@ impl Default for OversizeCache<'_> {
 }
 
 impl<'p> OversizeCache<'p> {
-    /// Cache that resolves misses by lazily harvesting oversize chunks from
-    /// the provider's not-yet-visited tracev3 files.
-    ///
-    /// Visit loops must call [`Self::mark_covered`] with each file's
-    /// `source_path()` before visiting it, so the harvester skips files whose
-    /// oversize chunks the visit itself inserts. Files are identified by their
-    /// `source_path()` string; providers yielding duplicate paths would
-    /// collapse in that bookkeeping.
+    /// Cache that resolves misses by reading ahead in the provider's tracev3
+    /// files. Visit those files through [`Self::next_file`] so the visit and
+    /// the harvester share one enumeration.
     pub fn with_provider(provider: &'p impl FileProvider) -> Self {
+        let files = provider
+            .tracev3_files()
+            .map(|source| Box::new(source) as QueuedFile<'p>);
         Self {
             entries: FrozenMap::new(),
             inserted_bytes: Cell::new(0),
-            harvester: Box::new(ProviderHarvester {
-                provider,
-                covered: RefCell::new(HashSet::new()),
-                exhausted: Cell::new(false),
-            }),
+            files: RefCell::new(Box::new(files)),
+            pending: RefCell::new(VecDeque::new()),
         }
     }
 
-    /// Tell the harvester this file's oversize chunks are handled by the
-    /// visit loop. No-op for a cache without a harvest source.
-    pub fn mark_covered(&self, source_path: &str) {
-        self.harvester.mark_covered(source_path);
+    /// Next tracev3 file to visit: files read ahead by a harvest first, then
+    /// the rest of the provider's enumeration. `None` once every file has
+    /// been handed out.
+    pub fn next_file(&self) -> Option<Box<dyn SourceFile + 'p>> {
+        let pending = self.pending.borrow_mut().pop_front();
+        pending.or_else(|| self.files.borrow_mut().next())
     }
 
     pub(super) fn insert(&self, boot_uuid: Uuid, oversize: &RawOversize<'_>) {
@@ -118,8 +122,8 @@ impl<'p> OversizeCache<'p> {
             .get(&(boot_uuid, data_ref, first_proc_id, second_proc_id))
     }
 
-    /// Get, harvesting one not-yet-covered file at a time on a miss until the
-    /// key appears or every file has been covered.
+    /// Get, harvesting one not-yet-visited file at a time on a miss until the
+    /// key appears or every file has been harvested.
     pub(super) fn get_or_harvest(
         &self,
         boot_uuid: Uuid,
@@ -131,69 +135,34 @@ impl<'p> OversizeCache<'p> {
             if let Some(data) = self.get(boot_uuid, data_ref, first_proc_id, second_proc_id) {
                 return Some(data);
             }
-            if !self.harvester.harvest_next(self) {
+            if !self.harvest_next() {
                 return None;
             }
         }
     }
-}
 
-/// Miss handler for [`OversizeCache`]: dyn-erases the provider type so the
-/// cache doesn't grow a generic parameter.
-trait OversizeHarvester {
-    /// Harvest oversize chunks from ONE not-yet-covered file into `cache`.
-    /// Returns `false` when every file has been covered (exhausted).
-    fn harvest_next(&self, cache: &OversizeCache<'_>) -> bool;
-    fn mark_covered(&self, source_path: &str);
-}
-
-/// Harvester for caches without a harvest source: misses are final.
-struct NoHarvester;
-
-impl OversizeHarvester for NoHarvester {
-    fn harvest_next(&self, _cache: &OversizeCache<'_>) -> bool {
-        false
-    }
-    fn mark_covered(&self, _source_path: &str) {}
-}
-
-struct ProviderHarvester<'p, P: FileProvider> {
-    provider: &'p P,
-    /// Files already visited or harvested, keyed by `source_path()`.
-    covered: RefCell<HashSet<String>>,
-    /// Sticky: once every file is covered, misses are definitive with zero I/O.
-    exhausted: Cell<bool>,
-}
-
-impl<P: FileProvider> OversizeHarvester for ProviderHarvester<'_, P> {
-    fn harvest_next(&self, cache: &OversizeCache<'_>) -> bool {
-        if self.exhausted.get() {
+    /// Read the next not-yet-visited file ahead, harvest its oversize chunks
+    /// and queue it for [`Self::next_file`]. `false` when there is none left.
+    fn harvest_next(&self) -> bool {
+        let next = self.files.borrow_mut().next();
+        let Some(file) = next else {
             return false;
+        };
+        match file.read() {
+            Ok(data) => harvest_oversize(&data, self),
+            Err(e) => warn!(
+                "Failed to read {} during oversize harvest: {e}",
+                file.source_path()
+            ),
         }
-        // Re-enumerating is the supported way to get a second pass over the
-        // provider's files (individual SourceFiles are not re-readable).
-        for mut source in self.provider.tracev3_files() {
-            let path = source.source_path().to_string();
-            if self.covered.borrow().contains(&path) {
-                continue;
-            }
-            self.covered.borrow_mut().insert(path.clone());
-            let mut data = Vec::new();
-            if let Err(e) = source.reader().read_to_end(&mut data) {
-                warn!("Failed to read {path} during oversize harvest: {e}");
-                continue;
-            }
-            harvest_oversize(&data, cache);
-            return true;
-        }
-        self.exhausted.set(true);
-        false
-    }
-
-    fn mark_covered(&self, source_path: &str) {
-        self.covered.borrow_mut().insert(source_path.to_string());
+        self.pending.borrow_mut().push_back(file);
+        true
     }
 }
+
+/// A provider's file, of its unnamed `impl SourceFile` type, boxed so the
+/// cache can hold it in a field.
+type QueuedFile<'p> = Box<dyn SourceFile + 'p>;
 
 /// Walk a tracev3 buffer extracting only Oversize chunks into `cache`.
 ///
@@ -443,13 +412,13 @@ mod tests {
     }
 
     impl SourceFile for CountingSource<'_> {
-        fn reader(&mut self) -> impl Read {
+        fn read(&self) -> std::io::Result<Vec<u8>> {
             *self
                 .reads
                 .borrow_mut()
                 .entry(self.name.to_string())
                 .or_insert(0) += 1;
-            self.data
+            Ok(self.data.to_vec())
         }
         fn source_path(&self) -> &str {
             self.name
@@ -511,33 +480,74 @@ mod tests {
         assert_eq!(cache.get_or_harvest(BOOT_A, 2, 10, 20), Some(&b"BBB"[..]));
         assert_eq!(provider.reads("b"), 1);
 
-        // Unknown key exhausts the list once; exhaustion is sticky
+        // Unknown key: every file has been harvested, misses are free
         assert_eq!(cache.get_or_harvest(BOOT_A, 99, 0, 0), None);
-        let enumerations = provider.enumerations.get();
         assert_eq!(cache.get_or_harvest(BOOT_A, 99, 0, 0), None);
-        assert_eq!(provider.enumerations.get(), enumerations);
         assert_eq!(provider.reads("a"), 1);
         assert_eq!(provider.reads("b"), 1);
         assert_eq!(provider.reads("c"), 1);
+        // The provider was enumerated exactly once for all of this
+        assert_eq!(provider.enumerations.get(), 1);
     }
 
     #[test]
-    fn test_get_or_harvest_skips_covered_files() {
+    fn test_harvest_never_rereads_files_already_handed_out() {
         let provider = CountingProvider::new(vec![
             ("a", synth_tracev3_with_oversize(1, 10, 20, b"AAA")),
             ("b", synth_tracev3_with_oversize(2, 10, 20, b"BBB")),
         ]);
         let cache = OversizeCache::with_provider(&provider);
-        cache.mark_covered("a");
+
+        // The visit loop takes "a" (its oversize chunks are the visit's job)
+        let a = cache.next_file().unwrap();
+        assert_eq!(a.source_path(), "a");
+        assert_eq!(a.read().unwrap().len(), provider.files[0].1.len());
 
         // Only "b" is harvested
         assert_eq!(cache.get_or_harvest(BOOT_A, 2, 10, 20), Some(&b"BBB"[..]));
-        assert_eq!(provider.reads("a"), 0);
+        assert_eq!(provider.reads("a"), 1);
         assert_eq!(provider.reads("b"), 1);
 
-        // Key 1 lives only in the covered file: definitive miss, never read
+        // Key 1 lived in "a", which the visit owns: definitive miss, no I/O
         assert_eq!(cache.get_or_harvest(BOOT_A, 1, 10, 20), None);
-        assert_eq!(provider.reads("a"), 0);
+        assert_eq!(provider.reads("a"), 1);
+    }
+
+    #[test]
+    fn test_files_read_ahead_are_handed_out_in_order() {
+        let provider = CountingProvider::new(vec![
+            ("a", synth_tracev3_with_oversize(1, 10, 20, b"AAA")),
+            ("b", synth_tracev3_with_oversize(2, 10, 20, b"BBB")),
+            ("c", synth_tracev3_with_oversize(3, 10, 20, b"CCC")),
+        ]);
+        let cache = OversizeCache::with_provider(&provider);
+
+        // A miss from "a" reads ahead through "b" and "c"
+        let a = cache.next_file().unwrap();
+        assert_eq!(cache.get_or_harvest(BOOT_A, 3, 10, 20), Some(&b"CCC"[..]));
+        drop(a);
+
+        // The visit still gets "b" then "c", readable again from the start
+        let b = cache.next_file().unwrap();
+        assert_eq!(b.source_path(), "b");
+        assert_eq!(b.read().unwrap(), provider.files[1].1);
+        assert_eq!(cache.next_file().unwrap().source_path(), "c");
+        assert!(cache.next_file().is_none());
+        assert_eq!(provider.reads("b"), 2);
+    }
+
+    #[test]
+    fn test_duplicate_labels_are_distinct_files() {
+        // Persist/1 and Special/1 exposed by basename: both are harvested.
+        let provider = CountingProvider::new(vec![
+            ("same", synth_tracev3_with_oversize(1, 10, 20, b"AAA")),
+            ("same", synth_tracev3_with_oversize(2, 10, 20, b"BBB")),
+        ]);
+        let cache = OversizeCache::with_provider(&provider);
+
+        assert_eq!(cache.get_or_harvest(BOOT_A, 2, 10, 20), Some(&b"BBB"[..]));
+        assert_eq!(cache.get_or_harvest(BOOT_A, 1, 10, 20), Some(&b"AAA"[..]));
+        assert_eq!(provider.reads("same"), 2);
     }
 
     #[test]

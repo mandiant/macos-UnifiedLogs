@@ -14,7 +14,6 @@ use super::tracev3::{OversizeCache, visit_tracev3};
 use super::traits::{FileProvider, SourceFile, VisitOutcome};
 use log::{info, warn};
 use std::collections::HashMap;
-use std::io::Read;
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -129,7 +128,10 @@ pub fn visit_provider_with_options<O: VisitOutcome>(
     options: VisitOptions,
     mut callback: impl for<'a, 'b> FnMut(LogEntry<'a, 'b>) -> O,
 ) -> Result<(), std::io::Error> {
-    let mut sources = provider.tracev3_files().peekable();
+    // The oversize cache owns the enumeration of tracev3 files: the visit
+    // pulls them through it so on-miss read-ahead and the visit stay in step.
+    let oversize_cache = OversizeCache::with_provider(provider);
+    let mut sources = std::iter::from_fn(|| oversize_cache.next_file()).peekable();
     if sources.peek().is_none() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::NotFound,
@@ -140,9 +142,6 @@ pub fn visit_provider_with_options<O: VisitOutcome>(
     // 1. Timesync → TimestampResolver
     let timesync_data = load_timesync_data(provider)?;
     let resolver = TimestampResolver::new(timesync_data);
-
-    // 2. Oversize entries (owned) survive storage reclaims
-    let oversize_cache = OversizeCache::with_provider(provider);
 
     // 3. Process all tracev3 sources, one storage generation at a time.
     // Entries only live inside the callback, so dropping the storage between
@@ -156,18 +155,18 @@ pub fn visit_provider_with_options<O: VisitOutcome>(
         let strings = StringCatalog::new(&storage);
 
         loop {
-            let Some(mut source) = sources.next() else {
+            let Some(source) = sources.next() else {
                 break 'generations;
             };
             info!("Parsing: {}", source.source_path());
-            let mut data = Vec::new();
-            let read_result = source.reader().read_to_end(&mut data);
-            if let Err(e) = read_result {
-                warn!("Failed to read {}: {e}", source.source_path());
-                continue;
-            }
+            let data = match source.read() {
+                Ok(data) => data,
+                Err(e) => {
+                    warn!("Failed to read {}: {e}", source.source_path());
+                    continue;
+                }
+            };
 
-            oversize_cache.mark_covered(source.source_path());
             match visit_tracev3(
                 &data,
                 &resolver,
@@ -227,8 +226,8 @@ pub fn visit_logarchive_tracev3_files<P: AsRef<Path>, O: VisitOutcome>(
     for (index, tracev3_path) in tracev3_paths.iter().enumerate() {
         let evidence = logarchive_path.join(tracev3_path);
         let data = std::fs::read(&evidence)?;
-        // Must match LocalFile's source_path() string for the same file
-        oversize_cache.mark_covered(&evidence.to_string_lossy());
+        // Selected files are read directly, not through the cache: on a miss
+        // the read-ahead may re-read them, which only costs I/O.
         if visit_tracev3(
             &data,
             &resolver,
@@ -262,13 +261,14 @@ pub fn load_timesync_data(
 ) -> Result<HashMap<Uuid, RawTimesyncBoot>, std::io::Error> {
     let mut all_data: HashMap<Uuid, RawTimesyncBoot> = HashMap::new();
 
-    for mut source in provider.timesync_files() {
-        let mut buffer = Vec::new();
-        let read_result = source.reader().read_to_end(&mut buffer);
-        if let Err(e) = read_result {
-            warn!("Failed to read timesync {}: {e}", source.source_path());
-            continue;
-        }
+    for source in provider.timesync_files() {
+        let buffer = match source.read() {
+            Ok(buffer) => buffer,
+            Err(e) => {
+                warn!("Failed to read timesync {}: {e}", source.source_path());
+                continue;
+            }
+        };
         let (_, file_data) = match parse_timesync_file(&buffer) {
             Ok(r) => r,
             Err(e) => {

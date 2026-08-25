@@ -330,6 +330,7 @@ fn test_visit_in_memory_provider_matches_logarchive() {
     };
     use macos_unifiedlogs::logarchive::visit_provider;
     use macos_unifiedlogs::traits::FileProvider;
+    use std::hash::{DefaultHasher, Hash, Hasher};
 
     let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_path.push("tests/test_data/system_logs_tahoe.logarchive");
@@ -337,8 +338,11 @@ fn test_visit_in_memory_provider_matches_logarchive() {
     let archive_provider = LogarchiveProvider::new(&test_path);
     let mut memory_provider = InMemoryProvider::default();
     for path in collect_tracev3_paths(&test_path) {
+        // Persist/, Special/ and Signpost/ reuse the same basenames: keep the
+        // directory so the label is meaningful as evidence.
+        let relative = path.strip_prefix(&test_path).unwrap();
         memory_provider.tracev3.push((
-            format!("mem://{}", path.file_name().unwrap().to_string_lossy()),
+            format!("mem://{}", relative.to_string_lossy()),
             std::fs::read(&path).unwrap(),
         ));
     }
@@ -359,27 +363,29 @@ fn test_visit_in_memory_provider_matches_logarchive() {
             .insert(uuid, archive_provider.read_dsc(&uuid).unwrap());
     }
 
+    // Digest of every entry's message and timestamp, in order.
+    fn digest(entry: &LogEntry<'_, '_>, hasher: &mut DefaultHasher) {
+        entry.message().hash(hasher);
+        entry.time.to_bits().hash(hasher);
+    }
+
     let mut archive_count = 0_usize;
-    let mut archive_messages = 0_usize;
+    let mut archive_digest = DefaultHasher::new();
     visit_logarchive(&test_path, |entry| {
         archive_count += 1;
-        if archive_count.is_multiple_of(1000) {
-            archive_messages += entry.message().len();
-        }
+        digest(&entry, &mut archive_digest);
     })
     .unwrap();
 
     let mut memory_count = 0_usize;
-    let mut memory_messages = 0_usize;
+    let mut memory_digest = DefaultHasher::new();
     visit_provider(&memory_provider, |entry| {
         memory_count += 1;
-        if memory_count.is_multiple_of(1000) {
-            memory_messages += entry.message().len();
-        }
+        digest(&entry, &mut memory_digest);
     })
     .unwrap();
 
-    assert_eq!(memory_count, archive_count);
-    assert_eq!(memory_messages, archive_messages);
     assert_eq!(archive_count, 4288584);
+    assert_eq!(memory_count, archive_count);
+    assert_eq!(memory_digest.finish(), archive_digest.finish());
 }

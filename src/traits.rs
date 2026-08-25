@@ -6,7 +6,7 @@
 //!
 //! Built-in implementations live in [`crate::filesystem`].
 
-use std::io::{Error, Read};
+use std::io::Error;
 use std::ops::ControlFlow;
 
 use uuid::Uuid;
@@ -107,10 +107,15 @@ pub trait FileProvider {
 /// Defines an interface for providing a single unified log file. Parsing unified logs requires the
 /// name of the original file in order to reconstruct format strings.
 pub trait SourceFile {
-    /// A reader for the given source file.
-    fn reader(&mut self) -> impl Read;
+    /// The whole file.
+    ///
+    /// May be called more than once: the oversize cache reads a file ahead
+    /// of the visit to harvest its oversize chunks, then the visit reads it
+    /// again.
+    fn read(&self) -> Result<Vec<u8>, Error>;
     /// The source path of the file on the machine from which it was collected, distinct from any
     /// secondary storage location where, for instance, a file backing the `reader` might exist.
+    /// Reported as each entry's `evidence` and in log messages; it need not be unique.
     fn source_path(&self) -> &str;
 }
 

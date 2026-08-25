@@ -18,25 +18,24 @@ use crate::chunks::{ChunkPreamble, ChunkTag, PREAMBLE_SIZE};
 use crate::header::{RAW_HEADER_CHUNK_SIZE, RawHeaderChunk};
 use crate::traits::SourceFile;
 
-/// A [`SourceFile`] backed by a local file, remembering its original path.
+/// A [`SourceFile`] backed by a local file, opened only while it is read.
 pub struct LocalFile {
-    reader: File,
+    path: PathBuf,
     source: String,
 }
 
 impl LocalFile {
-    /// Open `path`, keeping it as the source path.
-    pub fn new(path: &Path) -> std::io::Result<Self> {
-        Ok(Self {
-            reader: File::open(path)?,
-            source: path.as_os_str().to_string_lossy().to_string(),
-        })
+    /// Refer to `path`, keeping it as the source path. Nothing is opened
+    /// until [`SourceFile::read`] is called.
+    pub fn new(path: PathBuf) -> Self {
+        let source = path.as_os_str().to_string_lossy().to_string();
+        Self { path, source }
     }
 }
 
 impl SourceFile for LocalFile {
-    fn reader(&mut self) -> impl Read {
-        &mut self.reader
+    fn read(&self) -> Result<Vec<u8>, Error> {
+        std::fs::read(&self.path)
     }
 
     fn source_path(&self) -> &str {
@@ -230,8 +229,8 @@ struct MemorySource<'a> {
 }
 
 impl SourceFile for MemorySource<'_> {
-    fn reader(&mut self) -> impl Read {
-        self.data
+    fn read(&self) -> Result<Vec<u8>, Error> {
+        Ok(self.data.to_vec())
     }
     fn source_path(&self) -> &str {
         self.name
@@ -413,13 +412,9 @@ fn read_indexed(index: &HashMap<Uuid, PathBuf>, uuid: &Uuid) -> Result<Vec<u8>, 
     }
 }
 
-/// Open paths as [`LocalFile`] sources, skipping (and logging) unreadable files.
+/// Wrap paths as [`LocalFile`] sources (opened only when read).
 fn local_files(paths: Vec<PathBuf>) -> impl Iterator<Item = LocalFile> {
-    paths.into_iter().filter_map(|path| {
-        LocalFile::new(&path)
-            .inspect_err(|e| log::warn!("Failed to open {}: {e}", path.display()))
-            .ok()
-    })
+    paths.into_iter().map(LocalFile::new)
 }
 
 /// Sort paths to keep parser output deterministic across filesystems.
@@ -614,12 +609,10 @@ mod tests {
             .push(("mem://a.tracev3".into(), vec![1, 2, 3]));
         provider.uuidtext.insert(uuid, vec![4, 5]);
 
-        let mut sources: Vec<_> = provider.tracev3_files().collect();
+        let sources: Vec<_> = provider.tracev3_files().collect();
         assert_eq!(sources.len(), 1);
         assert_eq!(sources[0].source_path(), "mem://a.tracev3");
-        let mut data = Vec::new();
-        sources[0].reader().read_to_end(&mut data).unwrap();
-        assert_eq!(data, vec![1, 2, 3]);
+        assert_eq!(sources[0].read().unwrap(), vec![1, 2, 3]);
 
         assert_eq!(provider.read_uuidtext(&uuid).unwrap(), vec![4, 5]);
         assert!(provider.read_dsc(&uuid).is_err());
