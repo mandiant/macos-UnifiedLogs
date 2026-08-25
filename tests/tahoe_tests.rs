@@ -256,10 +256,21 @@ fn test_parse_all_logs_tahoe() {
 
     let mut syncthing = 0;
     let mut brew = 0;
+    let mut cross_boot_oversize = 0;
 
     visit_logarchive(&test_path, |logs| {
         log_data_vec_len += 1;
         let message = logs.message();
+
+        // Oversize keys are per-boot counters: ControlCenter (pid 411) of one boot
+        // must not render the PKITrustStore payload of another boot's process
+        // that happened to get the same (data_ref, proc ids).
+        if logs.pid == 411
+            && logs.subsystem == Some("com.apple.calls.telephonyutilities")
+            && message.contains("PKITrustStore")
+        {
+            cross_boot_oversize += 1;
+        }
 
         if message.contains("Failed to get string message from ")
             || message.contains("Unknown shared string message")
@@ -305,6 +316,7 @@ fn test_parse_all_logs_tahoe() {
     assert_eq!(invalid_shared_string_offsets, 647); // Can validate with log raw-dump -A system_logs_tahoe.logarchive | grep "~~> <Invalid shared cache " | wc -l
     assert_eq!(statedump_custom_objects, 0);
     assert_eq!(statedump_protocol_buffer, 0);
+    assert_eq!(cross_boot_oversize, 0);
     assert_eq!(syncthing, 1146);
     assert_eq!(brew, 97);
 }

@@ -1,8 +1,10 @@
 //! Oversize payload cache with lazy cross-file resolution.
 //!
 //! Oversize chunks carry strings too large for regular firehose entries and
-//! are looked up by `(data_ref_index, first_proc_id, second_proc_id)` when a
-//! firehose entry references them via `data_ref`. The payload is flushed to
+//! are looked up by `(boot_uuid, data_ref_index, first_proc_id, second_proc_id)`
+//! when a firehose entry references them via `data_ref`. The proc ids and the
+//! data ref are per-boot counters, so the boot UUID of the enclosing header
+//! chunk is what keeps early-boot daemons of different boots apart. The payload is flushed to
 //! disk out-of-band while the small referencing entry lingers in its process's
 //! in-memory buffer, so the referenced chunk may live in a tracev3 file that
 //! has not been visited yet. [`OversizeCache::with_provider`] resolves such
@@ -14,15 +16,18 @@ use crate::chunks::oversize::RawOversize;
 use crate::chunks::{ChunkTag, ChunksetPayload};
 use crate::chunks_reader::RawChunksReader;
 use crate::error::NomExt;
+use crate::header::RawHeaderChunk;
 use crate::traits::{FileProvider, SourceFile};
 use elsa::FrozenMap;
 use log::warn;
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::io::Read;
+use uuid::Uuid;
 
-/// Key identifying an oversize payload: `(data_ref_index, first_proc_id, second_proc_id)`.
-type OversizeKey = (u32, u64, u32);
+/// Key identifying an oversize payload:
+/// `(boot_uuid, data_ref_index, first_proc_id, second_proc_id)`.
+type OversizeKey = (Uuid, u32, u64, u32);
 
 /// Cache for oversize log entries, threaded across chunksets and tracev3 files.
 ///
@@ -85,8 +90,9 @@ impl<'p> OversizeCache<'p> {
         self.harvester.mark_covered(source_path);
     }
 
-    pub(super) fn insert(&self, oversize: &RawOversize<'_>) {
+    pub(super) fn insert(&self, boot_uuid: Uuid, oversize: &RawOversize<'_>) {
         let key = (
+            boot_uuid,
             oversize.data_ref_index,
             oversize.first_proc_id,
             oversize.second_proc_id,
@@ -101,20 +107,28 @@ impl<'p> OversizeCache<'p> {
             .insert(key, oversize.oversize_data.to_vec().into_boxed_slice());
     }
 
-    fn get(&self, data_ref: u32, first_proc_id: u64, second_proc_id: u32) -> Option<&[u8]> {
-        self.entries.get(&(data_ref, first_proc_id, second_proc_id))
+    fn get(
+        &self,
+        boot_uuid: Uuid,
+        data_ref: u32,
+        first_proc_id: u64,
+        second_proc_id: u32,
+    ) -> Option<&[u8]> {
+        self.entries
+            .get(&(boot_uuid, data_ref, first_proc_id, second_proc_id))
     }
 
     /// Get, harvesting one not-yet-covered file at a time on a miss until the
     /// key appears or every file has been covered.
     pub(super) fn get_or_harvest(
         &self,
+        boot_uuid: Uuid,
         data_ref: u32,
         first_proc_id: u64,
         second_proc_id: u32,
     ) -> Option<&[u8]> {
         loop {
-            if let Some(data) = self.get(data_ref, first_proc_id, second_proc_id) {
+            if let Some(data) = self.get(boot_uuid, data_ref, first_proc_id, second_proc_id) {
                 return Some(data);
             }
             if !self.harvester.harvest_next(self) {
@@ -187,6 +201,9 @@ impl<P: FileProvider> OversizeHarvester for ProviderHarvester<'_, P> {
 /// decompressed (oversize chunks live inside them). Parse errors are logged
 /// and skipped, mirroring `visit_tracev3`'s warn-and-continue behavior.
 fn harvest_oversize(data: &[u8], cache: &OversizeCache<'_>) {
+    // Boot of the chunks being read: a file holds one header chunk per boot,
+    // each applying to the chunksets that follow it.
+    let mut boot_uuid = Uuid::nil();
     for raw in RawChunksReader::new_top_level(data) {
         let raw = match raw {
             Ok(r) => r,
@@ -195,6 +212,15 @@ fn harvest_oversize(data: &[u8], cache: &OversizeCache<'_>) {
                 break;
             }
         };
+        if raw.preamble.tag == ChunkTag::Header {
+            match RawHeaderChunk::parse(raw.data) {
+                Ok((_, header)) => boot_uuid = header.boot_uuid,
+                Err(e) => warn!(
+                    "Failed to parse header chunk during oversize harvest: {}",
+                    e.to_parse_error()
+                ),
+            }
+        }
         if raw.preamble.tag != ChunkTag::Chunkset {
             continue;
         }
@@ -218,7 +244,7 @@ fn harvest_oversize(data: &[u8], cache: &OversizeCache<'_>) {
                 continue;
             }
             match RawOversize::parse(inner.data) {
-                Ok((_, ov)) => cache.insert(&ov),
+                Ok((_, ov)) => cache.insert(boot_uuid, &ov),
                 Err(e) => {
                     warn!(
                         "Failed to parse oversize chunk during oversize harvest: {}",
@@ -233,9 +259,13 @@ fn harvest_oversize(data: &[u8], cache: &OversizeCache<'_>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::header::RAW_HEADER_CHUNK_SIZE;
     use crate::helpers::tests::test_data_path;
     use std::collections::HashMap;
-    use uuid::Uuid;
+    use uuid::uuid;
+
+    const BOOT_A: Uuid = uuid!("aaaaaaaa-0000-0000-0000-000000000001");
+    const BOOT_B: Uuid = uuid!("bbbbbbbb-0000-0000-0000-000000000002");
 
     // --- OversizeCache tests ---
 
@@ -244,14 +274,14 @@ mod tests {
         let cache = OversizeCache::new();
         cache
             .entries
-            .insert((1, 100, 200), vec![1, 2, 3, 4].into_boxed_slice());
-        assert_eq!(cache.get(1, 100, 200), Some(&[1, 2, 3, 4][..]));
+            .insert((BOOT_A, 1, 100, 200), vec![1, 2, 3, 4].into_boxed_slice());
+        assert_eq!(cache.get(BOOT_A, 1, 100, 200), Some(&[1, 2, 3, 4][..]));
     }
 
     #[test]
     fn test_oversize_cache_miss() {
         let cache = OversizeCache::new();
-        assert_eq!(cache.get(1, 100, 200), None);
+        assert_eq!(cache.get(BOOT_A, 1, 100, 200), None);
     }
 
     #[test]
@@ -259,19 +289,21 @@ mod tests {
         let cache = OversizeCache::new();
         cache
             .entries
-            .insert((1, 100, 200), vec![1, 2, 3].into_boxed_slice());
+            .insert((BOOT_A, 1, 100, 200), vec![1, 2, 3].into_boxed_slice());
+        // Different boot
+        assert_eq!(cache.get(BOOT_B, 1, 100, 200), None);
         // Different data_ref
-        assert_eq!(cache.get(2, 100, 200), None);
+        assert_eq!(cache.get(BOOT_A, 2, 100, 200), None);
         // Different first_proc_id
-        assert_eq!(cache.get(1, 101, 200), None);
+        assert_eq!(cache.get(BOOT_A, 1, 101, 200), None);
         // Different second_proc_id
-        assert_eq!(cache.get(1, 100, 201), None);
+        assert_eq!(cache.get(BOOT_A, 1, 100, 201), None);
     }
 
     #[test]
     fn test_get_or_harvest_without_harvester_is_plain_miss() {
         let cache = OversizeCache::new();
-        assert_eq!(cache.get_or_harvest(1, 100, 200), None);
+        assert_eq!(cache.get_or_harvest(BOOT_A, 1, 100, 200), None);
     }
 
     // --- oversize harvester tests ---
@@ -288,14 +320,24 @@ mod tests {
         assert_eq!(cache.entries.len(), 28);
     }
 
-    /// Build a minimal tracev3 buffer: one uncompressed (`bv4-`) chunkset
-    /// containing a single oversize chunk.
-    fn synth_tracev3_with_oversize(
+    /// Append a header chunk announcing `boot_uuid` (all other fields zero).
+    fn push_header_chunk(out: &mut Vec<u8>, boot_uuid: Uuid) {
+        out.extend_from_slice(&(ChunkTag::Header as u32).to_le_bytes());
+        out.extend_from_slice(&0u32.to_le_bytes()); // sub_tag
+        out.extend_from_slice(&(RAW_HEADER_CHUNK_SIZE as u64).to_le_bytes());
+        let mut body = [0u8; RAW_HEADER_CHUNK_SIZE];
+        body[128..144].copy_from_slice(boot_uuid.as_bytes());
+        out.extend_from_slice(&body);
+    }
+
+    /// Append one uncompressed (`bv4-`) chunkset containing a single oversize chunk.
+    fn push_oversize_chunkset(
+        out: &mut Vec<u8>,
         data_ref: u32,
         first_proc_id: u64,
         second_proc_id: u32,
         payload: &[u8],
-    ) -> Vec<u8> {
+    ) {
         let mut inner = Vec::new();
         inner.extend_from_slice(&(ChunkTag::Oversize as u32).to_le_bytes());
         inner.extend_from_slice(&0u32.to_le_bytes()); // sub_tag
@@ -315,15 +357,59 @@ mod tests {
         chunkset.extend_from_slice(&(inner.len() as u32).to_le_bytes());
         chunkset.extend_from_slice(&inner);
 
-        let mut out = Vec::new();
         out.extend_from_slice(&(ChunkTag::Chunkset as u32).to_le_bytes());
         out.extend_from_slice(&0u32.to_le_bytes()); // sub_tag
         out.extend_from_slice(&(chunkset.len() as u64).to_le_bytes());
         out.extend_from_slice(&chunkset);
-        while out.len() % 8 != 0 {
+        while !out.len().is_multiple_of(8) {
             out.push(0);
         }
+    }
+
+    /// Build a minimal tracev3 buffer: a `BOOT_A` header followed by one
+    /// chunkset holding a single oversize chunk.
+    fn synth_tracev3_with_oversize(
+        data_ref: u32,
+        first_proc_id: u64,
+        second_proc_id: u32,
+        payload: &[u8],
+    ) -> Vec<u8> {
+        let mut out = Vec::new();
+        push_header_chunk(&mut out, BOOT_A);
+        push_oversize_chunkset(&mut out, data_ref, first_proc_id, second_proc_id, payload);
         out
+    }
+
+    #[test]
+    fn test_harvest_keys_oversize_by_boot() {
+        // Same (data_ref, proc ids) under two boots in one file: both survive.
+        let mut data = Vec::new();
+        push_header_chunk(&mut data, BOOT_A);
+        push_oversize_chunkset(&mut data, 1, 10, 20, b"FROM A");
+        push_header_chunk(&mut data, BOOT_B);
+        push_oversize_chunkset(&mut data, 1, 10, 20, b"FROM B");
+
+        let cache = OversizeCache::new();
+        harvest_oversize(&data, &cache);
+        assert_eq!(cache.get(BOOT_A, 1, 10, 20), Some(&b"FROM A"[..]));
+        assert_eq!(cache.get(BOOT_B, 1, 10, 20), Some(&b"FROM B"[..]));
+        assert_eq!(cache.get(Uuid::nil(), 1, 10, 20), None);
+    }
+
+    #[test]
+    fn test_get_or_harvest_across_files_of_different_boots() {
+        // An older boot's file harvested first must not shadow the newer boot's payload.
+        let mut newer = Vec::new();
+        push_header_chunk(&mut newer, BOOT_B);
+        push_oversize_chunkset(&mut newer, 1, 10, 20, b"NEWER");
+        let provider = CountingProvider::new(vec![
+            ("older", synth_tracev3_with_oversize(1, 10, 20, b"OLDER")),
+            ("newer", newer),
+        ]);
+        let cache = OversizeCache::with_provider(&provider);
+
+        assert_eq!(cache.get_or_harvest(BOOT_B, 1, 10, 20), Some(&b"NEWER"[..]));
+        assert_eq!(cache.get_or_harvest(BOOT_A, 1, 10, 20), Some(&b"OLDER"[..]));
     }
 
     /// Provider counting per-file reads and `tracev3_files()` enumerations.
@@ -410,25 +496,25 @@ mod tests {
         let cache = OversizeCache::with_provider(&provider);
 
         // Miss on a key from the first file: harvest stops there
-        assert_eq!(cache.get_or_harvest(1, 10, 20), Some(&b"AAA"[..]));
+        assert_eq!(cache.get_or_harvest(BOOT_A, 1, 10, 20), Some(&b"AAA"[..]));
         assert_eq!(provider.reads("a"), 1);
         assert_eq!(provider.reads("b"), 0);
         assert_eq!(provider.reads("c"), 0);
 
         // A later miss resumes past the already-harvested file
-        assert_eq!(cache.get_or_harvest(3, 10, 20), Some(&b"CCC"[..]));
+        assert_eq!(cache.get_or_harvest(BOOT_A, 3, 10, 20), Some(&b"CCC"[..]));
         assert_eq!(provider.reads("a"), 1);
         assert_eq!(provider.reads("b"), 1);
         assert_eq!(provider.reads("c"), 1);
 
         // Harvested along the way: pure cache hit
-        assert_eq!(cache.get_or_harvest(2, 10, 20), Some(&b"BBB"[..]));
+        assert_eq!(cache.get_or_harvest(BOOT_A, 2, 10, 20), Some(&b"BBB"[..]));
         assert_eq!(provider.reads("b"), 1);
 
         // Unknown key exhausts the list once; exhaustion is sticky
-        assert_eq!(cache.get_or_harvest(99, 0, 0), None);
+        assert_eq!(cache.get_or_harvest(BOOT_A, 99, 0, 0), None);
         let enumerations = provider.enumerations.get();
-        assert_eq!(cache.get_or_harvest(99, 0, 0), None);
+        assert_eq!(cache.get_or_harvest(BOOT_A, 99, 0, 0), None);
         assert_eq!(provider.enumerations.get(), enumerations);
         assert_eq!(provider.reads("a"), 1);
         assert_eq!(provider.reads("b"), 1);
@@ -445,12 +531,12 @@ mod tests {
         cache.mark_covered("a");
 
         // Only "b" is harvested
-        assert_eq!(cache.get_or_harvest(2, 10, 20), Some(&b"BBB"[..]));
+        assert_eq!(cache.get_or_harvest(BOOT_A, 2, 10, 20), Some(&b"BBB"[..]));
         assert_eq!(provider.reads("a"), 0);
         assert_eq!(provider.reads("b"), 1);
 
         // Key 1 lives only in the covered file: definitive miss, never read
-        assert_eq!(cache.get_or_harvest(1, 10, 20), None);
+        assert_eq!(cache.get_or_harvest(BOOT_A, 1, 10, 20), None);
         assert_eq!(provider.reads("a"), 0);
     }
 
@@ -462,10 +548,10 @@ mod tests {
         ]);
         let cache = OversizeCache::with_provider(&provider);
 
-        assert_eq!(cache.get_or_harvest(1, 10, 20), Some(&b"FIRST"[..]));
+        assert_eq!(cache.get_or_harvest(BOOT_A, 1, 10, 20), Some(&b"FIRST"[..]));
         // Force harvesting of "b" too, then check the entry was not replaced
-        assert_eq!(cache.get_or_harvest(99, 0, 0), None);
+        assert_eq!(cache.get_or_harvest(BOOT_A, 99, 0, 0), None);
         assert_eq!(provider.reads("b"), 1);
-        assert_eq!(cache.get(1, 10, 20), Some(&b"FIRST"[..]));
+        assert_eq!(cache.get(BOOT_A, 1, 10, 20), Some(&b"FIRST"[..]));
     }
 }

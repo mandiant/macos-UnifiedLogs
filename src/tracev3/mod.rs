@@ -112,7 +112,11 @@ pub fn visit_tracev3<'d, 's: 'd, O: VisitOutcome>(
                     };
                     match inner.preamble.tag {
                         ChunkTag::Oversize => match RawOversize::parse(inner.data) {
-                            Ok((_, ov)) => oversize_cache.insert(&ov),
+                            Ok((_, ov)) => {
+                                let boot_uuid =
+                                    current_header.as_ref().map_or_default(|h| h.boot_uuid);
+                                oversize_cache.insert(boot_uuid, &ov);
+                            }
                             Err(e) => {
                                 warn!("Failed to parse oversize chunk: {}", e.to_parse_error());
                             }
@@ -625,7 +629,12 @@ fn visit_firehose_entries<'d: 'b, 'b, 's: 'd>(
         };
         let message_flags = message_flags_for_body(&body, entry.flags, &formatter);
         let items = if let Some(data_ref) = data_ref {
-            match oversize_cache.get_or_harvest(data_ref, fh.first_proc_id, fh.second_proc_id) {
+            match oversize_cache.get_or_harvest(
+                boot_uuid,
+                data_ref,
+                fh.first_proc_id,
+                fh.second_proc_id,
+            ) {
                 Some(d) => ItemsData::Regular {
                     data: d,
                     flags: entry.flags,
