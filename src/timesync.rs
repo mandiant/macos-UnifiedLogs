@@ -1,3 +1,4 @@
+use log::warn;
 use nom::number::complete::{be_u128, le_i64, le_u16, le_u32, le_u64};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -98,10 +99,32 @@ impl RawTimesyncBoot {
     }
 }
 
+/// One element of a timesync file.
+enum TimesyncItem {
+    Record(RawTimesyncRecord),
+    Boot(RawTimesyncBoot),
+}
+
+/// Parse the next boot header or record of a timesync file.
+fn parse_timesync_item(input: &[u8]) -> nom::IResult<&[u8], TimesyncItem> {
+    // Peek at the first 4 bytes to distinguish record vs boot header.
+    // Record signature is a u32; boot signature is a u16 in the first 2 bytes.
+    let (_, peek_u32) = le_u32(input)?;
+    if peek_u32 == TIMESYNC_RECORD_SIGNATURE {
+        let (remaining, record) = RawTimesyncRecord::parse(input)?;
+        Ok((remaining, TimesyncItem::Record(record)))
+    } else {
+        let (remaining, boot) = RawTimesyncBoot::parse(input)?;
+        Ok((remaining, TimesyncItem::Boot(boot)))
+    }
+}
+
 /// Parse an entire timesync file into a map of boot UUID → boot session.
 ///
 /// A timesync file is a sequence of boot headers interleaved with records.
 /// Multiple boots can share a UUID — records are merged in that case.
+/// A truncated or corrupt tail is logged and everything parsed before it is
+/// kept (partial acquisitions).
 pub fn parse_timesync_file(data: &[u8]) -> nom::IResult<&[u8], HashMap<Uuid, RawTimesyncBoot>> {
     let mut result: HashMap<Uuid, RawTimesyncBoot> = HashMap::new();
     let mut input = data;
@@ -117,28 +140,32 @@ pub fn parse_timesync_file(data: &[u8]) -> nom::IResult<&[u8], HashMap<Uuid, Raw
     let mut has_boot = false;
 
     while !input.is_empty() {
-        // Peek at the first 4 bytes to distinguish record vs boot header.
-        // Record signature is a u32; boot signature is a u16 in the first 2 bytes.
-        let (_, peek_u32) = le_u32(input)?;
-
-        if peek_u32 == TIMESYNC_RECORD_SIGNATURE {
-            let (remaining, record) = RawTimesyncRecord::parse(input)?;
-            current_boot.records.push(record);
-            input = remaining;
-        } else {
-            // Flush current boot before starting a new one
-            if has_boot {
-                if let Some(existing) = result.get_mut(&current_boot.boot_uuid) {
-                    existing.records.append(&mut current_boot.records);
-                } else {
-                    result.insert(current_boot.boot_uuid, current_boot);
-                }
+        let (remaining, item) = match parse_timesync_item(input) {
+            Ok(parsed) => parsed,
+            Err(e) => {
+                warn!(
+                    "Timesync data unreadable at offset {}: {e}; keeping the boots parsed before it",
+                    data.len() - input.len()
+                );
+                break;
             }
-            let (remaining, boot) = RawTimesyncBoot::parse(input)?;
-            current_boot = boot;
-            has_boot = true;
-            input = remaining;
+        };
+        match item {
+            TimesyncItem::Record(record) => current_boot.records.push(record),
+            TimesyncItem::Boot(boot) => {
+                // Flush current boot before starting a new one
+                if has_boot {
+                    if let Some(existing) = result.get_mut(&current_boot.boot_uuid) {
+                        existing.records.append(&mut current_boot.records);
+                    } else {
+                        result.insert(current_boot.boot_uuid, current_boot);
+                    }
+                }
+                current_boot = boot;
+                has_boot = true;
+            }
         }
+        input = remaining;
     }
 
     // Flush the last boot
@@ -270,6 +297,29 @@ mod tests {
                 .len(),
             5
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_timesync_file_truncated_keeps_parsed_boots() -> anyhow::Result<()> {
+        let test_path = test_data_path()
+            .join("system_logs_big_sur.logarchive/timesync/0000000000000002.timesync");
+        let buffer = std::fs::read(test_path)?;
+        let (_, full) = parse_timesync_file(&buffer).unwrap();
+        let full_records: usize = full.values().map(|b| b.records.len()).sum();
+
+        // Cut inside the last record: it is dropped, everything before survives.
+        let (_, truncated) = parse_timesync_file(&buffer[..buffer.len() - 8]).unwrap();
+        assert_eq!(truncated.len(), full.len());
+        let truncated_records: usize = truncated.values().map(|b| b.records.len()).sum();
+        assert_eq!(truncated_records, full_records - 1);
+
+        // Garbage tail: same outcome, no error.
+        let mut corrupt = buffer.clone();
+        corrupt.truncate(buffer.len() - 8);
+        corrupt.extend_from_slice(&[0xff; 3]);
+        let (_, kept) = parse_timesync_file(&corrupt).unwrap();
+        assert_eq!(kept.len(), full.len());
         Ok(())
     }
 

@@ -1,0 +1,6 @@
+kind: Fixed
+body: |
+  A truncated or corrupt timesync file no longer loses every boot it contains: parsing stops at
+  the unreadable data with a warning and keeps the boots parsed before it, so timestamps of
+  partial acquisitions resolve as far as the data allows.
+time: 2026-08-25T00:00:07.000000000Z
