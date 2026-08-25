@@ -365,8 +365,8 @@ fn parse_formatter<'a>(
         let (input, _) = is_a(".")(formatter_message)?;
 
         // Precision may not have an additional value
-        // Example: %.f is valid precision. The precision value is 0
-        if input.len() == 1 {
+        // Example: %.f or %.lf is valid precision. The precision value is 0
+        if input.len() == 1 || input.chars().next().unwrap_or_default().is_alphabetic() {
             precision_value = 0;
             formatter_message = input;
         } else {
