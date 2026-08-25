@@ -51,6 +51,8 @@ struct ParseContext<'a> {
     max_seen_timestamp: f64,
     log_count: usize,
     skipped_count: usize,
+    /// First failed write: output is incomplete from there on.
+    write_failure: Option<Box<dyn Error>>,
 }
 
 impl<'a> ParseContext<'a> {
@@ -67,6 +69,7 @@ impl<'a> ParseContext<'a> {
             max_seen_timestamp: 0.0,
             log_count: 0,
             skipped_count: 0,
+            write_failure: None,
         }
     }
 
@@ -88,30 +91,45 @@ impl<'a> ParseContext<'a> {
             return ControlFlow::Continue(());
         }
         match self.writer.write_record(entry) {
-            Ok(()) => self.log_count += 1,
-            Err(e) if is_broken_pipe(e.as_ref()) => {
-                info!("Broken pipe detected, stopping output");
-                return ControlFlow::Break(());
+            Ok(()) => {
+                self.log_count += 1;
+                ControlFlow::Continue(())
             }
-            Err(e) => error!("Error writing record: {e}"),
+            Err(e) => {
+                self.write_failure = Some(e);
+                ControlFlow::Break(())
+            }
         }
-        ControlFlow::Continue(())
     }
 
-    /// Update bookmark with max timestamp seen (not just written) to avoid re-scanning.
-    fn finish(self, bookmark: &Arc<Mutex<Bookmark>>) {
+    /// Flush the output, then advance the bookmark to the max timestamp seen
+    /// (not just written) to avoid re-scanning. Output that did not fully
+    /// reach its destination leaves the bookmark untouched, so the next run
+    /// covers that range again.
+    fn finish(self, bookmark: &Arc<Mutex<Bookmark>>) -> Result<(), Box<dyn Error>> {
+        let delivered = match self.write_failure {
+            Some(e) => Err(e),
+            None => self.writer.flush(),
+        };
+        if let Err(e) = delivered {
+            if is_broken_pipe(e.as_ref()) {
+                info!("Output closed by its consumer, stopping");
+                return Ok(());
+            }
+            return Err(e);
+        }
         if self.resume
             && self.max_seen_timestamp > 0.0
             && let Ok(mut book) = bookmark.lock()
         {
             book.update_timestamp(self.max_seen_timestamp);
         }
-        let _ = self.writer.flush();
         info!(
             "Parsed {count} log entries (skipped {skipped} older entries)",
             count = self.log_count,
             skipped = self.skipped_count
         );
+        Ok(())
     }
 }
 
@@ -281,8 +299,7 @@ fn main() {
             parse_log_archive(&path, &mut writer, Arc::clone(&bookmark), resume)
         }
         (Mode::SingleFile, Some(path)) => {
-            parse_single_file(&path, &mut writer, Arc::clone(&bookmark), resume);
-            Ok(())
+            parse_single_file(&path, &mut writer, Arc::clone(&bookmark), resume)
         }
         _ => {
             error!("log-archive and single-file modes require an --input argument");
@@ -310,6 +327,11 @@ fn main() {
         std::process::exit(0);
     }
 
+    if let Err(e) = result {
+        error!("Error during parsing: {e}");
+        std::process::exit(1);
+    }
+
     // Save bookmark on normal exit
     if args.resume {
         match bookmark.lock() {
@@ -325,11 +347,6 @@ fn main() {
             }
         }
     }
-
-    if let Err(e) = result {
-        error!("Error during parsing: {e}");
-        std::process::exit(1);
-    }
 }
 
 /// Parse a bare tracev3 file without logarchive context (no timesync or string files:
@@ -339,17 +356,9 @@ fn parse_single_file(
     writer: &mut OutputWriter,
     bookmark: Arc<Mutex<Bookmark>>,
     resume: bool,
-) {
-    let data = match fs::read(path) {
-        Ok(d) => d,
-        Err(e) => {
-            error!(
-                "Failed to open source file {path}: {e}",
-                path = path.display()
-            );
-            return;
-        }
-    };
+) -> Result<(), Box<dyn Error>> {
+    let data = fs::read(path)
+        .map_err(|e| format!("Failed to open source file {}: {e}", path.display()))?;
 
     let resolver = TimestampResolver::new(HashMap::new());
     let storage = StringStorage::new(InMemoryProvider::default());
@@ -367,7 +376,7 @@ fn parse_single_file(
     ) {
         error!("Failed to parse {path}: {e}", path = path.display());
     }
-    parse_context.finish(&bookmark);
+    parse_context.finish(&bookmark)
 }
 
 // Parse a provided directory path. Currently, expect the path to follow macOS log collect structure
@@ -403,7 +412,7 @@ fn parse_trace_file(
     visit_provider_with_options(provider, VisitOptions::default(), |entry| {
         parse_context.handle(&entry)
     })?;
-    parse_context.finish(&bookmark);
+    parse_context.finish(&bookmark)?;
 
     info!("Finished parsing Unified Log data.");
     Ok(())

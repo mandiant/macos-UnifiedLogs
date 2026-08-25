@@ -5,6 +5,7 @@ use macos_unifiedlogs::{
     log_entry::{EventType, LogEntry},
     logarchive::{StringLoading, VisitOptions, visit_provider_with_options},
 };
+use std::ops::ControlFlow;
 use std::path::PathBuf;
 
 mod dump_helpers;
@@ -20,17 +21,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let provider = LogarchiveProvider::new(&path);
     visit_provider_with_options(&provider, options, |entry| {
-        if result.is_err() {
-            return;
-        }
-
-        if !no_output {
-            result = write_entry(&dump_entry(index, &entry));
+        if !no_output && let Err(e) = write_entry(&dump_entry(index, &entry)) {
+            result = Err(e);
+            return ControlFlow::Break(());
         }
         index += 1;
+        ControlFlow::Continue(())
     })?;
 
-    result
+    match result {
+        // The consumer stopped reading (e.g. `| head`): not an error.
+        Err(e) if is_broken_pipe(e.as_ref()) => Ok(()),
+        result => result,
+    }
+}
+
+fn is_broken_pipe(err: &(dyn std::error::Error + 'static)) -> bool {
+    let mut source = Some(err);
+    while let Some(err) = source {
+        if let Some(io_err) = err.downcast_ref::<std::io::Error>() {
+            return io_err.kind() == std::io::ErrorKind::BrokenPipe;
+        }
+        source = err.source();
+    }
+    false
 }
 
 fn argument_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
