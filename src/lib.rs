@@ -1,9 +1,34 @@
-// Copyright 2022 Mandiant, Inc. All Rights Reserved
-// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at
-// http://www.apache.org/licenses/LICENSE-2.0
-// Unless required by applicable law or agreed to in writing, software distributed under the License
-// is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and limitations under the License.
+//! # A library to parse Apple Unified Logs
+//!
+//! `macos_unifiedlogs` is a cross-platform library to parse Unified Logs from a
+//! `.logarchive` directory or a live macOS system. No Apple APIs are used, so it
+//! runs on non-Apple platforms too.
+//!
+//! The core type is [`log_entry::LogEntry`] — a zero-copy log entry borrowing
+//! directly from the parsed file buffers. Messages are formatted lazily on
+//! demand via `.message()`, and `UUIDText`/DSC string data is read lazily as
+//! entries reference it (see [`cache`]).
+//!
+//! ## Example
+//!
+//! ```rust,no_run
+//! use macos_unifiedlogs::logarchive::visit_logarchive;
+//! use std::path::Path;
+//!
+//! visit_logarchive(Path::new("system_logs.logarchive"), |entry| {
+//!     let timestamp = entry.timestamp().to_rfc3339();
+//!     let process = entry.process.unwrap_or("");
+//!     let message = entry.message();
+//!
+//!     println!("{timestamp} [{process}] {message}");
+//! })
+//! .unwrap();
+//! ```
+//!
+//! Use [`logarchive::visit_live_system`] on a live macOS system, or implement
+//! [`traits::FileProvider`] to parse from any other source (mounted image,
+//! evidence container, in-memory data — see [`filesystem::InMemoryProvider`])
+//! and hand it to [`logarchive::visit_provider`].
 
 #![forbid(unsafe_code)]
 #![warn(
@@ -29,88 +54,38 @@
     clippy::unnecessary_cast
 )]
 
-//! # A library to parse Apple Unified Logs
-//! `macos_unifiedlogs` is a small cross platform library to help parse Unified Logs on a system or logarchive.
-//! No Apple APIs are used so this library can be used on non-apple platforms.
-//!
-//! A full example can found on [GitHub](https://github.com/mandiant/macos-UnifiedLogs)
-//! ## Example
-//! ```rust
-//!    use macos_unifiedlogs::filesystem::LiveSystemProvider;
-//!    use macos_unifiedlogs::traits::{FileProvider, SourceFile};
-//!    use macos_unifiedlogs::cache::MemoryStringCache;
-//!    use macos_unifiedlogs::parser::collect_timesync;
-//!    use macos_unifiedlogs::iterator::UnifiedLogIterator;
-//!    use macos_unifiedlogs::unified_log::UnifiedLogData;
-//!    use macos_unifiedlogs::parser::build_log;
-//!    use std::io::Read;
-//!
-//!    // Run on live macOS system
-//!     let provider = LiveSystemProvider::default();
-//!     let cache = MemoryStringCache::default();
-//!     let timesync_data = collect_timesync(&provider).unwrap();
-//!
-//!     // We need to persist the Oversize log entries (they contain large strings that don't fit in normal log entries)
-//!     let mut oversize_strings = UnifiedLogData {
-//!        header: Vec::new(),
-//!        catalog_data: Vec::new(),
-//!        oversize: Vec::new(),
-//!        evidence: String::new(),
-//!     };
-//!     for mut entry in provider.tracev3_files() {
-//!         println!("TraceV3 file: {}", entry.source_path());
-//!         let mut buf = Vec::new();
-//!         entry.reader().read_to_end(&mut buf);
-//!         let log_iterator = UnifiedLogIterator {
-//!             data: buf,
-//!             header: Vec::new(),
-//!             evidence: entry.source_path().to_string(),
-//!         };
-//!         // If we exclude entries that are missing strings, we may find them in later log files
-//!         let exclude = true;
-//!         for mut chunk in log_iterator {
-//!             chunk.oversize.append(&mut oversize_strings.oversize);
-//!             let (results, _missing_logs) = build_log(
-//!                 &chunk,
-//!                 &provider,
-//!                 &cache,
-//!                 &timesync_data,
-//!                 exclude,
-//!             );
-//!             oversize_strings.oversize = chunk.oversize;
-//!             println!("Got {} log entries", results.len());
-//!             break;
-//!         }
-//!         break;
-//!     }
-//!
-//! ```
+pub use error::*;
 
-/// Thread-safe cache for `UUIDText` and `SharedCacheStrings` used during log parsing
 pub mod cache;
-/// Functions to parse catalog information from tracev3 files
-mod catalog;
-mod chunks;
-mod chunkset;
-/// Parsers to extract specific log objects
-mod decoders;
-/// Functions to parse the shared string cache
+/// Catalog chunk parsing (process/subsystem metadata)
+pub mod catalog;
+/// Top-level and chunkset chunk readers
+pub mod chunk;
+/// Individual chunk parsers (firehose, oversize, simpledump, statedump)
+pub mod chunks;
+/// Streaming reader over the top-level chunks of a tracev3 buffer
+pub mod chunks_reader;
+/// Decoders for typed log arguments (uuid, dns, location, …)
+pub mod decoders;
+/// DSC (shared-cache strings) file parsing
 pub mod dsc;
-mod error;
-/// Providers to parse Unified Log data on a live system or a provided logarchive
+/// Error types shared by all parsers
+pub mod error;
 pub mod filesystem;
-mod header;
-pub mod iterator;
-/// Functions to assemble the log message
-mod message;
-/// Functions to extract and assemble log entries from the macOS Unified Log
-pub mod parser;
-mod preamble;
-/// Functions to parse time data associated with the Unified Log
+pub mod format;
+/// Tracev3 header chunk parsing
+pub mod header;
+pub(crate) mod helpers;
+pub mod log_entry;
+pub mod logarchive;
+/// Format string / library / process path resolution
+pub mod resolve;
+/// Timesync file parsing and timestamp resolution
 pub mod timesync;
+pub mod tracev3;
 pub mod traits;
-/// Functions to parse tracev3 files
-pub mod unified_log;
-mod util;
-/// Functions to parse the log string files
+/// `UUIDText` string file parsing
 pub mod uuidtext;
+
+/// Byte offset within the data being parsed.
+pub type Offset = usize;

@@ -1,99 +1,87 @@
-// Copyright 2022 Mandiant, Inc. All Rights Reserved
-// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at
-// http://www.apache.org/licenses/LICENSE-2.0
-// Unless required by applicable law or agreed to in writing, software distributed under the License
-// is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and limitations under the License.
+use crate::helpers::utf8_str;
+use nom::{
+    bytes::complete::take,
+    number::complete::{be_u128, le_u16, le_u32, le_u64},
+};
+use uuid::Uuid;
 
-use crate::util::extract_string;
-use nom::bytes::complete::take;
-use nom::number::complete::{be_u128, le_u16, le_u32, le_u64};
-/*
-   Introduced in macOS Monterey (12).  Appears to be a "simpler" version of Statedump?
-   So far appears to just contain a single string
-*/
-#[derive(Debug, Clone, Default)]
-pub struct SimpleDump {
-    pub chunk_tag: u32,
-    pub chunk_subtag: u32,
-    pub chunk_data_size: u64,
+/// Parsed simpledump chunk — introduced in macOS Monterey (12).
+///
+/// A "simpler" version of Statedump, containing process IDs, UUIDs,
+/// a subsystem string, and a message string.
+///
+/// This struct represents the data *after* the 16-byte preamble (which is
+/// already parsed by `RawChunksReader` into `RawChunk.preamble`).
+#[derive(Debug, Clone)]
+pub struct RawSimpleDump<'a> {
     pub first_proc_id: u64,
     pub second_proc_id: u64,
-    pub continous_time: u64,
+    pub continuous_time: u64,
     pub thread_id: u64,
     pub unknown_offset: u32,
     pub unknown_ttl: u16,
     pub unknown_type: u16,
-    pub sender_uuid: String,
-    pub dsc_uuid: String,
+    pub sender_uuid: Uuid,
+    pub dsc_uuid: Uuid,
     pub unknown_number_message_strings: u32,
-    pub unknown_size_subsystem_string: u32,
-    pub unknown_size_message_string: u32,
-    pub subsystem: String,
-    pub message_string: String,
+    pub subsystem: &'a str,
+    pub message_string: &'a str,
 }
 
-impl SimpleDump {
-    /// Parse Simpledump log entry.  Introduced in macOS Monterey (12)
-    pub fn parse_simpledump(data: &[u8]) -> nom::IResult<&[u8], SimpleDump> {
-        let mut simpledump_resuls = SimpleDump::default();
+impl<'a> RawSimpleDump<'a> {
+    /// Parse a simpledump log entry from the chunk data (after preamble).
+    pub fn parse(input: &'a [u8]) -> nom::IResult<&'a [u8], Self> {
+        let (input, first_proc_id) = le_u64(input)?;
+        let (input, second_proc_id) = le_u64(input)?;
+        let (input, continuous_time) = le_u64(input)?;
+        let (input, thread_id) = le_u64(input)?;
+        let (input, unknown_offset) = le_u32(input)?;
+        let (input, unknown_ttl) = le_u16(input)?;
+        let (input, unknown_type) = le_u16(input)?;
 
-        let (input, simpledump_chunk_tag) = le_u32(data)?;
-        let (input, simpledump_chunk_sub_tag) = le_u32(input)?;
-        let (input, simpledump_chunk_data_size) = le_u64(input)?;
-        let (input, simpledump_first_proc_id) = le_u64(input)?;
-        let (input, simpledump_second_proc_id) = le_u64(input)?;
-        let (input, simpledump_continous_time) = le_u64(input)?;
-        let (input, simpledump_thread_id) = le_u64(input)?;
-        let (input, simpledump_unknown_offset) = le_u32(input)?;
-        let (input, simpledump_unknown_ttl) = le_u16(input)?;
-        let (input, simpledump_unknown_type) = le_u16(input)?;
-        let (input, sender_uuid) = be_u128(input)?;
-        let (input, dsc_uuid) = be_u128(input)?;
-        let (input, simpledump_unknown_number_message_strings) = le_u32(input)?;
-        let (input, simpledump_unknown_size_subsystem_string) = le_u32(input)?;
-        let (input, simpledump_unknown_size_message_string) = le_u32(input)?;
+        let (input, sender_uuid_raw) = be_u128(input)?;
+        let sender_uuid = Uuid::from_u128(sender_uuid_raw);
+        let (input, dsc_uuid_raw) = be_u128(input)?;
+        let dsc_uuid = Uuid::from_u128(dsc_uuid_raw);
 
-        simpledump_resuls.chunk_tag = simpledump_chunk_tag;
-        simpledump_resuls.chunk_subtag = simpledump_chunk_sub_tag;
-        simpledump_resuls.chunk_data_size = simpledump_chunk_data_size;
-        simpledump_resuls.continous_time = simpledump_continous_time;
-        simpledump_resuls.first_proc_id = simpledump_first_proc_id;
-        simpledump_resuls.second_proc_id = simpledump_second_proc_id;
-        simpledump_resuls.thread_id = simpledump_thread_id;
-        simpledump_resuls.unknown_offset = simpledump_unknown_offset;
-        simpledump_resuls.unknown_ttl = simpledump_unknown_ttl;
-        simpledump_resuls.unknown_type = simpledump_unknown_type;
+        let (input, unknown_number_message_strings) = le_u32(input)?;
+        let (input, subsystem_size) = le_u32(input)?;
+        let (input, message_size) = le_u32(input)?;
 
-        simpledump_resuls.sender_uuid = format!("{sender_uuid:032X}");
-        simpledump_resuls.dsc_uuid = format!("{dsc_uuid:032X}");
-        simpledump_resuls.unknown_number_message_strings =
-            simpledump_unknown_number_message_strings;
-        simpledump_resuls.unknown_size_subsystem_string = simpledump_unknown_size_subsystem_string;
-        simpledump_resuls.unknown_size_message_string = simpledump_unknown_size_message_string;
+        let (input, subsystem_data) = take(subsystem_size)(input)?;
+        let (input, message_data) = take(message_size)(input)?;
 
-        let (input, subsystem_string) = take(simpledump_unknown_size_subsystem_string)(input)?;
-        let (input, message_string) = take(simpledump_unknown_size_message_string)(input)?;
+        let subsystem = utf8_str(subsystem_data);
+        let message_string = utf8_str(message_data);
 
-        if !subsystem_string.is_empty() {
-            let (_, simpledump_subsystem_string) = extract_string(subsystem_string)?;
-            simpledump_resuls.subsystem = simpledump_subsystem_string;
-        }
-        if !message_string.is_empty() {
-            let (_, simpledump_message_string) = extract_string(message_string)?;
-            simpledump_resuls.message_string = simpledump_message_string;
-        }
-        Ok((input, simpledump_resuls))
+        Ok((
+            input,
+            RawSimpleDump {
+                first_proc_id,
+                second_proc_id,
+                continuous_time,
+                thread_id,
+                unknown_offset,
+                unknown_ttl,
+                unknown_type,
+                sender_uuid,
+                dsc_uuid,
+                unknown_number_message_strings,
+                subsystem,
+                message_string,
+            },
+        ))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::SimpleDump;
+    use super::*;
 
     #[test]
-    fn test_parse_simpledump() {
-        let test_data = [
+    fn test_parse_simpledump() -> anyhow::Result<()> {
+        // Full test vector from original src/chunks/simpledump.rs.
+        let full_data = [
             4, 96, 0, 0, 0, 0, 0, 0, 219, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0,
             0, 0, 0, 0, 45, 182, 196, 71, 133, 4, 0, 0, 3, 234, 0, 0, 0, 0, 0, 0, 118, 118, 1, 0,
             0, 0, 0, 0, 13, 207, 62, 139, 73, 35, 50, 62, 179, 229, 84, 115, 7, 207, 14, 172, 61,
@@ -107,29 +95,37 @@ mod tests {
             100, 32, 112, 114, 101, 115, 115, 117, 114, 101, 100, 45, 101, 120, 105, 116, 32, 61,
             32, 49, 0, 0, 0, 0, 0, 0,
         ];
-        let (_, results) = SimpleDump::parse_simpledump(&test_data).unwrap();
-        assert_eq!(results.chunk_tag, 24580); // 0x6004 - simpledump chunk tag
-        assert_eq!(results.chunk_subtag, 0);
-        assert_eq!(results.chunk_data_size, 219);
-        assert_eq!(results.first_proc_id, 1);
-        assert_eq!(results.second_proc_id, 1);
-        assert_eq!(results.continous_time, 4970481235501);
-        assert_eq!(results.thread_id, 59907);
-        assert_eq!(results.unknown_offset, 95862);
-        assert_eq!(results.unknown_ttl, 0);
-        assert_eq!(results.unknown_type, 0);
-        assert_eq!(results.sender_uuid, "0DCF3E8B4923323EB3E5547307CF0EAC");
-        assert_eq!(results.dsc_uuid, "3D05845F3F65358F9EBF2236E772AC01");
-        assert_eq!(results.unknown_number_message_strings, 1);
-        assert_eq!(results.unknown_size_subsystem_string, 79);
-        assert_eq!(results.unknown_size_message_string, 56);
+
+        // Skip the 16-byte preamble (chunk_tag + chunk_subtag + chunk_data_size)
+        let data = &full_data[16..];
+        let (remaining, result) = RawSimpleDump::parse(data).unwrap();
+
+        assert_eq!(result.first_proc_id, 1);
+        assert_eq!(result.second_proc_id, 1);
+        assert_eq!(result.continuous_time, 4_970_481_235_501);
+        assert_eq!(result.thread_id, 59907);
+        assert_eq!(result.unknown_offset, 95862);
+        assert_eq!(result.unknown_ttl, 0);
+        assert_eq!(result.unknown_type, 0);
         assert_eq!(
-            results.subsystem,
+            result.sender_uuid,
+            Uuid::parse_str("0DCF3E8B4923323EB3E5547307CF0EAC")?
+        );
+        assert_eq!(
+            result.dsc_uuid,
+            Uuid::parse_str("3D05845F3F65358F9EBF2236E772AC01")?
+        );
+        assert_eq!(result.unknown_number_message_strings, 1);
+        assert_eq!(
+            result.subsystem,
             "user/501/com.apple.mdworker.shared.0B000000-0000-0000-0000-000000000000 [4229]"
         );
         assert_eq!(
-            results.message_string,
+            result.message_string,
             "service exited: dirty = 0, supported pressured-exit = 1"
         );
+        // Trailing padding bytes remain
+        assert!(remaining.iter().all(|&b| b == 0));
+        Ok(())
     }
 }

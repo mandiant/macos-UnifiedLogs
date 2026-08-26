@@ -51,10 +51,6 @@ impl Bookmark {
         Ok(())
     }
 
-    pub fn should_process_entry(&self, timestamp: f64) -> bool {
-        timestamp > self.last_timestamp
-    }
-
     pub fn update_timestamp(&mut self, timestamp: f64) {
         if timestamp > self.last_timestamp {
             self.last_timestamp = timestamp;

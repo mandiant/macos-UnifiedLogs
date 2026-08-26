@@ -7,11 +7,12 @@
 
 mod bool;
 pub(crate) mod config;
+pub(crate) mod location;
+mod network;
+
 pub(crate) mod darwin;
 pub(crate) mod decoder;
 mod dns;
-pub(crate) mod location;
-mod network;
 mod opendirectory;
 mod time;
 mod uuid;

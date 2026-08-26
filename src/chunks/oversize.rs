@@ -1,120 +1,80 @@
-// Copyright 2022 Mandiant, Inc. All Rights Reserved
-// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at
-// http://www.apache.org/licenses/LICENSE-2.0
-// Unless required by applicable law or agreed to in writing, software distributed under the License
-// is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and limitations under the License.
+use log::warn;
+use nom::{
+    bytes::complete::take,
+    number::complete::{le_u8, le_u16, le_u32, le_u64},
+};
 
-use crate::chunks::firehose::firehose_log::{FirehoseItemData, FirehoseItemType, FirehosePreamble};
-use log::{info, warn};
-use nom::bytes::complete::take;
-use nom::number::complete::{le_u8, le_u16, le_u32, le_u64};
-
-#[derive(Debug, Clone, Default)]
-pub struct Oversize {
-    pub chunk_tag: u32,
-    pub chunk_subtag: u32,
-    pub chunk_data_size: u64,
+/// Parsed oversize chunk — carries strings too large for regular Firehose entries.
+///
+/// Oversize entries are looked up by `(data_ref_index, first_proc_id, second_proc_id)`
+/// when building log messages. The payload (public + private data) is kept as raw
+/// `&[u8]` — interpretation into `FirehoseItemData` is deferred until firehose
+/// types are ported.
+///
+/// This struct represents the data *after* the 16-byte preamble (which is
+/// already parsed by `RawChunksReader` into `RawChunk.preamble`).
+#[derive(Debug, Clone)]
+pub struct RawOversize<'a> {
     pub first_proc_id: u64,
     pub second_proc_id: u32,
     pub ttl: u8,
-    pub reserved: Vec<u8>, // 3 bytes
+    pub reserved: [u8; 3],
     pub continuous_time: u64,
     pub data_ref_index: u32,
     pub public_data_size: u16,
     pub private_data_size: u16,
-    pub message_items: FirehoseItemData,
+    pub oversize_data: &'a [u8],
 }
 
-impl Oversize {
-    /// Parse the oversize log entry. Oversize entries contain strings that are too large to fit in a normal Firehose log entry
-    pub fn parse_oversize(data: &[u8]) -> nom::IResult<&[u8], Oversize> {
-        let mut oversize_results = Oversize::default();
-
-        let (input, oversize_chunk_tag) = le_u32(data)?;
-        let (input, oversize_chunk_sub_tag) = le_u32(input)?;
-        let (input, oversize_chunk_data_size) = le_u64(input)?;
-        let (input, oversize_first_proc_id) = le_u64(input)?;
-        let (input, oversize_second_proc_id) = le_u32(input)?;
-        let (input, oversize_ttl) = le_u8(input)?;
-
-        let reserved_size: u8 = 3;
-        let (input, reserved) = take(reserved_size)(input)?;
-        let (input, oversize_continous_time) = le_u64(input)?;
-        let (input, oversize_data_ref_index) = le_u32(input)?;
-        let (input, oversize_public_data_size) = le_u16(input)?;
-        let (input, oversize_private_data_size) = le_u16(input)?;
-
-        oversize_results.chunk_tag = oversize_chunk_tag;
-        oversize_results.chunk_subtag = oversize_chunk_sub_tag;
-        oversize_results.chunk_data_size = oversize_chunk_data_size;
-        oversize_results.first_proc_id = oversize_first_proc_id;
-        oversize_results.second_proc_id = oversize_second_proc_id;
-        oversize_results.ttl = oversize_ttl;
-        oversize_results.continuous_time = oversize_continous_time;
-        oversize_results.data_ref_index = oversize_data_ref_index;
-        oversize_results.public_data_size = oversize_public_data_size;
-        oversize_results.private_data_size = oversize_private_data_size;
-        oversize_results.reserved = reserved.to_vec();
+impl<'a> RawOversize<'a> {
+    /// Parse an oversize log entry from the chunk data (after preamble).
+    pub fn parse(input: &'a [u8]) -> nom::IResult<&'a [u8], Self> {
+        let (input, first_proc_id) = le_u64(input)?;
+        let (input, second_proc_id) = le_u32(input)?;
+        let (input, ttl) = le_u8(input)?;
+        let (input, reserved_bytes) = take(3_usize)(input)?;
+        let reserved: [u8; 3] = [reserved_bytes[0], reserved_bytes[1], reserved_bytes[2]];
+        let (input, continuous_time) = le_u64(input)?;
+        let (input, data_ref_index) = le_u32(input)?;
+        let (input, public_data_size) = le_u16(input)?;
+        let (input, private_data_size) = le_u16(input)?;
 
         let mut oversize_data_size =
-            (oversize_results.public_data_size + oversize_results.private_data_size) as usize;
-
-        // Contains item data like firehose (ex: 0x42)
+            (u32::from(public_data_size) + u32::from(private_data_size)) as usize;
         if oversize_data_size > input.len() {
             warn!(
-                "[macos-unifiedlogs] Oversize data size greater than Oversize remaining string size. Using remaining string size"
+                "[macos-unifiedlogs] Oversize data size ({oversize_data_size}) greater than remaining input ({}). Using remaining input size",
+                input.len()
             );
             oversize_data_size = input.len();
         }
-        let (input, pub_data) = take(oversize_data_size)(input)?;
+        let (input, oversize_data) = take(oversize_data_size)(input)?;
 
-        let (message_data, _) = le_u8(pub_data)?;
-        let (message_data, oversize_item_count) = le_u8(message_data)?;
-
-        let empty_flags = 0;
-        // Grab all message items from oversize data
-        let (oversize_private_data, mut firehose_item_data) =
-            FirehosePreamble::collect_items(message_data, oversize_item_count, empty_flags)?;
-        let (_, _) =
-            FirehosePreamble::parse_private_data(oversize_private_data, &mut firehose_item_data)?;
-        oversize_results.message_items = firehose_item_data;
-        Ok((input, oversize_results))
-    }
-
-    /// Function to get the firehose item info from the oversize log entry based on oversize (data ref) id, first proc id, and second proc id
-    pub fn get_oversize_strings(
-        data_ref: u32,
-        first_proc_id: u64,
-        second_proc_id: u32,
-        oversize_data: &Vec<Oversize>,
-    ) -> Vec<FirehoseItemType> {
-        for oversize in oversize_data {
-            if data_ref == oversize.data_ref_index
-                && first_proc_id == oversize.first_proc_id
-                && second_proc_id == oversize.second_proc_id
-            {
-                return oversize.message_items.item_info.clone();
-            }
-        }
-        // We may not find any oversize data (data may have rolled from logs?)
-        info!(
-            "Did not find any oversize log entries from Data Ref ID: {data_ref}, First Proc ID: {first_proc_id}, and Second Proc ID: {second_proc_id}"
-        );
-        Vec::new()
+        Ok((
+            input,
+            RawOversize {
+                first_proc_id,
+                second_proc_id,
+                ttl,
+                reserved,
+                continuous_time,
+                data_ref_index,
+                public_data_size,
+                private_data_size,
+                oversize_data,
+            },
+        ))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-    use std::path::PathBuf;
-
-    use crate::chunks::firehose::firehose_log::{FirehoseItemData, FirehoseItemType};
-    use crate::chunks::oversize::Oversize;
+    use super::*;
 
     #[test]
-    fn test_parse_oversize() {
+    fn test_parse_oversize() -> anyhow::Result<()> {
+        // Test vector from original src/chunks/oversize.rs (test_parse_oversize, line 127).
+        // First 16 bytes are the preamble (tag=0x6002, subtag=0, data_size=3354).
         let test_data = [
             2, 96, 0, 0, 0, 0, 0, 0, 26, 13, 0, 0, 0, 0, 0, 0, 192, 0, 0, 0, 0, 0, 0, 0, 193, 0, 0,
             0, 14, 0, 0, 0, 15, 132, 249, 225, 2, 0, 0, 0, 1, 0, 0, 0, 250, 12, 0, 0, 2, 1, 34, 4,
@@ -289,91 +249,29 @@ mod tests {
             98, 115, 121, 115, 116, 101, 109, 95, 112, 116, 104, 114, 101, 97, 100, 46, 100, 121,
             108, 105, 98, 10, 10, 10, 0,
         ];
-        let (_, oversize_results) = Oversize::parse_oversize(&test_data).unwrap();
-        assert_eq!(oversize_results.chunk_tag, 0x6002);
-        assert_eq!(oversize_results.chunk_subtag, 0);
-        assert_eq!(oversize_results.chunk_data_size, 3354);
-        assert_eq!(oversize_results.first_proc_id, 192);
-        assert_eq!(oversize_results.second_proc_id, 193);
-        assert_eq!(oversize_results.ttl, 14);
-        assert_eq!(oversize_results.reserved, [0, 0, 0]);
-        assert_eq!(oversize_results.continuous_time, 12381160463);
-        assert_eq!(oversize_results.data_ref_index, 1);
-        assert_eq!(oversize_results.public_data_size, 3322);
-        assert_eq!(oversize_results.private_data_size, 0);
-        assert_eq!(
-            oversize_results.message_items.item_info[0].message_strings,
-            "Sandbox: diskarbitrationd(63) System Policy: deny(5) file-read-metadata /Volumes/VMware Shared Folders\nViolation:       System Policy: deny(5) file-read-metadata /Volumes/VMware Shared Folders \nProcess:         diskarbitrationd [63]\nPath:            /usr/libexec/diskarbitrationd\nLoad Address:    0x107b94000\nIdentifier:      diskarbitrationd\nVersion:         ??? (???)\nCode Type:       x86_64 (Native)\nParent Process:  launchd [1]\nResponsible:     /usr/libexec/diskarbitrationd [63]\nUser ID:         0\n\nDate/Time:       2021-08-17 19:58:49.955 EDT\nOS Version:      Mac OS X 10.13.6 (17G66)\nReport Version:  8\n\n\nMetaData: {\"errno\":5,\"profile-flags\":0,\"target\":\"\\/Volumes\\/VMware Shared Folders\",\"process\":\"diskarbitrationd\",\"path\":\"\\/Volumes\\/VMware Shared Folders\",\"primary-filter\":\"path\",\"normalized_target\":[\"Volumes\",\"VMware Shared Folders\"],\"platform-policy\":true,\"summary\":\"deny(5) file-read-metadata \\/Volumes\\/VMware Shared Folders\",\"platform_binary\":\"yes\",\"operation\":\"file-read-metadata\",\"primary-filter-value\":\"\\/Volumes\\/VMware Shared Folders\",\"uid\":0,\"hardware\":\"Mac\",\"flags\":5,\"process-path\":\"\\/usr\\/libexec\\/diskarbitrationd\",\"pid\":63,\"profile\":\"platform\",\"build\":\"Mac OS X 10.13.6 (17G66)\",\"signing-id\":\"com.apple.diskarbitrationd\",\"action\":\"deny\",\"platform-binary\":true}\n\nThread 0 (id: 542):\n0   libsystem_kernel.dylib        \t0x00007fff693bb236 __getattrlist + 10\n1   diskarbitrationd              \t0x0000000107b97d46\n2   diskarbitrationd              \t0x0000000107ba3160\n3   CoreFoundation                \t0x00007fff4143b56b __CFMachPortPerform + 347\n4   CoreFoundation                \t0x00007fff4143b3f9 __CFRUNLOOP_IS_CALLING_OUT_TO_A_SOURCE1_PERFORM_FUNCTION__ + 41\n5   CoreFoundation                \t0x00007fff4143b345 __CFRunLoopDoSource1 + 533\n6   CoreFoundation                \t0x00007fff41432f00 __CFRunLoopRun + 2848\n7   CoreFoundation                \t0x00007fff41432153 CFRunLoopRunSpecific + 483\n8   CoreFoundation                \t0x00007fff41470be3 CFRunLoopRun + 99\n9   diskarbitrationd              \t0x0000000107b9acb6\n10  libdyld.dylib                 \t0x00007fff6926b015 start + 1\n11  diskarbitrationd              \t0x0000000000000001\n\nThread 1 (id: 687):\n0   libsystem_kernel.dylib        \t0x00007fff693bc28a __workq_kernreturn + 10\n1   libsystem_pthread.dylib       \t0x00007fff69582be9 start_wqthread + 13\n\nThread 2 (id: 1541):\n0   libsystem_kernel.dylib        \t0x00007fff693bc28a __workq_kernreturn + 10\n1   libsystem_pthread.dylib       \t0x00007fff69582be9 start_wqthread + 13\n\nBinary Images:\n       0x107b94000 -        0x107babfff  diskarbitrationd (297.70.1) <190ef73f-c204-31bc-bd51-e1be4deaf90a> /usr/libexec/diskarbitrationd\n    0x7fff413ad000 -     0x7fff4184efef  com.apple.CoreFoundation (6.9 - 1454.90) <e5d594bf-9142-3325-a62d-cf4aaf472642> /System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation\n    0x7fff6926a000 -     0x7fff69287ff7  libdyld.dylib (551.4) <81bf3a82-5719-3b54-aba9-76c82d932cac> /usr/lib/system/libdyld.dylib\n    0x7fff6939f000 -     0x7fff693c5ff7  libsystem_kernel.dylib (4570.71.2) <f22b8d73-69d8-36d7-bf66-7f9ac70c08c2> /usr/lib/system/libsystem_kernel.dylib\n    0x7fff69580000 -     0x7fff6958bfff  libsystem_pthread.dylib (301.50.1) <0e51ccba-91f2-34e1-bf2a-feefd3d321e4> /usr/lib/system/libsystem_pthread.dylib\n\n\n"
-        );
-    }
 
-    #[test]
-    fn test_parse_oversize_private_strings() {
-        let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        test_path.push("tests/test_data/Oversize Tests/oversize_private_strings.raw");
-        let buffer = fs::read(test_path).unwrap();
+        // Skip the 16-byte preamble
+        let data = &test_data[16..];
+        let (remaining, result) = RawOversize::parse(data).unwrap();
 
-        let (_, oversize_results) = Oversize::parse_oversize(&buffer).unwrap();
-        assert_eq!(oversize_results.chunk_tag, 0x6002);
-        assert_eq!(oversize_results.chunk_subtag, 0);
-        assert_eq!(oversize_results.chunk_data_size, 2963);
-        assert_eq!(oversize_results.first_proc_id, 86);
-        assert_eq!(oversize_results.second_proc_id, 302);
-        assert_eq!(oversize_results.ttl, 0);
-        assert_eq!(oversize_results.reserved, [0, 0, 0]);
-        assert_eq!(oversize_results.continuous_time, 96693842097);
-        assert_eq!(oversize_results.data_ref_index, 1);
-        assert_eq!(oversize_results.public_data_size, 8);
-        assert_eq!(oversize_results.private_data_size, 2923);
+        assert_eq!(result.first_proc_id, 192);
+        assert_eq!(result.second_proc_id, 193);
+        assert_eq!(result.ttl, 14);
+        assert_eq!(result.reserved, [0, 0, 0]);
+        assert_eq!(result.continuous_time, 12_381_160_463);
+        assert_eq!(result.data_ref_index, 1);
+        assert_eq!(result.public_data_size, 3322);
+        assert_eq!(result.private_data_size, 0);
         assert_eq!(
-            oversize_results.message_items.item_info[0].message_strings,
-            "updated queuedEvents[4]=(\n    \"FudEvent - Client:(null) Type:114 Filter:com.apple.MobileAccessoryUpdater.EA.app.multiasset.A2015.59 Data:<dictionary: 0x7fdac460fcd0> { count = 5, transaction: 0, voucher = 0x7fdac460e7c0, contents =\\n\\t\\\"Command\\\" => <uint64: 0x2a6f1a5c3cef6b9d>: 114\\n\\t\\\"PluginIdentifier\\\" => <string: 0x7fdac58122c0> { length = 49, contents = \\\"com.apple.MobileAccessoryUpdater.EAUpdaterService\\\" }\\n\\t\\\"_State\\\" => <uint64: 0x2a6f1a5c3ce84b9d>: 0\\n\\t\\\"XPCEventName\\\" => <string: 0x7fdac4507f90> { length = 59, contents = \\\"com.apple.MobileAccessoryUpdater.EA.app.multiasset.A2015.59\\\" }\\n\\t\\\"Notification\\\" => <string: 0x7fdac450a7c0> { length = 44, contents = \\\"com.apple.corespeech.voicetriggerassetchange\\\" }\\n} Options:{\\n}\",\n    \"FudEvent - Client:(null) Type:114 Filter:com.apple.MobileAccessoryUpdater.EA.app.multiasset.A1881.58 Data:<dictionary: 0x7fdac460fdc0> { count = 5, transaction: 0, voucher = 0x7fdac460e7c0, contents =\\n\\t\\\"Command\\\" => <uint64: 0x2a6f1a5c3cef6b9d>: 114\\n\\t\\\"PluginIdentifier\\\" => <string: 0x7fdac5813c40> { length = 49, contents = \\\"com.apple.MobileAccessoryUpdater.EAUpdaterService\\\" }\\n\\t\\\"_State\\\" => <uint64: 0x2a6f1a5c3ce84b9d>: 0\\n\\t\\\"XPCEventName\\\" => <string: 0x7fdac450b380> { length = 59, contents = \\\"com.apple.MobileAccessoryUpdater.EA.app.multiasset.A1881.58\\\" }\\n\\t\\\"Notification\\\" => <string: 0x7fdac4504780> { length = 44, contents = \\\"com.apple.corespeech.voicetriggerassetchange\\\" }\\n} Options:{\\n}\",\n    \"FudEvent - Client:(null) Type:114 Filter:com.apple.MobileAccessoryUpdater.EA.app.multiasset.A2048.57 Data:<dictionary: 0x7fdac460feb0> { count = 5, transaction: 0, voucher = 0x7fdac460e7c0, contents =\\n\\t\\\"Command\\\" => <uint64: 0x2a6f1a5c3cef6b9d>: 114\\n\\t\\\"PluginIdentifier\\\" => <string: 0x7fdac5805eb0> { length = 49, contents = \\\"com.apple.MobileAccessoryUpdater.EAUpdaterService\\\" }\\n\\t\\\"_State\\\" => <uint64: 0x2a6f1a5c3ce84b9d>: 0\\n\\t\\\"XPCEventName\\\" => <string: 0x7fdac4516980> { length = 59, contents = \\\"com.apple.MobileAccessoryUpdater.EA.app.multiasset.A2048.57\\\" }\\n\\t\\\"Notification\\\" => <string: 0x7fdac451eed0> { length = 44, contents = \\\"com.apple.corespeech.voicetriggerassetchange\\\" }\\n} Options:{\\n}\",\n    \"FudEvent - Client:(null) Type:114 Filter:com.apple.MobileAccessoryUpdater.EA.app.multiasset.A2032.61 Data:<dictionary: 0x7fdac46050c0> { count = 5, transaction: 0, voucher = 0x7fdac460e7c0, contents =\\n\\t\\\"Command\\\" => <uint64: 0x2a6f1a5c3cef6b9d>: 114\\n\\t\\\"PluginIdentifier\\\" => <string: 0x7fdac58064e0> { length = 49, contents = \\\"com.apple.MobileAccessoryUpdater.EAUpdaterService\\\" }\\n\\t\\\"_State\\\" => <uint64: 0x2a6f1a5c3ce84b9d>: 0\\n\\t\\\"XPCEventName\\\" => <string: 0x7fdac453ba80> { length = 59, contents = \\\"com.apple.MobileAccessoryUpdater.EA.app.multiasset.A2032.61\\\" }\\n\\t\\\"Notification\\\" => <string: 0x7fdac450d430> { length = 44, contents = \\\"com.apple.corespeech.voicetriggerassetchange\\\" }\\n} Options:{\\n}\"\n)"
+            result.oversize_data.len(),
+            (result.public_data_size + result.private_data_size) as usize
         );
-    }
-
-    #[test]
-    fn test_get_oversize_strings_big_sur() {
-        let data = vec![Oversize {
-            chunk_tag: 24578,
-            chunk_subtag: 0,
-            chunk_data_size: 1124,
-            first_proc_id: 96,
-            second_proc_id: 245,
-            ttl: 0,
-            reserved: Vec::new(),
-            continuous_time: 5609252490,
-            data_ref_index: 1,
-            public_data_size: 1092,
-            private_data_size: 0,
-            message_items: FirehoseItemData {
-                item_info: vec![
-                    FirehoseItemType {
-                        message_strings: String::from("system kext collection"),
-                        item_type: 34,
-                        item_size: 0,
-                        ..Default::default()
-                    },
-                    FirehoseItemType {
-                        message_strings: String::from(
-                            "/System/Library/KernelCollections/SystemKernelExtensions.kc",
-                        ),
-                        item_type: 34,
-                        item_size: 0,
-                        ..Default::default()
-                    },
-                ],
-                backtrace_strings: Vec::new(),
-            },
-        }];
-        let data_ref = 1;
-        let first_proc_id = 96;
-        let second_proc_id = 245;
-        let results =
-            Oversize::get_oversize_strings(data_ref, first_proc_id, second_proc_id, &data);
-        assert_eq!(results[0].message_strings, "system kext collection");
-        assert_eq!(
-            results[1].message_strings,
-            "/System/Library/KernelCollections/SystemKernelExtensions.kc"
-        );
+        // Payload starts with firehose item preamble bytes (0x02, 0x01, 0x22, ...)
+        assert_eq!(result.oversize_data[0], 0x02);
+        assert_eq!(result.oversize_data[1], 0x01);
+        // Trailing NUL from the original test
+        assert_eq!(*result.oversize_data.last().unwrap(), 0x00);
+        assert!(remaining.is_empty());
+        Ok(())
     }
 }
