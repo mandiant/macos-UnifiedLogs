@@ -1,13 +1,27 @@
 use uuid::Uuid;
 
 use super::cache::StringCatalog;
-use super::catalog::RawCatalogChunk;
+use super::catalog::{ProcessInfoEntry, RawCatalogChunk};
 use super::chunks::firehose::flags::RawFormatterFlags;
 use super::traits::FileProvider;
 
 const DYNAMIC_OFFSET_FLAG: u64 = 0x8000_0000;
 const LARGE_OFFSET_BASE: u64 = 0x1_0000_0000;
 const PERCENT_S: &str = "%s";
+
+/// The main executable of a catalog process entry: its UUID (nil when the
+/// process is unknown to the catalog) and its image path from `UUIDText`
+/// (`None` when that file is unavailable).
+pub(crate) fn main_process<'s>(
+    entry: Option<&ProcessInfoEntry>,
+    strings: &StringCatalog<'s, impl FileProvider>,
+) -> (Uuid, Option<&'s str>) {
+    let main_uuid = entry.map_or(Uuid::nil(), |e| e.main_uuid);
+    let process = strings
+        .get_uuidtext(&main_uuid)
+        .and_then(|u| u.image_path());
+    (main_uuid, process)
+}
 
 /// Result of resolving a firehose entry's format string, library, and process paths.
 #[derive(Debug, Clone, Copy)]
@@ -99,7 +113,7 @@ fn resolve_shared_cache<'s>(
     strings: &StringCatalog<'s, impl FileProvider>,
 ) -> ResolvedStrings<'s> {
     let entry = catalog.get_process_info(first_proc_id, second_proc_id);
-    let main_uuid = entry.map_or(Uuid::nil(), |e| e.main_uuid);
+    let (main_uuid, process) = main_process(entry, strings);
     let dsc_uuid = entry.and_then(|e| e.dsc_uuid);
 
     let effective_offset = compute_shared_cache_offset(string_offset, formatter);
@@ -107,9 +121,6 @@ fn resolve_shared_cache<'s>(
 
     let dsc = dsc_uuid.and_then(|uuid| strings.get_dsc(&uuid));
     let source_found = dsc.is_some();
-    let process = strings
-        .get_uuidtext(&main_uuid)
-        .and_then(|u| u.image_path());
 
     if is_dynamic {
         let (library, library_uuid) = dsc
@@ -201,7 +212,7 @@ fn resolve_absolute<'s>(
     let absolute_offset = (u64::from(formatter.alt_index) << 32) | u64::from(pc_id);
 
     let entry = catalog.get_process_info(first_proc_id, second_proc_id);
-    let main_uuid = entry.map_or(Uuid::nil(), |e| e.main_uuid);
+    let (main_uuid, process) = main_process(entry, strings);
 
     // Find the UUID whose load_address range contains absolute_offset
     let library_uuid = entry
@@ -222,9 +233,6 @@ fn resolve_absolute<'s>(
     let library_uuidtext = strings.get_uuidtext(&library_uuid);
     let source_found = library_uuidtext.is_some();
     let library = library_uuidtext.and_then(|u| u.image_path());
-    let process = strings
-        .get_uuidtext(&main_uuid)
-        .and_then(|u| u.image_path());
 
     let format_string = if is_dynamic {
         dynamic_format_string(source_found)
@@ -255,16 +263,13 @@ fn resolve_uuid_relative<'s>(
     let uuid = Uuid::from_bytes(formatter.uuid_relative);
 
     let entry = catalog.get_process_info(first_proc_id, second_proc_id);
-    let main_uuid = entry.map_or(Uuid::nil(), |e| e.main_uuid);
+    let (main_uuid, process) = main_process(entry, strings);
 
     let is_dynamic = original_offset & DYNAMIC_OFFSET_FLAG != 0;
 
     let library_uuidtext = strings.get_uuidtext(&uuid);
     let source_found = library_uuidtext.is_some();
     let library = library_uuidtext.and_then(|u| u.image_path());
-    let process = strings
-        .get_uuidtext(&main_uuid)
-        .and_then(|u| u.image_path());
 
     let format_string = if is_dynamic {
         dynamic_format_string(source_found)

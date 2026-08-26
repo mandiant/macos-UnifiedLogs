@@ -14,7 +14,7 @@ use super::chunks::statedump::RawStatedump;
 use super::error::NomExt;
 use super::header::RawHeaderChunk;
 use super::log_entry::{EventType, ItemsData, LogEntry, LogType, MessageFlags, PrivateDataContext};
-use super::resolve::resolve_strings;
+use super::resolve::{main_process, resolve_strings};
 use super::timesync::TimestampResolver;
 use super::traits::{FileProvider, VisitOutcome};
 use log::warn;
@@ -234,18 +234,15 @@ fn flush_deferred_entries<'d, 's: 'd>(
                     let entry_info = current_catalog.as_ref().and_then(|c| {
                         c.get_process_info(sd.first_proc_id, sd.second_proc_id as u32)
                     });
-                    let main_uuid = entry_info.map_or(Uuid::nil(), |e| e.main_uuid);
-                    let (process, process_uuid) = entry_info
+                    let dsc_available = entry_info
                         .and_then(|e| e.dsc_uuid)
                         .and_then(|dsc_uuid| strings.get_dsc(&dsc_uuid))
-                        .map_or((None, Uuid::nil()), |_| {
-                            (
-                                strings
-                                    .get_uuidtext(&main_uuid)
-                                    .and_then(|u| u.image_path()),
-                                main_uuid,
-                            )
-                        });
+                        .is_some();
+                    let (process_uuid, process) = if dsc_available {
+                        main_process(entry_info, strings)
+                    } else {
+                        (Uuid::nil(), None)
+                    };
 
                     callback(LogEntry {
                         subsystem: Some(sd.subsystem),
@@ -486,10 +483,7 @@ fn visit_firehose_entries<'d: 'b, 'b, 's: 'd>(
 
                 // Process/library from UUIDText via main_uuid
                 let entry_info = catalog.get_process_info(fh.first_proc_id, fh.second_proc_id);
-                let main_uuid = entry_info.map_or(Uuid::nil(), |e| e.main_uuid);
-                let process = strings
-                    .get_uuidtext(&main_uuid)
-                    .and_then(|u| u.image_path());
+                let (main_uuid, process) = main_process(entry_info, strings);
 
                 callback(LogEntry {
                     subsystem: None,
