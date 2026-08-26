@@ -13,7 +13,6 @@ Example binaries live in `examples/`:
 - `unifiedlog_iterator` - Parses a logarchive (or the logs on a live macOS system)
   into a JSONL or CSV file, with bookmark/resume support. The output file will be
   quite large.
-- `dump` - Minimal JSONL dump of a logarchive.
 
 ```bash
 cargo run --release --manifest-path examples/Cargo.toml -p unifiedlog_iterator -- --mode log-archive --input system_logs.logarchive

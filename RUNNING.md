@@ -1,9 +1,8 @@
 # Running the example binaries
 
-Three example binaries live in the `examples/` workspace (see `BUILDING.md` to build them):
+One example binary lives in the `examples/` workspace (see `BUILDING.md` to build them):
 
 - `unifiedlog_iterator` — parses a logarchive or a live macOS system into JSONL or CSV, with bookmark/resume support
-- `dump` — minimal JSONL dump of a logarchive
 
 Run from the repository root (`--manifest-path` keeps relative input paths working):
 

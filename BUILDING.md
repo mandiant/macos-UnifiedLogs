@@ -21,7 +21,6 @@ A [just](https://github.com/casey/just) file wraps the common flows:
 ```bash
 just check        # cargo check for lib, tests, benches and both workspaces
 just test         # release-mode test run
-just dump         # dump a test logarchive with the dump example
 ```
 
 ### Test data
