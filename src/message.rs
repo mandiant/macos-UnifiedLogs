@@ -363,20 +363,30 @@ fn parse_formatter<'a>(
 
     if formatter_message.starts_with('.') {
         let (input, _) = is_a(".")(formatter_message)?;
-        let (input, precision_data) = is_not("hljzZtqLdDiuUoOcCxXfFeEgGaASspPn%@")(input)?;
-        if precision_data != "*" {
-            let precision_results = precision_data.parse::<usize>();
-            match precision_results {
-                Ok(value) => precision_value = value,
-                Err(err) => {
-                    error!("[macos-unifiedlogs] Failed to parse format precision value: {err:?}")
+
+        // Precision may not have an additional value
+        // Example: %.f or %.lf is valid precision. The precision value is 0
+        if input.len() == 1 || input.chars().next().unwrap_or_default().is_alphabetic() {
+            precision_value = 0;
+            formatter_message = input;
+        } else {
+            let (input, precision_data) = is_not("hljzZtqLdDiuUoOcCxXfFeEgGaASspPn%@")(input)?;
+            if precision_data != "*" {
+                let precision_results = precision_data.parse::<usize>();
+                match precision_results {
+                    Ok(value) => precision_value = value,
+                    Err(err) => {
+                        error!(
+                            "[macos-unifiedlogs] Failed to parse format precision value: {err:?}"
+                        )
+                    }
                 }
+            } else if precision_value != 0 {
+                // For dynamic length use the length of the message string
+                precision_value = message_value.len();
             }
-        } else if precision_value != 0 {
-            // For dynamic length use the length of the message string
-            precision_value = message_value.len();
+            formatter_message = input;
         }
-        formatter_message = input;
     }
 
     // Get Length data if it exists or get the type format
@@ -1016,7 +1026,7 @@ mod tests {
         let message_re = Regex::new(r"(%(?:(?:\{[^}]+}?)(?:[-+0#]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*))?(?:h|hh|l|ll|w|I|z|t|q|I32|I64)?[cmCdiouxXeEfgGaAnpsSZP@%}]|(?:[-+0 #]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*))?(?:h|hh|l||q|t|ll|w|I|z|I32|I64)?[cmCdiouxXeEfgGaAnpsSZP@%]))").unwrap();
 
         let log_string = format_firehose_log_message(test_data, &item_message, &message_re);
-        assert_eq!(log_string, "opendirectoryd (build 796.100) launched...")
+        assert_eq!(log_string, "opendirectoryd (build 796.100) launched...");
     }
 
     #[test]
@@ -1079,7 +1089,46 @@ mod tests {
         assert_eq!(
             log_string,
             "<SBHMultiplexingManager:D0000749E2E8F40> creating new multiplexing view controller controller <SBHMultiplexingViewController:E0000749C5A5E00> for D8F2438E-AACF-4ED9-AD47-F5A1598215C7 at level: 0"
-        )
+        );
+    }
+
+    #[test]
+    fn test_format_firehose_log_message_tricky_precision() {
+        let test = String::from(
+            "%p - ProcessThrottlerTimedActivity::activityTimedOut: %{public}s (timeout: %.f sec)",
+        );
+        let items = vec![
+            FirehoseItemType {
+                item_type: 0,
+                item_type_size: 8,
+                offset: 0,
+                item_size: 0,
+                message_strings: String::from("4833657296"),
+                item: FirehoseItem::Number,
+            },
+            FirehoseItemType {
+                item_type: 34,
+                item_type_size: 4,
+                offset: 0,
+                item_size: 26,
+                message_strings: String::from("View was recently visible"),
+                item: FirehoseItem::String,
+            },
+            FirehoseItemType {
+                item_type: 0,
+                item_type_size: 8,
+                offset: 0,
+                item_size: 0,
+                message_strings: String::from("4642648265865560064"),
+                item: FirehoseItem::Number,
+            },
+        ];
+        let message_re = Regex::new(r"(%(?:(?:\{[^}]+}?)(?:[-+0#]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*)?)?(?:h|hh|l|ll|w|I|z|t|q|I32|I64)?[cmCdiouxXeEfgGaAnpsSZP@%}]|(?:[-+0 #]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*)?)?(?:h|hh|l||q|t|ll|w|I|z|I32|I64)?[cmCdiouxXeEfgGaAnpsSZP@%]))").unwrap();
+        let log_string = format_firehose_log_message(test, &items, &message_re);
+        assert_eq!(
+            log_string,
+            "1201BC1D0 - ProcessThrottlerTimedActivity::activityTimedOut: View was recently visible (timeout: 240 sec)"
+        );
     }
 
     #[test]
