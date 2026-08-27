@@ -162,8 +162,7 @@ impl ChunksetChunk {
         let simpledump_chunk = 0x6004;
 
         if chunk_type == firehose_chunk {
-            let firehose_results =
-                FirehosePreamble::parse_firehose_preamble(data, &unified_log_data.catalog);
+            let firehose_results = FirehosePreamble::parse_firehose_preamble(data);
             match firehose_results {
                 Ok((_, firehose_data)) => unified_log_data.firehose.push(firehose_data),
                 Err(err) => error!(
