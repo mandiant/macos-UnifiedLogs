@@ -206,7 +206,7 @@ pub(crate) fn get_state_tracker_data(input: &[u8]) -> IResult<&[u8], String> {
     Ok((
         input,
         format!(
-            "{{\"locationRestricted\":{}, \"locationServicesenabledStatus\":{}}}",
+            "{{\"locationRestricted\":{}, \"locationServicesEnabledStatus\":{}}}",
             lowercase_bool(&format!("{location_restricted}")),
             location_enabled
         ),
@@ -587,7 +587,7 @@ mod tests {
 
         assert_eq!(
             result,
-            "{\"locationRestricted\":false, \"locationServicesenabledStatus\":1}"
+            "{\"locationRestricted\":false, \"locationServicesEnabledStatus\":1}"
         )
     }
 
@@ -612,7 +612,7 @@ mod tests {
 
         assert_eq!(
             result,
-            "{\"locationRestricted\":false, \"locationServicesenabledStatus\":1}"
+            "{\"locationRestricted\":false, \"locationServicesEnabledStatus\":1}"
         )
     }
 
