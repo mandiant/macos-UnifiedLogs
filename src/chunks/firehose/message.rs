@@ -712,7 +712,7 @@ impl MessageData {
     }
 
     /// Get the image path from provided `main_uuid` entry
-    fn get_uuid_image_path(
+    pub(crate) fn get_uuid_image_path(
         main_uuid: &str,
         provider: &impl FileProvider,
         cache: &impl StringCache,
@@ -738,7 +738,7 @@ impl MessageData {
     }
 
     // Grab dsc file name from the Catalog data based on first and second proc ids from the Firehose log
-    fn get_catalog_dsc(
+    pub(crate) fn get_catalog_dsc(
         catalogs: &CatalogChunk,
         first_proc_id: u64,
         second_proc_id: u32,

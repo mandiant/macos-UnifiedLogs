@@ -430,7 +430,7 @@ impl FirehosePreamble {
                         let (private_data, private_string) =
                             extract_string_size(private_string_start, u64::from(real_size))?;
                         private_string_start = private_data;
-                        firehose_info.message_strings = format!("{private_string}");
+                        firehose_info.message_strings = private_string;
                         continue;
                     }
                     let (private_data, private_string) = extract_string_size(
