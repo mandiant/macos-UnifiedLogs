@@ -621,7 +621,7 @@ where
             let no_firehose_preamble = 1;
 
             let data_string = match statedump.unknown_data_type {
-                // Check in binary plist (bplist)
+                // Check for binary plist (bplist)
                 0x1 if statedump.statedump_data.starts_with(b"bplist") => {
                     Statedump::parse_statedump_plist(&statedump.statedump_data)
                 }
