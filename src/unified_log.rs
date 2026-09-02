@@ -126,7 +126,7 @@ where
         (?:{[^}]+}?)                      # Get String formatters with %{<variable>}<variable> values. Ex: %{public}#llx with team ID %{public}@
         (?:[-+0#]{0,5})                   # optional flags
         (?:\d+|\*)?                       # width
-        (?:\.(?:\d+|\*))?                 # precision
+        (?:\.(?:\d+|\*)?)?                 # precision
         (?:h|hh|l|ll|t|q|w|I|z|I32|I64)?  # size
         [cCdiouxXeEfgGaAnpsSZPm@}]       # type
 
@@ -134,13 +134,13 @@ where
 
         (?:[-+0 #]{0,5})                  # optional flags
         (?:\d+|\*)?                       # width
-        (?:\.(?:\d+|\*))?                 # precision
+        (?:\.(?:\d+|\*)?)?                 # precision
         (?:h|hh|l|ll|w|I|t|q|z|I32|I64)?  # size
         [cCdiouxXeEfgGaAnpsSZPm@%]        # type
         ))
         */
         let message_re_result = Regex::new(
-            r"(%(?:(?:\{[^}]+}?)(?:[-+0#]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*))?(?:h|hh|l|ll|w|I|z|t|q|I32|I64)?[cmCdiouxXeEfgGaAnpsSZP@}]|(?:[-+0 #]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*))?(?:h|hh|l||q|t|ll|w|I|z|I32|I64)?[cmCdiouxXeEfgGaAnpsSZP@%]))",
+            r"(%(?:(?:\{[^}]+}?)(?:[-+0#]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*)?)?(?:h|hh|l|ll|w|I|z|t|q|I32|I64)?[cmCdiouxXeEfgGaAnpsSZP@}]|(?:[-+0 #]{0,5})(?:\d+|\*)?(?:\.(?:\d+|\*)?)?(?:h|hh|l||q|t|ll|w|I|z|I32|I64)?[cmCdiouxXeEfgGaAnpsSZP@%]))",
         );
         let message_re = match message_re_result {
             Ok(message_re) => message_re,
@@ -651,13 +651,15 @@ where
                     }
                 }
             };
+
             let timestamp = TimesyncBoot::get_timestamp(
                 self.timesync_data,
                 &self.unified_log_data.header[0].boot_uuid,
                 statedump.continuous_time,
                 no_firehose_preamble,
             );
-            let log_data = LogData {
+
+            let mut log_data = LogData {
                 subsystem: String::new(),
                 thread_id: 0,
                 pid: statedump.first_proc_id,
@@ -674,7 +676,9 @@ where
                     statedump.title_name, statedump.decoder_library, statedump.decoder_type,
                 ),
                 log_type: LogType::Statedump,
-                euid: 0,
+                euid: catalog_data
+                    .catalog
+                    .get_euid(statedump.first_proc_id, statedump.second_proc_id),
                 boot_uuid: self.unified_log_data.header[0].boot_uuid.to_owned(),
                 timezone_name: self.unified_log_data.header[0]
                     .timezone_path
@@ -682,13 +686,27 @@ where
                     .next_back()
                     .unwrap_or("Unknown Timezone Name")
                     .to_string(),
-                library_uuid: String::new(),
+                library_uuid: statedump.uuid.clone(),
                 process_uuid: String::new(),
                 raw_message: String::new(),
                 message_entries: Vec::new(),
                 message_flags: Vec::new(),
                 evidence: self.unified_log_data.evidence.clone(),
             };
+
+            let (_, process_uuid) = MessageData::get_catalog_dsc(
+                &catalog_data.catalog,
+                statedump.first_proc_id,
+                statedump.second_proc_id,
+            );
+            log_data.process_uuid = process_uuid;
+
+            if let Ok((_, process)) =
+                MessageData::get_uuid_image_path(&log_data.process_uuid, self.provider, self.cache)
+            {
+                log_data.process = process;
+            }
+
             log_data_vec.push(log_data);
         }
 
@@ -1207,7 +1225,8 @@ mod tests {
         assert_eq!(data.catalog.number_process_information_entries, 1);
         assert_eq!(data.catalog.catalog_offset_sub_chunks, 160);
         assert_eq!(data.catalog.number_sub_chunks, 7);
-        assert_eq!(data.catalog.unknown, [0, 0, 0, 0, 0, 0]);
+        assert_eq!(data.catalog.persona_offset, 0);
+        assert_eq!(data.catalog.persona_count, 0);
         assert_eq!(data.catalog.earliest_firehose_timestamp, 820223379547412);
         assert_eq!(
             data.catalog.catalog_uuids,

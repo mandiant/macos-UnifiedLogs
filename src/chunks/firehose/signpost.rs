@@ -18,6 +18,7 @@ pub struct FirehoseSignpost {
     pub pc_id: u32, // Appears to be used to calculate string offset for firehose events with Absolute flag
     pub activity_id: u32,
     pub sentinel: u32,
+    pub persona_id: u32,
     pub subsystem: u16,
     pub signpost_id: u64,
     pub signpost_name: u32,
@@ -49,6 +50,17 @@ impl FirehoseSignpost {
             firehose_signpost.sentinel = firehose_sentinel;
             input = firehose_input;
             firehose_signpost.flags.push(MessageFlags::HasCurrentAid);
+        }
+
+        let has_persona = 0x40;
+        if (firehose_flags & has_persona) != 0 {
+            debug!("[macos-unifiedlogs] Signpost Firehose has has_persona flag");
+            let (firehose_input, persona_id) = le_u32(input)?;
+
+            firehose_signpost.persona_id = persona_id;
+            firehose_signpost.flags.push(MessageFlags::HasPersona);
+
+            input = firehose_input;
         }
 
         let private_string_range = 0x100; // has_private_data flag
@@ -157,6 +169,7 @@ impl FirehoseSignpost {
 
 #[cfg(test)]
 mod tests {
+    use crate::chunks::firehose::firehose_log::MessageFlags;
     use crate::chunks::firehose::signpost::FirehoseSignpost;
     use crate::filesystem::LogarchiveProvider;
     use crate::parser::parse_log;
@@ -187,6 +200,10 @@ mod tests {
         assert!(!results.firehose_formatters.main_plugin);
         assert!(!results.firehose_formatters.pc_style);
         assert_eq!(results.firehose_formatters.main_exe_alt_index, 0);
+        assert_eq!(
+            results.flags,
+            vec![MessageFlags::MainExe, MessageFlags::HasSubsystem]
+        );
     }
 
     #[test]
@@ -228,11 +245,29 @@ mod tests {
                             message_data.library_uuid,
                             "CCCF30257483376883C824222233386D"
                         );
-
                         return;
                     }
                 }
             }
         }
+    }
+
+    #[test]
+    fn test_signpost_persona_flag() {
+        let test = [
+            232, 3, 0, 0, 248, 253, 216, 218, 1, 0, 1, 0, 1, 53, 45, 172, 71, 70, 1, 18, 99, 57,
+            219, 90, 1, 0, 0, 3, 0, 4, 1, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 4, 10, 0, 0, 0,
+        ];
+        let flags = 33380;
+        let (_, result) = FirehoseSignpost::parse_signpost(&test, flags).unwrap();
+        assert_eq!(
+            result.flags,
+            vec![
+                MessageFlags::HasPersona,
+                MessageFlags::SharedCache,
+                MessageFlags::HasLargeOffset,
+                MessageFlags::HasSubsystem
+            ]
+        );
     }
 }
