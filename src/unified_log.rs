@@ -621,7 +621,23 @@ where
             let no_firehose_preamble = 1;
 
             let data_string = match statedump.unknown_data_type {
-                0x1 => Statedump::parse_statedump_plist(&statedump.statedump_data),
+                // Check for binary plist (bplist)
+                0x1 if statedump.statedump_data.starts_with(b"bplist") => {
+                    Statedump::parse_statedump_plist(&statedump.statedump_data)
+                }
+                // plist could also just be plaintext
+                0x1 => {
+                    let results = extract_string(&statedump.statedump_data);
+                    match results {
+                        Ok((_, string_data)) => string_data,
+                        Err(err) => {
+                            error!(
+                                "[macos-unifiedlogs] Failed to extract plist string from statedump: {err:?}"
+                            );
+                            String::from("Failed to extract plist string from statedump")
+                        }
+                    }
+                }
                 0x2 => match extract_protobuf(&statedump.statedump_data) {
                     Ok(map) => serde_json::to_string(&map)
                         .unwrap_or(String::from("Failed to serialize Protobuf HashMap")),
