@@ -82,7 +82,11 @@ pub(crate) fn extract_string_size(data: &[u8], message_size: u64) -> nom::IResul
         Ok(results) => return Ok((input, results.trim_end_matches(char::from(0)).to_string())),
         Err(err) => error!("[macos-unifiedlogs] Failed to get specific string: {err:?}"),
     }
-    Ok((input, String::from("Could not find path string")))
+
+    Ok((
+        input,
+        String::from("[macos-unifiedlogs Could not extract string"),
+    ))
 }
 
 const NULL_BYTE: u8 = 0;
