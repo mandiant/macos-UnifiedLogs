@@ -6,7 +6,6 @@
 // See the License for the specific language governing permissions and limitations under the License.
 
 use chrono::{SecondsFormat, TimeZone, Utc};
-use log::{LevelFilter, debug, error, info, warn};
 use macos_unifiedlogs::cache::MemoryStringCache;
 use macos_unifiedlogs::filesystem::{LiveSystemProvider, LogarchiveProvider};
 use macos_unifiedlogs::iterator::UnifiedLogIterator;
@@ -14,15 +13,16 @@ use macos_unifiedlogs::parser::{build_log, collect_timesync, parse_log};
 use macos_unifiedlogs::timesync::TimesyncBoot;
 use macos_unifiedlogs::traits::{FileProvider, SourceFile, StringCache};
 use macos_unifiedlogs::unified_log::{LogData, UnifiedLogData};
-use simplelog::{ColorChoice, Config, TermLogger, TerminalMode};
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::Display;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use tracing::{debug, error, info, warn};
 
 use clap::{Parser, ValueEnum, builder};
 use csv::Writer;
@@ -36,8 +36,10 @@ extern "C" fn handle_sigint(_sig: libc::c_int) {
 }
 
 use crate::bookmark::Bookmark;
+use crate::logger::{VerbosityLevel, init_logging};
 
 mod bookmark;
+mod logger;
 
 struct IterationContext {
     missing_data: Vec<UnifiedLogData>,
@@ -155,6 +157,14 @@ struct Args {
     #[clap(short, long, default_value = "false")]
     append: bool,
 
+    /// Log verbosity level (off, error, warn, info, debug, trace)
+    #[clap(short, long, default_value_t = VerbosityLevel::Warn)]
+    verbosity_level: VerbosityLevel,
+
+    /// Path to JSONL file to write internal logs to
+    #[clap(long = "log-file", value_name = "FILE")]
+    log_file_path: Option<PathBuf>,
+
     /// Resume from last position using bookmark
     #[clap(long, default_value = "false")]
     resume: bool,
@@ -195,17 +205,24 @@ impl From<Format> for &str {
     }
 }
 
-fn main() {
-    TermLogger::init(
-        LevelFilter::Warn,
-        Config::default(),
-        TerminalMode::Stderr,
-        ColorChoice::Auto,
-    )
-    .expect("Failed to initialize simple logger");
+// We return ExitCode instead of calling std::process::exit() so that all
+// destructors run on scope exit. This guarantees the tracing WorkerGuard
+// flushes any buffered log events before the process terminates (SIGINT path).
+fn main() -> ExitCode {
+    let args = Args::parse();
+
+    let log_file_opt = args.log_file_path.as_deref();
+
+    let _log_guard = match init_logging(log_file_opt, args.verbosity_level) {
+        Ok(guard) => guard,
+        Err(e) => {
+            eprintln!("Failed to initialize logger: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+
     info!("Starting Unified Log parser...");
 
-    let args = Args::parse();
     let output_format = args.format;
 
     // Determine source ID for bookmark
@@ -310,7 +327,7 @@ fn main() {
                 );
             }
         }
-        std::process::exit(0);
+        return ExitCode::SUCCESS;
     }
 
     // Save bookmark on normal exit
@@ -332,6 +349,8 @@ fn main() {
     if let Err(e) = result {
         error!("Error during parsing: {e}");
     }
+
+    ExitCode::SUCCESS
 }
 
 fn parse_single_file(
@@ -590,7 +609,7 @@ fn parse_trace_file(
             {
                 return Err(BrokenPipeError);
             }
-            log::error!("Failed to output remaining log data: {err:?}");
+            error!("Failed to output remaining log data: {error}", error = err);
         }
     }
     info!("Parsed {log_count} log entries (skipped {skipped_count} older entries)");
@@ -609,7 +628,7 @@ fn iterate_chunks(
     let mut buf = Vec::new();
 
     if let Err(err) = reader.read_to_end(&mut buf) {
-        log::error!("Failed to read tracev3 file: {err:?}");
+        error!("Failed to read tracev3 file: {error}", error = err);
         return Ok((0, 0));
     }
 
@@ -657,7 +676,7 @@ fn iterate_chunks(
                 debug!("Broken pipe detected, saving bookmark before exit...");
                 return Err(BrokenPipeError);
             }
-            log::error!("Failed to output log data: {err:?}");
+            error!("Failed to output log data: {error}", error = err);
         }
 
         if missing_logs.catalog_data.is_empty()
