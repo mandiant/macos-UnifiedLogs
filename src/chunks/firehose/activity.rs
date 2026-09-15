@@ -1,3 +1,5 @@
+// Copyright 2022 Mandiant, Inc. All Rights Reserved
+
 use super::entry::FirehoseLogType;
 use super::flags::{FirehoseFlags, RawFormatterFlags};
 use nom::Parser;
