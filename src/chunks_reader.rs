@@ -15,22 +15,13 @@ pub struct RawChunk<'a> {
 
 #[derive(Debug)]
 pub struct RawChunksReader<'a> {
-    data: &'a [u8],
     input: &'a [u8],
     padding: usize,
 }
 
 impl<'a> RawChunksReader<'a> {
     pub fn new(input: &'a [u8]) -> Self {
-        Self {
-            data: input,
-            input,
-            padding: 8,
-        }
-    }
-
-    pub fn current_offset(&self) -> usize {
-        self.data.len() - self.input.len()
+        Self { input, padding: 8 }
     }
 }
 
