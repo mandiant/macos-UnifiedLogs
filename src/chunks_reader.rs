@@ -98,12 +98,14 @@ mod tests {
 
     #[test]
     fn read_not_a_tracev3() -> anyhow::Result<()> {
-        // todo: why does this work ?
         let test_data = test_data_path();
         let data = std::fs::read(test_data.join("Bad Data/TraceV3/00.tracev3"))?;
         let reader = RawChunksReader::new(&data);
-        let chunks = reader.collect::<Result<Vec<_>, _>>();
-        assert!(chunks.is_err());
+        let result = reader.collect::<Result<Vec<_>, _>>();
+        assert!(matches!(
+            result,
+            Err(ParseError::NomError { input, code: nom::error::ErrorKind::Eof }) if input == vec![108, 101]
+        ));
         Ok(())
     }
 
