@@ -254,21 +254,3 @@ fn check_flags(flag: u8) -> bool {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use crate::lzbitmap::lzbitmap_decompress;
-    use std::{fs, path::PathBuf};
-
-    // #[test]
-    fn test_decompress_lzbitmap() {
-        let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        test_path.push("tests/test_data/lzbitmap/lzbitmap_zbm.raw");
-
-        let buffer = fs::read(test_path).unwrap();
-
-        let (_, results) = lzbitmap_decompress(&buffer).unwrap();
-        assert!(results.starts_with(&[1, 96, 0, 0, 0, 0, 0, 0, 6, 16, 0, 0, 0, 0, 0, 0, 80, 2, 0]));
-        assert_eq!(results.len(), 65424);
-    }
-}
