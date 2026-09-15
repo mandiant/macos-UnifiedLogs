@@ -6,19 +6,22 @@
 // See the License for the specific language governing permissions and limitations under the License.
 
 use super::DecoderError;
-use crate::util::decode_standard;
+use crate::helpers::decode_standard;
+use uuid::Uuid;
 
 /// Get UUID string from log object
-pub(crate) fn parse_uuid(input: &str) -> Result<String, DecoderError<'_>> {
+pub(crate) fn parse_uuid(input: &str) -> Result<Uuid, DecoderError<'_>> {
     let decoded_data = decode_standard(input).map_err(|_| DecoderError::Parse {
         input: input.as_bytes(),
         parser_name: "parse uuid",
         message: "Failed to base64 decode uuid data",
     })?;
-
-    // Quick way to convert to UUID
-    let uuid_string = format!("{decoded_data:02X?}").replace([',', '[', ']', ' '], "");
-    Ok(uuid_string)
+    let uuid = Uuid::from_slice(&decoded_data).map_err(|_| DecoderError::Parse {
+        input: input.as_bytes(),
+        parser_name: "parse uuid",
+        message: "Failed to parse uuid from decoded data",
+    })?;
+    Ok(uuid)
 }
 
 #[cfg(test)]
@@ -29,6 +32,9 @@ mod tests {
     fn test_parse_uuid() {
         let test_data = "hZV+HTbETtKGqAZXvN3ikw==";
         let results = parse_uuid(test_data).unwrap();
-        assert_eq!(results, "85957E1D36C44ED286A80657BCDDE293")
+        assert_eq!(
+            results,
+            Uuid::parse_str("85957E1D36C44ED286A80657BCDDE293").unwrap()
+        );
     }
 }

@@ -1,0 +1,7 @@
+kind: Added
+body: |
+  `LogEntry.persona_id` exposes the firehose entry's persona ID (present when the
+  `HAS_PERSONA` flag 0x0040 is set), serialized as `persona_id` and emitted as a
+  `Persona ID` CSV column. Upstream keeps persona data internal, surfacing only
+  `HasPersona` in `message_flags`.
+time: 2026-09-08T00:00:01.000000000Z

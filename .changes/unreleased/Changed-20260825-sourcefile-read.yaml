@@ -1,0 +1,7 @@
+kind: Changed
+body: |
+  `SourceFile::reader(&mut self) -> impl Read` is replaced by `SourceFile::read(&self) -> io::Result<Vec<u8>>`:
+  every consumer read files whole, and returning a concrete `Vec<u8>` makes the trait object-safe
+  (`Box<dyn SourceFile>`), which the oversize cache relies on. Custom providers return the file
+  contents directly.
+time: 2026-08-25T00:00:06.000000000Z

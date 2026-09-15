@@ -1,0 +1,8 @@
+kind: Fixed
+body: |
+  Visiting a provider that yields no tracev3 file at all (wrong or unreadable path, archive
+  with mangled directory names, live system without permissions) now fails with
+  `io::ErrorKind::NotFound` instead of silently succeeding with zero entries. Directories
+  that cannot be read are logged (`warn` for permission/I/O errors, `debug` when merely absent)
+  instead of being skipped silently.
+time: 2026-08-25T00:00:03.000000000Z
