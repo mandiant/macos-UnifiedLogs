@@ -21,22 +21,14 @@ pub struct RawChunksReader<'a> {
 }
 
 impl<'a> RawChunksReader<'a> {
-    /// Create a reader over the entire contents of a tracev3 file, assuming 8-byte alignment.
-    pub fn new_top_level(input: &'a [u8]) -> Self {
-        Self::new(input, 8)
-    }
-    /// Create a reader over the inner contents of a chunkset, assuming 8-byte alignment.
-    pub fn new_chunckset(input: &'a [u8]) -> Self {
-        Self::new(input, 8)
-    }
-    fn new(input: &'a [u8], padding: usize) -> Self {
-        assert!(padding != 0, "Padding must be non-zero");
+    pub fn new(input: &'a [u8]) -> Self {
         Self {
             data: input,
             input,
-            padding,
+            padding: 8,
         }
     }
+
     pub fn current_offset(&self) -> usize {
         self.data.len() - self.input.len()
     }
@@ -88,7 +80,7 @@ mod tests {
     fn read_big_sur_catalog() -> anyhow::Result<()> {
         let test_data = test_data_path();
         let data = std::fs::read(test_data.join("Catalog Tests/big_sur_catalog.raw"))?;
-        let reader = RawChunksReader::new(&data, 8);
+        let reader = RawChunksReader::new(&data);
 
         let chunks = reader.collect::<Result<Vec<_>, _>>()?;
         assert_eq!(chunks.len(), 1);
@@ -101,7 +93,7 @@ mod tests {
     fn read_big_sur_chunkset() -> anyhow::Result<()> {
         let test_data = test_data_path();
         let data = std::fs::read(test_data.join("Chunkset Tests/big_sur_chunkset.raw"))?;
-        let reader = RawChunksReader::new(&data, 8);
+        let reader = RawChunksReader::new(&data);
 
         let chunks = reader.collect::<Result<Vec<_>, _>>()?;
         assert_eq!(chunks.len(), 26);
@@ -118,7 +110,7 @@ mod tests {
         // todo: why does this work ?
         let test_data = test_data_path();
         let data = std::fs::read(test_data.join("Bad Data/TraceV3/00.tracev3"))?;
-        let reader = RawChunksReader::new(&data, 8);
+        let reader = RawChunksReader::new(&data);
         let chunks = reader.collect::<Result<Vec<_>, _>>();
         assert!(chunks.is_err());
         Ok(())
@@ -131,7 +123,7 @@ mod tests {
         let data =
             std::fs::read(test_data.join("Bad Data/TraceV3/Bad_header_0000000000000005.tracev3"))?;
 
-        let reader = RawChunksReader::new(&data, 8);
+        let reader = RawChunksReader::new(&data);
         let chunks = reader.collect::<Result<Vec<_>, _>>()?;
         assert_eq!(chunks.len(), 251);
 

@@ -108,7 +108,7 @@ impl<'a> ChunksetPayload<'a> {
 
     /// Iterate over the inner chunks using `RawChunksReader` with 8-byte padding.
     pub fn inner_chunks(&self) -> RawChunksReader<'_> {
-        RawChunksReader::new_chunckset(self.as_bytes())
+        RawChunksReader::new(self.as_bytes())
     }
 }
 
@@ -263,7 +263,7 @@ mod tests {
 
         // This file is raw inner chunk data — test RawChunksReader on it directly
         // to confirm our inner_chunks() method would work the same way.
-        let reader = RawChunksReader::new_top_level(&data);
+        let reader = RawChunksReader::new(&data);
         let chunks: Vec<_> = reader.collect::<Result<Vec<_>, _>>()?;
         assert_eq!(chunks.len(), 26);
 
@@ -286,7 +286,7 @@ mod tests {
         let tracev3_path =
             test_data.join("system_logs_big_sur.logarchive/Persist/0000000000000004.tracev3");
         let file_data = std::fs::read(tracev3_path)?;
-        let reader = RawChunksReader::new_top_level(&file_data);
+        let reader = RawChunksReader::new(&file_data);
 
         let mut total_inner = 0;
         for chunk in reader {

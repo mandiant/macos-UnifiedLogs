@@ -44,7 +44,7 @@ pub struct ChunksReader<'a> {
 impl<'a> ChunksReader<'a> {
     pub fn new(input: &'a [u8]) -> Self {
         Self {
-            inner: RawChunksReader::new_top_level(input),
+            inner: RawChunksReader::new(input),
         }
     }
 }

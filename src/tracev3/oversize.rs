@@ -173,7 +173,7 @@ fn harvest_oversize(data: &[u8], cache: &OversizeCache<'_>) {
     // Boot of the chunks being read: a file holds one header chunk per boot,
     // each applying to the chunksets that follow it.
     let mut boot_uuid = Uuid::nil();
-    for raw in RawChunksReader::new_top_level(data) {
+    for raw in RawChunksReader::new(data) {
         let raw = match raw {
             Ok(r) => r,
             Err(e) => {
