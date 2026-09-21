@@ -434,9 +434,9 @@ pub(crate) fn permission(permissions: &str) -> super::decoder::Decoded {
     };
 
     let mut chars = permissions.chars();
-    let user = chars.next().map(&v).unwrap_or(0);
-    let owner = chars.next().map(&v).unwrap_or(0);
-    let group = chars.next().map(&v).unwrap_or(0);
+    let user = chars.next().map(v).unwrap_or(0);
+    let owner = chars.next().map(v).unwrap_or(0);
+    let group = chars.next().map(v).unwrap_or(0);
     super::decoder::Decoded::Permission(user, owner, group)
 }
 

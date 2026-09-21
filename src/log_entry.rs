@@ -278,7 +278,7 @@ impl<'a, 'b> LogEntry<'a, 'b> {
                 let _ = (count, start_time, end_time);
                 String::new()
             }
-            ItemsData::Simpledump { message, .. } => message.to_string(),
+            ItemsData::Simpledump { message, .. } => (*message).to_string(),
             ItemsData::Statedump {
                 title_name,
                 decoder_library,

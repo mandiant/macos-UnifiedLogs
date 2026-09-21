@@ -401,7 +401,7 @@ impl std::fmt::Display for SidDetails {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "S-{}-{}", self.revision, self.authority)?;
         for subauthority in &self.subauthorities {
-            write!(f, "-{}", subauthority)?;
+            write!(f, "-{subauthority}")?;
         }
         Ok(())
     }

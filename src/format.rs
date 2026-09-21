@@ -31,7 +31,7 @@ fn decode_annotation(annotation: &str, item: &RawFirehoseItem<'_>) -> Option<Str
     let value_str: String = match &item.value {
         RawItemValue::I64(n) => n.to_string(),
         RawItemValue::U64(n) => n.to_string(),
-        RawItemValue::Str(s) => s.to_string(),
+        RawItemValue::Str(s) => (*s).to_string(),
         RawItemValue::Bytes(b) => base64::engine::general_purpose::STANDARD.encode(b),
         RawItemValue::Private { .. } => return None,
         // Old pipeline calls decoders with empty string for size-0 items. Most decoders will fail
@@ -359,9 +359,9 @@ fn apply_hex_format(output: &mut String, n: i64, spec: &FormatSpec) {
 
     // Legacy quirk: both %x and %X produce uppercase hex
     let hex_str = if spec.alternate {
-        format!("0x{:X}", n)
+        format!("0x{n:X}")
     } else {
-        format!("{:X}", n)
+        format!("{n:X}")
     };
 
     let core = format!("{plus}{hex_str}");
@@ -373,7 +373,7 @@ fn apply_hex_format(output: &mut String, n: i64, spec: &FormatSpec) {
             if spec.alternate {
                 // Old pipeline bug: format!("{:0>#width$X}") zero-pads the entire
                 // string including the "0x" prefix from the left.
-                let hex_str_alt = format!("0x{:X}", n);
+                let hex_str_alt = format!("0x{n:X}");
                 for _ in 0..spec.width.saturating_sub(plus.len() + hex_str_alt.len()) {
                     output.push('0');
                 }
@@ -382,7 +382,7 @@ fn apply_hex_format(output: &mut String, n: i64, spec: &FormatSpec) {
                 for _ in 0..pad {
                     output.push('0');
                 }
-                let _ = write!(output, "{:X}", n);
+                let _ = write!(output, "{n:X}");
             }
         } else if spec.left_justify {
             output.push_str(&core);
@@ -507,7 +507,7 @@ fn legacy_natural_float(f: f64) -> String {
         .find('.')
         .map(|pos| initial.len() - pos - 1)
         .unwrap_or(0);
-    format!("{f:.prec$}", prec = decimal_digits)
+    format!("{f:.decimal_digits$}")
 }
 
 // ---------------------------------------------------------------------------
@@ -904,7 +904,7 @@ fn extract_signpost_metadata(annotation: &str) -> String {
 
 fn item_to_string(item: &RawFirehoseItem<'_>) -> String {
     match &item.value {
-        RawItemValue::Str(s) => s.to_string(),
+        RawItemValue::Str(s) => (*s).to_string(),
         RawItemValue::I64(n) => n.to_string(),
         RawItemValue::U64(n) => n.to_string(),
         RawItemValue::Bytes(b) => String::from_utf8_lossy(b).into_owned(),
