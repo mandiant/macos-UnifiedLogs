@@ -347,18 +347,18 @@ fn format_backtrace(data: &[u8]) -> String {
         return String::new();
     }
 
-    let uuids: Vec<u128> = (0..uuid_count)
-        .map(|i| {
-            let s = uuid_start + i * 16;
-            u128::from_be_bytes(data[s..s + 16].try_into().unwrap())
-        })
+    let (uuid_chunks, _) = data[uuid_start..uuid_end].as_chunks::<16>();
+    let uuids: Vec<u128> = uuid_chunks
+        .iter()
+        .copied()
+        .map(u128::from_be_bytes)
         .collect();
 
-    let offsets: Vec<u32> = (0..offset_count)
-        .map(|i| {
-            let s = uuid_end + i * 4;
-            u32::from_le_bytes(data[s..s + 4].try_into().unwrap())
-        })
+    let (offset_chunks, _) = data[uuid_end..offsets_end].as_chunks::<4>();
+    let offsets: Vec<u32> = offset_chunks
+        .iter()
+        .copied()
+        .map(u32::from_le_bytes)
         .collect();
 
     let indexes = &data[offsets_end..indexes_end];
