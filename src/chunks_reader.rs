@@ -118,13 +118,21 @@ mod tests {
 
     #[test]
     fn read_bad_header() -> anyhow::Result<()> {
-        // todo: why does this work ?
         let test_data = test_data_path();
         let data =
             std::fs::read(test_data.join("Bad Data/TraceV3/Bad_header_0000000000000005.tracev3"))?;
 
         let reader = RawChunksReader::new(&data);
         let chunks = reader.collect::<Result<Vec<_>, _>>()?;
+
+        assert_eq!(chunks[0].preamble.tag, ChunkTag::Unknown); // <- bad header, don't prevent the rest of the chunks from being read
+
+        assert_eq!(chunks[1].preamble.tag, ChunkTag::Catalog);
+        assert_eq!(chunks[2].preamble.tag, ChunkTag::Chunkset);
+        assert_eq!(chunks[3].preamble.tag, ChunkTag::Chunkset);
+        assert_eq!(chunks[4].preamble.tag, ChunkTag::Chunkset);
+        assert_eq!(chunks[5].preamble.tag, ChunkTag::Chunkset);
+        assert_eq!(chunks[6].preamble.tag, ChunkTag::Catalog);
         assert_eq!(chunks.len(), 251);
 
         Ok(())
