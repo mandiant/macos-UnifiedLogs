@@ -751,76 +751,76 @@ fn emit_embedded_unknown_markers<'a: 'b, 'b>(
 ) -> ControlFlow<()> {
     const HEADER_SIZE: usize = 24;
 
-    let public_data = fh.public_data();
-    for (pos, marker) in public_data.windows(HEADER_SIZE).enumerate() {
-        if pos + HEADER_SIZE != public_data.len() {
-            continue;
-        }
+    let Some(marker) = fh.public_data().last_chunk::<HEADER_SIZE>() else {
+        return ControlFlow::Continue(());
+    };
 
-        if marker[0] != 0x96
-            || marker[1] != 0x9b
-            || marker[2..8] != [0; 6]
-            || marker[22..24] != [0; 2]
-        {
-            continue;
-        }
+    // 0x96 0x9b magic, six reserved zero bytes, then the thread id, the
+    // continuous time delta and its upper half, then two reserved zero bytes.
+    #[rustfmt::skip]
+    let &[
+        0x96, 0x9b, 0, 0, 0, 0, 0, 0,
+        t0, t1, t2, t3, t4, t5, t6, t7,
+        d0, d1, d2, d3,
+        u0, u1,
+        0, 0,
+    ] = marker else {
+        return ControlFlow::Continue(());
+    };
 
-        let thread_id = u64::from_le_bytes(marker[8..16].try_into().expect("slice length checked"));
-        let continuous_time_delta =
-            u32::from_le_bytes(marker[16..20].try_into().expect("slice length checked"));
-        let continuous_time_delta_upper =
-            u16::from_le_bytes(marker[20..22].try_into().expect("slice length checked"));
+    let thread_id = u64::from_le_bytes([t0, t1, t2, t3, t4, t5, t6, t7]);
+    let continuous_time_delta = u32::from_le_bytes([d0, d1, d2, d3]);
+    let continuous_time_delta_upper = u16::from_le_bytes([u0, u1]);
 
-        if emitted_unknown_markers.iter().any(|seen| {
-            *seen
-                == (
-                    thread_id,
-                    continuous_time_delta,
-                    continuous_time_delta_upper,
-                )
-        }) {
-            continue;
-        }
-
-        let abs_ct = fh.base_continuous_time
-            + (u64::from(continuous_time_delta_upper) << 32)
-            + u64::from(continuous_time_delta);
-        let time = resolver.resolve(&boot_uuid, abs_ct, fh.base_continuous_time);
-        let pid = catalog
-            .get_pid(fh.first_proc_id, fh.second_proc_id)
-            .unwrap_or(0);
-        let euid = catalog
-            .get_euid(fh.first_proc_id, fh.second_proc_id)
-            .unwrap_or(0);
-
-        callback(LogEntry {
-            subsystem: None,
-            category: None,
-            thread_id,
-            pid,
-            euid,
-            persona_id: None,
-            library: None,
-            library_uuid: Uuid::nil(),
-            activity_id: 0,
-            parent_activity_id: None,
-            time,
-            event_type: EventType::Unknown,
-            log_type: LogType::Default,
-            process: None,
-            process_uuid: Uuid::nil(),
-            format_string: None,
-            boot_uuid,
-            timezone_name,
-            evidence: Rc::clone(evidence),
-            message_flags: Vec::new(),
-            items: ItemsData::None,
-            signpost_id: 0,
-            signpost_name: 0,
-            resolved_message: RefCell::new(Some(Rc::new(String::new()))),
-            format_string_error: None,
-        })?;
+    if emitted_unknown_markers.iter().any(|seen| {
+        *seen
+            == (
+                thread_id,
+                continuous_time_delta,
+                continuous_time_delta_upper,
+            )
+    }) {
+        return ControlFlow::Continue(());
     }
+
+    let abs_ct = fh.base_continuous_time
+        + (u64::from(continuous_time_delta_upper) << 32)
+        + u64::from(continuous_time_delta);
+    let time = resolver.resolve(&boot_uuid, abs_ct, fh.base_continuous_time);
+    let pid = catalog
+        .get_pid(fh.first_proc_id, fh.second_proc_id)
+        .unwrap_or(0);
+    let euid = catalog
+        .get_euid(fh.first_proc_id, fh.second_proc_id)
+        .unwrap_or(0);
+
+    callback(LogEntry {
+        subsystem: None,
+        category: None,
+        thread_id,
+        pid,
+        euid,
+        persona_id: None,
+        library: None,
+        library_uuid: Uuid::nil(),
+        activity_id: 0,
+        parent_activity_id: None,
+        time,
+        event_type: EventType::Unknown,
+        log_type: LogType::Default,
+        process: None,
+        process_uuid: Uuid::nil(),
+        format_string: None,
+        boot_uuid,
+        timezone_name,
+        evidence: Rc::clone(evidence),
+        message_flags: Vec::new(),
+        items: ItemsData::None,
+        signpost_id: 0,
+        signpost_name: 0,
+        resolved_message: RefCell::new(Some(Rc::new(String::new()))),
+        format_string_error: None,
+    })?;
     ControlFlow::Continue(())
 }
 
