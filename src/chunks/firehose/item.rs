@@ -204,6 +204,10 @@ pub fn parse_items_data<'a>(
                 input = rest;
             }
             RawItemKind::Unknown => {
+                log::warn!(
+                    "Unknown item_type '{item_type:#04x}' with size {item_size}. Remaining bytes: {}",
+                    rest.len()
+                );
                 // Best-effort: treat like a number (inline data).
                 if item_size > 0 {
                     let take_size = (item_size as usize).min(rest.len());
