@@ -1,0 +1,7 @@
+kind: Changed
+body: |
+  Visit callbacks may now return `std::ops::ControlFlow` to stop a visit early, mid-file included
+  (plain `()`-returning closures work unchanged via the new `VisitOutcome` trait).
+  `unifiedlog_iterator` uses this to honor Ctrl-C and broken pipes per entry instead of per file.
+  `visit_tracev3` now returns `Result<ControlFlow<()>, ParseError>` so drivers can observe the early stop.
+time: 2026-08-24T00:00:02.000000000Z

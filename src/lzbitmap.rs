@@ -1,3 +1,10 @@
+// Copyright 2022 Mandiant, Inc. All Rights Reserved
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software distributed under the License
+// is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and limitations under the License.
+
 /// Heavily influenced by <https://github.com/fox-it/dissect.util/blob/main/dissect/util/compression/lzbitmap.py> -- Apache license
 use log::{error, warn};
 use nom::{
@@ -252,23 +259,5 @@ fn check_flags(flag: u8) -> bool {
             error!("[macos-unifiedlogs] Got unsupported flag {flag}");
             false
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::lzbitmap::lzbitmap_decompress;
-    use std::{fs, path::PathBuf};
-
-    // #[test]
-    fn test_decompress_lzbitmap() {
-        let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        test_path.push("tests/test_data/lzbitmap/lzbitmap_zbm.raw");
-
-        let buffer = fs::read(test_path).unwrap();
-
-        let (_, results) = lzbitmap_decompress(&buffer).unwrap();
-        assert!(results.starts_with(&[1, 96, 0, 0, 0, 0, 0, 0, 6, 16, 0, 0, 0, 0, 0, 0, 80, 2, 0]));
-        assert_eq!(results.len(), 65424);
     }
 }

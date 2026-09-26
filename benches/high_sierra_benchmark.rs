@@ -7,70 +7,55 @@
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use macos_unifiedlogs::{
-    cache::MemoryStringCache,
+    cache::{StringCatalog, StringStorage},
     filesystem::LogarchiveProvider,
-    parser::{build_log, collect_timesync, parse_log},
-    timesync::TimesyncBoot,
-    traits::{FileProvider, StringCache},
-    unified_log::UnifiedLogData,
+    logarchive::load_timesync_data,
+    timesync::TimestampResolver,
+    tracev3::{OversizeCache, visit_tracev3},
+    traits::FileProvider,
 };
-use std::{collections::HashMap, fs::File, path::PathBuf};
+use std::{path::PathBuf, rc::Rc};
 
-fn high_sierra_parse_log(path: &str) {
-    let handle = File::open(PathBuf::from(path).as_path()).unwrap();
-    let _ = parse_log(handle, path).unwrap();
-}
-
-fn bench_build_log(
-    log_data: &UnifiedLogData,
-    provider: &impl FileProvider,
-    cache: &impl StringCache,
-    timesync_data: &HashMap<String, TimesyncBoot>,
-    exclude_missing: bool,
+fn visit_file(
+    data: &[u8],
+    resolver: &TimestampResolver,
+    strings: &StringCatalog<'_, impl FileProvider>,
+    evidence: &Rc<PathBuf>,
+    format_messages: bool,
 ) {
-    let (_, _) = build_log(log_data, provider, cache, timesync_data, exclude_missing);
-}
-
-fn high_sierra_single_log_benchpress(c: &mut Criterion) {
-    let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    test_path.push(
-        "tests/test_data/system_logs_high_sierra.logarchive/Persist/0000000000000002.tracev3",
+    let oversize_cache = OversizeCache::new();
+    let _ = visit_tracev3(
+        data,
+        resolver,
+        strings,
+        &oversize_cache,
+        Rc::clone(evidence),
+        |entry| {
+            if format_messages {
+                let _ = entry.message();
+            }
+        },
     );
+}
 
-    c.bench_function("Benching Parsing One High Sierra Log", |b| {
-        b.iter(|| high_sierra_parse_log(&test_path.display().to_string()));
+fn high_sierra_benchmark(c: &mut Criterion) {
+    let mut archive = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    archive.push("tests/test_data/system_logs_high_sierra.logarchive");
+    let provider = LogarchiveProvider::new(&archive);
+    let resolver = TimestampResolver::new(load_timesync_data(&provider).unwrap());
+    let storage = StringStorage::new(&provider);
+    let strings = StringCatalog::new(&storage);
+    let file = archive.join("Persist/0000000000000002.tracev3");
+    let data = std::fs::read(&file).unwrap();
+    let evidence = Rc::new(file);
+
+    c.bench_function("Visit One High Sierra Log (resolve only)", |b| {
+        b.iter(|| visit_file(&data, &resolver, &strings, &evidence, false));
+    });
+    c.bench_function("Visit One High Sierra Log (format messages)", |b| {
+        b.iter(|| visit_file(&data, &resolver, &strings, &evidence, true));
     });
 }
 
-fn high_sierra_build_log_benchbress(c: &mut Criterion) {
-    let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    test_path.push("tests/test_data/system_logs_high_sierra.logarchive");
-    let provider = LogarchiveProvider::new(test_path.as_path());
-    let cache = MemoryStringCache::default();
-    let timesync_data = collect_timesync(&provider).unwrap();
-
-    test_path.push("Persist/0000000000000002.tracev3");
-    let exclude_missing = false;
-    let handle = File::open(test_path.as_path()).unwrap();
-
-    let log_data = parse_log(handle, test_path.to_str().unwrap()).unwrap();
-
-    c.bench_function("Benching Building One High Sierra Log", |b| {
-        b.iter(|| {
-            bench_build_log(
-                &log_data,
-                &provider,
-                &cache,
-                &timesync_data,
-                exclude_missing,
-            );
-        });
-    });
-}
-
-criterion_group!(
-    benches,
-    high_sierra_single_log_benchpress,
-    high_sierra_build_log_benchbress
-);
+criterion_group!(benches, high_sierra_benchmark);
 criterion_main!(benches);
