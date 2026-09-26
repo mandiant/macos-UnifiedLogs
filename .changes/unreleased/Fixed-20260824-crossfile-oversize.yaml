@@ -1,0 +1,8 @@
+kind: Fixed
+body: |
+  Oversize payloads referenced across tracev3 files now always resolve: files are visited chronologically (by header start time) 
+  so payloads are usually seen before the entries referencing them, 
+  and a lazy on-miss harvester scans not-yet-visited files one at a time for the remaining backward references. 
+  Entries that previously emitted `<Missing message data>` because their payload lived in a later file now render fully, in order. 
+  Only payloads genuinely absent from the archive (rolled logs) remain missing.
+time: 2026-08-24T00:00:01.000000000Z
