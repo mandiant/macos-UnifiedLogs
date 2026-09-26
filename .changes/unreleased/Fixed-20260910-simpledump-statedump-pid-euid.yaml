@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  Simpledump and Statedump entries reported the Catalog proc id key as their `pid`,
+  and Simpledump additionally hardcoded `euid` to 0, showing every such entry as
+  running as root. Both now read the real PID and euid from the Catalog process
+  info entry, matching the firehose entry types.
+time: 2026-09-10T00:00:00.000000000Z

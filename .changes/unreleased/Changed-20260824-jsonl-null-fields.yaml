@@ -1,0 +1,3 @@
+kind: Changed
+body: 'JSONL output: absent string fields (subsystem, category, library, process) are now serialized as `null` instead of `""`, distinguishing "field absent from the log entry" from "field present but empty". Consumers filtering on empty strings (e.g. `jq ''select(.subsystem == "")''`) should filter on `null` instead. CSV output is unaffected (absent fields remain empty).'
+time: 2026-08-24T00:00:00.000000000Z

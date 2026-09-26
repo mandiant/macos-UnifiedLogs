@@ -1,2 +1,3 @@
 [workspace]
+resolver = "3"
 members = ["unifiedlog_iterator"]

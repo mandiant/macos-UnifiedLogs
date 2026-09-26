@@ -1,0 +1,7 @@
+kind: Changed
+body: |
+  Dependency trim: `walkdir` and the `uuid/v4` feature (which pulled `getrandom` into every
+  consumer's build) are dropped, and `regex` moves to dev-dependencies. `visit_tracev3` returns
+  `ControlFlow<()>` directly since it has no failure path; the helpers
+  `visit_logarchive_tracev3_file(s)` return `io::Result<()>`.
+time: 2026-08-25T00:00:08.000000000Z

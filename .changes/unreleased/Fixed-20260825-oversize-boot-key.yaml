@@ -1,0 +1,8 @@
+kind: Fixed
+body: |
+  Oversize payloads are now keyed by the boot UUID of their enclosing header chunk in
+  addition to `(data_ref_index, first_proc_id, second_proc_id)`. Those three are per-boot
+  counters, so an early-boot daemon of one boot could be served the oversize payload of the
+  same daemon from an earlier boot in multi-boot archives (4 of ~14,800 oversize lookups
+  across the test archives rendered another boot's text).
+time: 2026-08-25T00:00:02.000000000Z

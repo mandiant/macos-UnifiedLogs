@@ -1,7 +1,13 @@
 */target
+**/target
 /target
 Cargo.lock
+mise.local.toml
 *.DS_Store
 *.logarchive
 test*.zip
 tests/test_data
+*dump*.txt
+AGENTS.md
+CLAUDE.md
+mise.toml

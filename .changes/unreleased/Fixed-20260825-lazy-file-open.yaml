@@ -1,0 +1,6 @@
+kind: Fixed
+body: |
+  tracev3 and timesync files are opened only while they are being read instead of at
+  enumeration, so an archive or live system with thousands of files no longer risks the
+  per-process open-file limit.
+time: 2026-08-25T00:00:05.000000000Z

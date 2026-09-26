@@ -1,0 +1,8 @@
+kind: Fixed
+body: |
+  Message formatting no longer leaks one heap allocation per private string item
+  (`fill_private_data` used `Box::leak` to fit an owned `String` into the zero-copy item
+  representation). Private strings are now borrowed from the chunk like every other item,
+  so long-running consumers no longer grow unboundedly. The unused non-compat
+  `fill_private_data` variant was folded into the single production one.
+time: 2026-08-25T00:00:01.000000000Z
