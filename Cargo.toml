@@ -9,6 +9,15 @@ description = "A library to help parse macOS UnifiedLogs"
 keywords = ["forensics", "macOS", "unifiedlog"]
 rust-version = "1.88"
 
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy] # see also clippy lints configurations in file : `clippy.toml`
+unwrap_used = "deny"
+expect_used = "deny"
+indexing_slicing = "deny"
+panic = "deny"
+
 [dependencies]
 nom = "8.0.0"
 serde_json = "1.0.151"
