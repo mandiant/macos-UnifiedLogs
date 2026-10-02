@@ -119,13 +119,11 @@ impl<'a> RawFirehoseEntry<'a> {
         let (input, data_size) = le_u16(input)?;
 
         let data_len = data_size as usize;
-        if input.len() < data_len {
+        let Some((entry_data, input)) = input.split_at_checked(data_len) else {
             return Err(nom::Err::Incomplete(nom::Needed::new(
                 data_len - input.len(),
             )));
-        }
-        let entry_data = &input[..data_len];
-        let input = &input[data_len..];
+        };
 
         Ok((
             input,
@@ -174,7 +172,7 @@ impl<'a> Iterator for RawFirehoseEntryReader<'a> {
         }
 
         // Peek at raw log_activity_type byte — 0x0 means end of entries
-        if self.data[0] == REMNANT_DATA {
+        if self.data.first() == Some(&REMNANT_DATA) {
             return None;
         }
 
@@ -192,7 +190,7 @@ impl<'a> Iterator for RawFirehoseEntryReader<'a> {
                 } else {
                     padding
                 };
-                self.data = &remaining[skip..];
+                self.data = remaining.get(skip..).unwrap_or_default();
                 entry
             }
             Err(_) => return None,

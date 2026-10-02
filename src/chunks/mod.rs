@@ -131,29 +131,29 @@ impl<'a> ChunksetPayload<'a> {
         match signature {
             BV41_UNCOMPRESSED => {
                 let size = uncompressed_size as usize;
-                if input.len() < size {
+                let Some(payload) = input.get(..size) else {
                     return Err(ParseError::unexpected_eof(
                         8,
                         size,
                         input.len(),
                         Some("chunkset uncompressed payload"),
                     ));
-                }
-                Ok(ChunksetPayload::Uncompressed(&input[..size]))
+                };
+                Ok(ChunksetPayload::Uncompressed(payload))
             }
             BV41_COMPRESSED => {
                 let (input, compressed_size) =
                     le_u32::<_, nom::error::Error<&[u8]>>(input).map_err(|e| e.to_parse_error())?;
                 let size = compressed_size as usize;
-                if input.len() < size {
+                let Some(payload) = input.get(..size) else {
                     return Err(ParseError::unexpected_eof(
                         12,
                         size,
                         input.len(),
                         Some("chunkset compressed payload"),
                     ));
-                }
-                let decompressed = lz4_flex::decompress(&input[..size], uncompressed_size as usize)
+                };
+                let decompressed = lz4_flex::decompress(payload, uncompressed_size as usize)
                     .map_err(|e| {
                         ParseError::decompress_error(
                             0,

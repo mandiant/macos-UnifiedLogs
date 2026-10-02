@@ -5,6 +5,7 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
+use crate::helpers::take_array;
 use log::warn;
 use nom::{
     bytes::complete::take,
@@ -39,8 +40,7 @@ impl<'a> RawOversize<'a> {
         let (input, first_proc_id) = le_u64(input)?;
         let (input, second_proc_id) = le_u32(input)?;
         let (input, ttl) = le_u8(input)?;
-        let (input, reserved_bytes) = take(3_usize)(input)?;
-        let reserved: [u8; 3] = [reserved_bytes[0], reserved_bytes[1], reserved_bytes[2]];
+        let (input, reserved) = take_array::<3>(input)?;
         let (input, continuous_time) = le_u64(input)?;
         let (input, data_ref_index) = le_u32(input)?;
         let (input, public_data_size) = le_u16(input)?;

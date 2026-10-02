@@ -5,7 +5,7 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-use crate::helpers::utf8_str_from_cstring;
+use crate::helpers::{take_array, utf8_str_from_cstring};
 use nom::{
     bytes::complete::take,
     number::complete::{be_u128, le_u8, le_u32, le_u64},
@@ -41,8 +41,7 @@ impl<'a> RawStatedump<'a> {
         let (input, first_proc_id) = le_u64(input)?;
         let (input, second_proc_id) = le_u32(input)?;
         let (input, ttl) = le_u8(input)?;
-        let (input, reserved_bytes) = take(3_usize)(input)?;
-        let unknown_reserved: [u8; 3] = [reserved_bytes[0], reserved_bytes[1], reserved_bytes[2]];
+        let (input, unknown_reserved) = take_array::<3>(input)?;
         let (input, continuous_time) = le_u64(input)?;
         let (input, activity_id) = le_u64(input)?;
 
