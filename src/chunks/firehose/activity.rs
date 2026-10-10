@@ -48,8 +48,10 @@ impl<'a> RawActivityBody<'a> {
             (le_u32, le_u32),
         )
         .parse(input)?;
+
         let (input, persona_id) =
             cond(flags.contains(FirehoseFlags::HAS_PERSONA), le_u32).parse(input)?;
+
         // In Activity entries, HAS_SUBSYSTEM means "has other activity ID"
         let (input, other_aid) = cond(
             flags.contains(FirehoseFlags::HAS_SUBSYSTEM),
@@ -83,8 +85,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_activity_body() -> anyhow::Result<()> {
-        // From src/chunks/firehose/activity.rs test_parse_activity
+    fn test_activity_body() {
         let test_data: &[u8] = &[
             178, 251, 0, 0, 0, 0, 0, 128, 236, 0, 0, 0, 0, 0, 0, 0, 178, 251, 0, 0, 0, 0, 0, 128,
             179, 251, 0, 0, 0, 0, 0, 128, 64, 63, 24, 18, 1, 0, 2, 0,
@@ -113,11 +114,10 @@ mod tests {
         assert_eq!(activity.formatter.alt_index, 0);
         assert_eq!(activity.formatter.uuid_relative, [0; 16]);
         assert!(activity.items_data.is_empty());
-        Ok(())
     }
 
     #[test]
-    fn test_activity_parse_items() -> anyhow::Result<()> {
+    fn test_activity_parse_items() {
         let test_data: &[u8] = &[
             178, 251, 0, 0, 0, 0, 0, 128, 236, 0, 0, 0, 0, 0, 0, 0, 178, 251, 0, 0, 0, 0, 0, 128,
             179, 251, 0, 0, 0, 0, 0, 128, 64, 63, 24, 18, 1, 0, 2, 0,
@@ -130,6 +130,5 @@ mod tests {
                 .unwrap();
         let result = body.parse_items(flags).unwrap();
         assert_eq!(result.items.len(), 0);
-        Ok(())
     }
 }

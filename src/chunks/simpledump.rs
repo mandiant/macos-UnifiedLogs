@@ -21,16 +21,22 @@ use uuid::Uuid;
 /// already parsed by `RawChunksReader` into `RawChunk.preamble`).
 #[derive(Debug, Clone)]
 pub struct RawSimpleDump<'a> {
+    /// First Proc ID value
+    ///
+    /// Used for lookups in the `Catalog`
     pub first_proc_id: u64,
+    /// Second Proc ID value
+    ///
+    /// Used for lookups in the `Catalog`
     pub second_proc_id: u64,
     pub continuous_time: u64,
     pub thread_id: u64,
-    pub unknown_offset: u32,
-    pub unknown_ttl: u16,
+    pub offset: u32,
+    pub ttl: u16,
     pub unknown_type: u16,
     pub sender_uuid: Uuid,
     pub dsc_uuid: Uuid,
-    pub unknown_number_message_strings: u32,
+    pub number_message_strings: u32,
     pub subsystem: &'a str,
     pub message_string: &'a str,
 }
@@ -42,8 +48,8 @@ impl<'a> RawSimpleDump<'a> {
         let (input, second_proc_id) = le_u64(input)?;
         let (input, continuous_time) = le_u64(input)?;
         let (input, thread_id) = le_u64(input)?;
-        let (input, unknown_offset) = le_u32(input)?;
-        let (input, unknown_ttl) = le_u16(input)?;
+        let (input, offset) = le_u32(input)?;
+        let (input, ttl) = le_u16(input)?;
         let (input, unknown_type) = le_u16(input)?;
 
         let (input, sender_uuid_raw) = be_u128(input)?;
@@ -51,7 +57,7 @@ impl<'a> RawSimpleDump<'a> {
         let (input, dsc_uuid_raw) = be_u128(input)?;
         let dsc_uuid = Uuid::from_u128(dsc_uuid_raw);
 
-        let (input, unknown_number_message_strings) = le_u32(input)?;
+        let (input, number_message_strings) = le_u32(input)?;
         let (input, subsystem_size) = le_u32(input)?;
         let (input, message_size) = le_u32(input)?;
 
@@ -68,12 +74,12 @@ impl<'a> RawSimpleDump<'a> {
                 second_proc_id,
                 continuous_time,
                 thread_id,
-                unknown_offset,
-                unknown_ttl,
+                offset,
+                ttl,
                 unknown_type,
                 sender_uuid,
                 dsc_uuid,
-                unknown_number_message_strings,
+                number_message_strings,
                 subsystem,
                 message_string,
             },
@@ -87,7 +93,6 @@ mod tests {
 
     #[test]
     fn test_parse_simpledump() -> anyhow::Result<()> {
-        // Full test vector from original src/chunks/simpledump.rs.
         let full_data = [
             4, 96, 0, 0, 0, 0, 0, 0, 219, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0,
             0, 0, 0, 0, 45, 182, 196, 71, 133, 4, 0, 0, 3, 234, 0, 0, 0, 0, 0, 0, 118, 118, 1, 0,
@@ -111,8 +116,9 @@ mod tests {
         assert_eq!(result.second_proc_id, 1);
         assert_eq!(result.continuous_time, 4_970_481_235_501);
         assert_eq!(result.thread_id, 59907);
-        assert_eq!(result.unknown_offset, 95862);
-        assert_eq!(result.unknown_ttl, 0);
+        assert_eq!(result.offset, 95862);
+
+        assert_eq!(result.ttl, 0);
         assert_eq!(result.unknown_type, 0);
         assert_eq!(
             result.sender_uuid,
@@ -122,7 +128,7 @@ mod tests {
             result.dsc_uuid,
             Uuid::parse_str("3D05845F3F65358F9EBF2236E772AC01")?
         );
-        assert_eq!(result.unknown_number_message_strings, 1);
+        assert_eq!(result.number_message_strings, 1);
         assert_eq!(
             result.subsystem,
             "user/501/com.apple.mdworker.shared.0B000000-0000-0000-0000-000000000000 [4229]"
@@ -131,6 +137,7 @@ mod tests {
             result.message_string,
             "service exited: dirty = 0, supported pressured-exit = 1"
         );
+
         // Trailing padding bytes remain
         assert!(remaining.iter().all(|&b| b == 0));
         Ok(())

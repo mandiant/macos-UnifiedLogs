@@ -6,11 +6,11 @@
 // See the License for the specific language governing permissions and limitations under the License.
 
 use crate::helpers::take_array;
-use log::warn;
 use nom::{
     bytes::complete::take,
     number::complete::{le_u8, le_u16, le_u32, le_u64},
 };
+use tracing::warn;
 
 /// Parsed oversize chunk — carries strings too large for regular Firehose entries.
 ///
@@ -50,7 +50,7 @@ impl<'a> RawOversize<'a> {
             (u32::from(public_data_size) + u32::from(private_data_size)) as usize;
         if oversize_data_size > input.len() {
             warn!(
-                "[macos-unifiedlogs] Oversize data size ({oversize_data_size}) greater than remaining input ({}). Using remaining input size",
+                "Oversize data size ({oversize_data_size}) greater than remaining input ({}). Using remaining input size",
                 input.len()
             );
             oversize_data_size = input.len();

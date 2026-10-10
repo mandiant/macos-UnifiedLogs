@@ -11,6 +11,7 @@ use nom::{
         be_u8, be_u16, be_u32, be_u64, le_i8, le_i16, le_i32, le_i64, le_u8, le_u16,
     },
 };
+use tracing::warn;
 
 use super::super::super::helpers::{extract_string_size, padding_size, utf8_str_sized};
 use super::flags::FirehoseFlags;
@@ -204,7 +205,7 @@ pub fn parse_items_data<'a>(
                 input = rest;
             }
             RawItemKind::Unknown => {
-                log::warn!(
+                warn!(
                     "Unknown item_type '{item_type:#04x}' with size {item_size}. Remaining bytes: {}",
                     rest.len()
                 );
@@ -334,7 +335,7 @@ fn parse_trace_items_inner(data: &[u8]) -> nom::IResult<&[u8], Vec<RawFirehoseIt
                 RawItemValue::U64(v)
             }
             _ => {
-                log::warn!("Unhandled trace item size: {entry_size}. Defaulting to size 1.");
+                warn!("Unhandled trace item size: {entry_size}. Defaulting to size 1.");
                 let (_, v) = le_u8(msg_data)?;
                 RawItemValue::I64(i64::from(v))
             }
@@ -373,7 +374,7 @@ fn parse_item_number(data: &[u8], item_size: u16) -> nom::IResult<&[u8], RawItem
             Ok((rest, RawItemValue::I64(v)))
         }
         _ => {
-            log::warn!("Unknown number item size: {item_size}");
+            warn!("Unknown number item size: {item_size}");
             Ok((data, RawItemValue::I64(-9999)))
         }
     }
@@ -693,11 +694,8 @@ mod tests {
         Ok(())
     }
 
-    // --- fill_private_data tests (ported from old firehose_log.rs) ---
-
     #[test]
     fn test_fill_private_data_private_string() {
-        // From src/chunks/firehose/firehose_log.rs test_parse_private_data.
         // Raw item_type 0x21 (PrivateString), item_size 161. Private data is a
         // UTF-8 string starting with "<SZExtractor<0x15780ee60>...".
         let test_data: &[u8] = &[
@@ -756,7 +754,6 @@ mod tests {
 
     #[test]
     fn test_fill_private_data_private_number() {
-        // From src/chunks/firehose/firehose_log.rs test_parse_private_number_data.
         // Raw item_type 0x01 (PrivateNumber), item_size 8. Private data is 8 bytes
         // that parse as a little-endian i64.
         let test_data: &[u8] = &[60, 83, 90, 69, 120, 116, 114, 97];
@@ -779,7 +776,6 @@ mod tests {
 
     #[test]
     fn test_fill_private_data_mixed() {
-        // From src/chunks/firehose/firehose_log.rs test_firehose_private_number_string.
         // 5 items with mixed private types: only the 0x81 (PrivateString, size=140)
         // should be filled with the RTErrorDomain string; the others stay Private
         // (Sensitive 0x45, PrivateNumber 0x01 with size 0x8000, PrivateObject 0x41

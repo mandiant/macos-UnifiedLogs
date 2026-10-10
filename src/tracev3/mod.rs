@@ -24,11 +24,11 @@ use super::log_entry::{EventType, ItemsData, LogEntry, LogType, MessageFlags, Pr
 use super::resolve::{main_process, resolve_strings};
 use super::timesync::TimestampResolver;
 use super::traits::{FileProvider, VisitOutcome};
-use log::warn;
 use std::cell::RefCell;
 use std::ops::ControlFlow;
 use std::path::PathBuf;
 use std::rc::Rc;
+use tracing::warn;
 use uuid::Uuid;
 
 mod oversize;
@@ -199,9 +199,10 @@ pub fn visit_tracev3<'d, 's: 'd, O: VisitOutcome>(
 // ---------------------------------------------------------------------------
 
 /// Flush deferred chunkset readers, emitting all simpledump entries first,
-/// then all statedump entries. This matches the legacy per-catalog ordering:
+/// then all statedump entries.
+///
+/// This matches the legacy per-catalog ordering:
 /// all firehose → all simpledump → all statedump within each catalog.
-#[allow(clippy::too_many_arguments)]
 fn flush_deferred_entries<'d, 's: 'd>(
     deferred_readers: &mut Vec<ChunkSetReader<'d>>,
     current_header: &Option<RawHeaderChunk<'d>>,
