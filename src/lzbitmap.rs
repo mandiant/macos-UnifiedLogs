@@ -267,3 +267,31 @@ fn check_flags(flag: u8) -> bool {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use nom::{error::ErrorKind, Err};
+    use crate::lzbitmap::lzbitmap_decompress;
+    use std::{fs::read, path::PathBuf};
+
+    #[test]
+    fn test_lzbitmap_decompress() {
+        let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        test_path.push("tests/test_data/Compression/lzbitmap/golden_gate_lzbitmap.raw");
+
+        let bytes = read(test_path).unwrap();
+        let (remaining, decom_data) = lzbitmap_decompress(&bytes).unwrap();
+        assert_eq!(decom_data.len(), 61560);
+        assert_eq!(remaining.len(), 6);
+    }
+
+    #[test]
+    fn test_lzbitmap_decompress_bad_sig() {
+        let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        test_path.push("tests/test_data/Compression/lzbitmap/Malformed/golden_gate_lzbitmap.raw");
+
+        let bytes = read(test_path).unwrap();
+        let err = lzbitmap_decompress(&bytes).unwrap_err();
+        assert!(matches!(err, Err::Failure(e) if e.input.len() == 15545 && e.code == ErrorKind::Verify));
+    }
+}
