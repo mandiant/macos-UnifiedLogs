@@ -121,12 +121,12 @@ mod tests {
 
     #[test]
     fn test_formatter_has_large_offset() {
-        // From src/chunks/firehose/flags.rs test_firehose_formatter_flags_has_large_offset
         let test_data = [
             1, 0, 2, 0, 14, 0, 34, 2, 0, 4, 135, 16, 0, 0, 34, 4, 0, 0, 5, 0, 100, 101, 110, 121, 0,
         ];
         let flags = FirehoseFlags::from_bits_retain(557);
         let (_, result) = RawFormatterFlags::parse(&test_data, flags).unwrap();
+
         assert_eq!(result.has_large_offset, 1);
         assert_eq!(result.large_shared_cache, 2);
         assert!(!result.main_exe);
@@ -138,10 +138,10 @@ mod tests {
 
     #[test]
     fn test_formatter_absolute_alt_index_small() {
-        // From test_firehose_formatter_flags_message_strings_uuid_message_alt_index
         let test_data = [8, 0, 17, 166, 251, 2, 128, 255, 0, 0];
         let flags = FirehoseFlags::from_bits_retain(8);
         let (_, result) = RawFormatterFlags::parse(&test_data, flags).unwrap();
+
         assert!(result.absolute);
         assert_eq!(result.alt_index, 8);
         assert!(!result.main_exe);
@@ -153,7 +153,6 @@ mod tests {
 
     #[test]
     fn test_formatter_main_exe() {
-        // From test_firehose_formatter_flags_message_strings_uuid
         let test_data = [186, 0, 0, 0];
         let flags = FirehoseFlags::from_bits_retain(514);
         let (_, result) = RawFormatterFlags::parse(&test_data, flags).unwrap();
@@ -168,7 +167,6 @@ mod tests {
 
     #[test]
     fn test_formatter_shared_cache() {
-        // From test_firehose_formatter_flags_shared_cache_dsc_uuid
         let test_data = [
             23, 1, 34, 1, 66, 4, 0, 0, 35, 0, 83, 65, 83, 83, 101, 115, 115, 105, 111, 110, 83,
             116, 97, 116, 101, 70, 111, 114, 85, 115, 101, 114, 58, 49, 50, 52, 54, 58, 32, 101,
@@ -187,7 +185,6 @@ mod tests {
 
     #[test]
     fn test_formatter_absolute_alt_index_large() {
-        // From test_firehose_formatter_flags_absolute_message_alt_uuid
         let test_data = [
             128, 255, 2, 13, 34, 4, 0, 0, 6, 0, 34, 4, 6, 0, 11, 0, 34, 4, 17, 0, 7, 0, 2, 4, 8, 0,
             0, 0, 2, 8, 0, 0, 0, 0, 0, 0, 0, 0, 2, 4, 0, 0, 0, 0, 2, 8, 0, 0, 0, 0, 0, 0, 0, 0, 34,
@@ -209,8 +206,6 @@ mod tests {
 
     #[test]
     fn test_formatter_uuid_relative() {
-        // From test_firehose_formatter_flags_uuid_relative
-        // Old assertion was the hex string "7B0D3775F1903E21BA130447C41B8743".
         let test_data = [
             123, 13, 55, 117, 241, 144, 62, 33, 186, 19, 4, 71, 196, 27, 135, 67, 0, 0,
         ];

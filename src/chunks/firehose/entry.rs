@@ -21,11 +21,17 @@ const REMNANT_DATA: u8 = 0x0;
 )]
 #[repr(u8)]
 pub enum FirehoseActivityType {
+    /// `Activity` log
     Activity = 0x2,
+    /// `Trace` log
     Trace = 0x3,
+    /// `NonActivity` log
     NonActivity = 0x4,
+    /// `Signpost` log
     Signpost = 0x6,
+    /// `Loss` log
     Loss = 0x7,
+    /// Unknown log
     #[num_enum(default)]
     Unknown,
 }

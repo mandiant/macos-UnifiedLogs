@@ -6,7 +6,6 @@
 // See the License for the specific language governing permissions and limitations under the License.
 
 use chrono::SecondsFormat;
-use log::{LevelFilter, error, info, warn};
 use macos_unifiedlogs::cache::{StringCatalog, StringStorage};
 use macos_unifiedlogs::filesystem::{InMemoryProvider, LiveSystemProvider, LogarchiveProvider};
 use macos_unifiedlogs::log_entry::LogEntry;
@@ -14,16 +13,19 @@ use macos_unifiedlogs::logarchive::{VisitOptions, visit_provider_with_options};
 use macos_unifiedlogs::timesync::TimestampResolver;
 use macos_unifiedlogs::tracev3::{OversizeCache, visit_tracev3};
 use macos_unifiedlogs::traits::FileProvider;
-use simplelog::{ColorChoice, Config, TermLogger, TerminalMode};
+use tracing_subscriber::util::SubscriberInitExt;
 use std::collections::HashMap;
 use std::error::Error;
-use std::fs;
+use std::fs::{self, File};
 use std::io::Write;
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use tracing::{error, info, warn};
+use tracing::level_filters::LevelFilter;
+use tracing_subscriber::{fmt::layer, layer::SubscriberExt};
 
 use clap::{Parser, ValueEnum, builder};
 use csv::Writer;
@@ -211,13 +213,19 @@ impl From<Format> for &str {
 }
 
 fn main() {
-    TermLogger::init(
-        LevelFilter::Warn,
-        Config::default(),
-        TerminalMode::Stderr,
-        ColorChoice::Auto,
-    )
-    .expect("Failed to initialize simple logger");
+    let log_file = File::create(PathBuf::from("issues.jsonl")).expect("Could not create issues.jsonl file");
+    let _ = tracing_subscriber::registry()
+        .with(
+            layer()
+                .json()
+                .with_file(true)
+                .with_line_number(true)
+                .with_target(false)
+                .flatten_event(true)
+                .with_span_list(false)
+                .with_writer(log_file),
+        )
+        .with(LevelFilter::WARN).init();
     info!("Starting Unified Log parser...");
 
     let args = Args::parse();

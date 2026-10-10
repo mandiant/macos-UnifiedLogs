@@ -13,11 +13,11 @@
 //! changing the lower-level `tracev3` parser. [`InMemoryProvider`] shows that
 //! no real filesystem is required at all.
 
-use log::{debug, warn};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Error, ErrorKind, Read};
 use std::path::{Component, Path, PathBuf};
+use tracing::{debug, warn};
 
 use uuid::Uuid;
 

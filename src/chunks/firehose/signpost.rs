@@ -111,7 +111,6 @@ mod tests {
 
     #[test]
     fn test_signpost_body() -> anyhow::Result<()> {
-        // From src/chunks/firehose/signpost.rs test_parse_signpost
         let test_data: &[u8] = &[
             225, 244, 2, 0, 1, 0, 238, 238, 178, 178, 181, 176, 238, 238, 176, 63, 27, 0, 0, 0,
         ];

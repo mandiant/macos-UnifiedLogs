@@ -8,13 +8,13 @@
 use super::DecoderError;
 use super::bool::bool_from_int;
 use crate::helpers::decode_standard;
-use log::warn;
 use nom::{
     IResult, Parser,
     bytes::complete::take,
     number::complete::{le_f64, le_i32, le_i64, le_u8, le_u32},
 };
 use std::fmt::Display;
+use tracing::warn;
 
 #[derive(Debug, Default)]
 pub struct LocationTrackerState {
@@ -298,7 +298,7 @@ fn get_sqlite_data(input: &[u8]) -> IResult<&[u8], SqliteError> {
         101 => SqliteError::SQLITE_DONE,
         266 => SqliteError::SQLITE_IO_ERR_READ,
         _ => {
-            warn!("[macos-unifiedlogs] Unknown Core Location sqlite error: {sqlite_code}");
+            warn!("Unknown Core Location sqlite error: {sqlite_code}");
             SqliteError::Unknown
         }
     };

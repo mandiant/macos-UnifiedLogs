@@ -17,6 +17,7 @@ use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 use std::path::PathBuf;
 use std::rc::Rc;
+use tracing::error;
 use uuid::Uuid;
 
 use super::decoders::{config, location};
@@ -391,9 +392,7 @@ fn format_statedump_data(data_type: u32, data: &[u8], title_name: &str) -> Strin
                 Err(_) => match crate::helpers::utf8_str_from_cstring(data) {
                     Ok((_, string_data)) => String::from(string_data),
                     Err(err) => {
-                        log::error!(
-                            "[macos-unifiedlogs] Failed to extract plist string from statedump: {err:?}"
-                        );
+                        error!("Failed to extract plist string from statedump: {err:?}");
                         String::from("Failed to extract plist string from statedump")
                     }
                 },

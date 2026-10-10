@@ -18,30 +18,60 @@ pub const RAW_HEADER_CHUNK_SIZE: usize = 208;
 
 #[derive(Debug, Clone)]
 pub struct RawHeaderChunk<'a> {
+    /// Timebase numerator
+    ///
+    /// On Apple Intel this will be 1. On Silicon it should be 125
     pub mach_time_numerator: u32,
+    ///Timebase denominator
+    ///
+    /// On Apple Intel this will be 1. One Silicon it should be 3
     pub mach_time_denominator: u32,
+    /// Timebase ticks in nanoseconds
     pub continous_time: u64,
-    pub unknown_time: u64, // possibly start time
+    /// Possible start time
+    ///
+    /// UNIXEPOCH seconds
+    pub unknown_time: u64,
     pub unknown: u32,
     pub bias_min: u32,
+    /// 0 is no DST
+    ///
+    /// 1 equals DST
     pub daylight_savings: u32, // 0 no DST, 1 DST
     pub unknown_flags: u32,
-    pub sub_chunk_tag: u32, // 0x6100
+    /// Should be 0x6100
+    pub sub_chunk_tag: u32,
+    /// Size of the subchunk data
     pub sub_chunk_data_size: u32,
     pub sub_chunk_continous_time: u64,
-    pub sub_chunk_tag_2: u32, // 0x6101
+    /// Should 0x6101
+    pub sub_chunk_tag_2: u32,
+    /// Size of the subchunk data
     pub sub_chunk_tag_data_size_2: u32,
     pub unknown_2: u32,
     pub unknown_3: u32,
+    /// OS version
     pub build_version_string: &'a str,
+    /// Hardware model name
     pub hardware_model_string: &'a str,
-    pub sub_chunk_tag_3: u32, // 0x6102
+    /// Should be 0x61000
+    pub sub_chunk_tag_3: u32,
+    /// Size of the subchunk
     pub sub_chunk_tag_data_size_3: u32,
+    /// Boot UUID generated on system boot
+    ///
+    /// This value is required when reading `Timesync` values
+    ///
+    /// We will need it in order to determine timestamp
     pub boot_uuid: Uuid,
+    /// PID of the log daemon
     pub logd_pid: u32,
     pub logd_exit_status: u32,
-    pub sub_chunk_tag_4: u32, // 0x6103
+    /// Should be 0x6103
+    pub sub_chunk_tag_4: u32,
+    /// Size of the subchunk
     pub sub_chunk_tag_data_size_4: u32,
+    /// Timezone of the logging platform
     pub timezone_path: &'a str,
 }
 
