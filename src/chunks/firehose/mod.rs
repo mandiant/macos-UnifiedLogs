@@ -15,11 +15,9 @@ pub mod nonactivity;
 pub mod signpost;
 pub mod trace;
 
-use nom::{
-    bytes::complete::take,
-    number::complete::{le_u8, le_u16, le_u32, le_u64},
-};
+use nom::number::complete::{le_u8, le_u16, le_u32, le_u64};
 
+use crate::helpers::take_array;
 use entry::RawFirehoseEntryReader;
 
 /// Parsed firehose chunk header — the 32-byte header after the preamble.
@@ -57,8 +55,7 @@ impl<'a> RawFirehose<'a> {
         let (input, second_proc_id) = le_u32(input)?;
         let (input, ttl) = le_u8(input)?;
         let (input, collapsed) = le_u8(input)?;
-        let (data_start, unknown_bytes) = take(2_usize)(input)?;
-        let unknown: [u8; 2] = [unknown_bytes[0], unknown_bytes[1]];
+        let (data_start, unknown) = take_array::<2>(input)?;
         // Private data offset starts here
         // Public data size includes itself
         let (input, public_data_size) = le_u16(data_start)?;
@@ -100,7 +97,9 @@ impl<'a> RawFirehose<'a> {
 
     /// Public data slice (contains the firehose entries).
     pub fn public_data(&self) -> &'a [u8] {
-        &self.firehose_data[..self.public_data_len()]
+        self.firehose_data
+            .get(..self.public_data_len())
+            .unwrap_or_default()
     }
 
     /// Private data slice, or `None` if `private_data_virtual_offset == 0x1000`.
@@ -109,11 +108,9 @@ impl<'a> RawFirehose<'a> {
         if self.private_data_virtual_offset == NO_PRIVATE_DATA {
             return None;
         }
-        let public_len = self.public_data_len();
-        if public_len >= self.firehose_data.len() {
-            return None;
-        }
-        Some(&self.firehose_data[public_len..])
+        self.firehose_data
+            .get(self.public_data_len()..)
+            .filter(|data| !data.is_empty())
     }
 
     /// Iterate over individual firehose entries in the public data region.

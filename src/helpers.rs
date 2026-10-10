@@ -47,6 +47,17 @@ pub(crate) fn u64_to_usize(n: u64) -> Option<usize> {
     usize::try_from(n).ok()
 }
 
+/// Take exactly `N` bytes as a fixed-size array
+pub(crate) fn take_array<const N: usize>(input: &[u8]) -> nom::IResult<&[u8], [u8; N]> {
+    match input.split_first_chunk::<N>() {
+        Some((array, input)) => Ok((input, *array)),
+        None => Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            ErrorKind::Eof,
+        ))),
+    }
+}
+
 /// Decode UTF-8 bytes that represent a C-style string.
 ///
 /// The first NUL byte terminates the string, so any bytes after it are ignored.

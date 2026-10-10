@@ -1,0 +1,10 @@
+suppress-restriction-lint-in-const = true
+
+# https://rust-lang.github.io/rust-clippy/master/#expect_used
+allow-expect-in-tests = true
+# https://rust-lang.github.io/rust-clippy/master/#unwrap_used
+allow-unwrap-in-tests = true
+# https://rust-lang.github.io/rust-clippy/master/#/indexing_slicing
+allow-indexing-slicing-in-tests = true
+# https://rust-lang.github.io/rust-clippy/master/?levels=allow#panic
+allow-panic-in-tests = true
