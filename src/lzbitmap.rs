@@ -270,8 +270,8 @@ fn check_flags(flag: u8) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use nom::{error::ErrorKind, Err};
     use crate::lzbitmap::lzbitmap_decompress;
+    use nom::{Err, error::ErrorKind};
     use std::{fs::read, path::PathBuf};
 
     #[test]
@@ -292,6 +292,8 @@ mod tests {
 
         let bytes = read(test_path).unwrap();
         let err = lzbitmap_decompress(&bytes).unwrap_err();
-        assert!(matches!(err, Err::Failure(e) if e.input.len() == 15545 && e.code == ErrorKind::Verify));
+        assert!(
+            matches!(err, Err::Failure(e) if e.input.len() == 15545 && e.code == ErrorKind::Verify)
+        );
     }
 }
