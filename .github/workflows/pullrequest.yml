@@ -48,8 +48,30 @@ jobs:
       - name: Run clippy action to produce annotations
         run: cargo clippy
 
-      - name: Download test files
+      - name: Download test files (macOS)
+        if: matrix.info.os == 'macos-latest'
         run: cd tests && wget -O ./test_data.zip https://github.com/mandiant/macos-UnifiedLogs/releases/download/v1.0.0/test_data.zip && unzip test_data.zip
+
+      - name: Download test files (Linux)
+        if: matrix.info.os == 'ubuntu-latest'
+        run: cd tests && wget -O ./test_data.zip https://github.com/mandiant/macos-UnifiedLogs/releases/download/v1.0.0/test_data.zip && unzip test_data.zip
+
+      - name:  Download test files (Windows)
+        if: matrix.info.os == 'windows-latest'
+        run: |
+          cd tests
+          Invoke-WebRequest -Uri "https://github.com/mandiant/macos-UnifiedLogs/releases/download/v1.0.0/test_data.zip" -OutFile "./test_data.zip"
+          Expand-Archive -Path "./test_data.zip" -DestinationPath "." -Force
+        shell: pwsh
+
+      - name:  Download test files (Windows ARM)
+        if: matrix.info.os == 'windows-11-arm'
+        run: |
+          cd tests
+          Invoke-WebRequest -Uri "https://github.com/mandiant/macos-UnifiedLogs/releases/download/v1.0.0/test_data.zip" -OutFile "./test_data.zip"
+          Expand-Archive -Path "./test_data.zip" -DestinationPath "." -Force
+        shell: pwsh
+        
       - name: Build tests
         run: cargo test --no-run --release
       - name: Run tests
