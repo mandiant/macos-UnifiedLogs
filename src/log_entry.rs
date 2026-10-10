@@ -331,37 +331,31 @@ impl<'a, 'b> LogEntry<'a, 'b> {
 /// Output: one line per offset: `"UUID_HEX" +0xOFFSET_DECIMAL` joined by newlines.
 /// Matches old pipeline's `FirehosePreamble::get_backtrace_data()`.
 fn format_backtrace(data: &[u8]) -> String {
-    if data.len() < 6 {
-        return String::new();
-    }
+    try_format_backtrace(data).unwrap_or_default()
+}
 
-    let uuid_count = data[3] as usize;
-    let offset_count = u16::from_le_bytes([data[4], data[5]]) as usize;
+fn try_format_backtrace(data: &[u8]) -> Option<String> {
+    let ([_, _, _, uuid_count, offset_lo, offset_hi], data) = data.split_first_chunk::<6>()?;
+    let uuid_count = usize::from(*uuid_count);
+    let offset_count = usize::from(u16::from_le_bytes([*offset_lo, *offset_hi]));
 
-    let uuid_start = 6;
-    let uuid_end = uuid_start + uuid_count * 16;
-    let offsets_end = uuid_end + offset_count * 4;
-    let indexes_end = offsets_end + offset_count;
+    let (uuid_bytes, data) = data.split_at_checked(uuid_count * 16)?;
+    let (offset_bytes, data) = data.split_at_checked(offset_count * 4)?;
+    let indexes = data.get(..offset_count)?;
 
-    if data.len() < indexes_end {
-        return String::new();
-    }
-
-    let (uuid_chunks, _) = data[uuid_start..uuid_end].as_chunks::<16>();
+    let (uuid_chunks, _) = uuid_bytes.as_chunks::<16>();
     let uuids: Vec<u128> = uuid_chunks
         .iter()
         .copied()
         .map(u128::from_be_bytes)
         .collect();
 
-    let (offset_chunks, _) = data[uuid_end..offsets_end].as_chunks::<4>();
+    let (offset_chunks, _) = offset_bytes.as_chunks::<4>();
     let offsets: Vec<u32> = offset_chunks
         .iter()
         .copied()
         .map(u32::from_le_bytes)
         .collect();
-
-    let indexes = &data[offsets_end..indexes_end];
 
     let lines: Vec<String> = indexes
         .iter()
@@ -375,7 +369,7 @@ fn format_backtrace(data: &[u8]) -> String {
         })
         .collect();
 
-    lines.join("\n")
+    Some(lines.join("\n"))
 }
 
 // Statedump data type constants (matches src/constants.rs)

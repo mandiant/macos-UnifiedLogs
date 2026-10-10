@@ -232,7 +232,7 @@ pub fn parse_items_data<'a>(
 
     // --- Backtrace skip ---
     let has_backtrace = flags.contains(FirehoseFlags::HAS_CONTEXT_DATA)
-        || (input.len() > 3 && input[..3] == [1, 0, 18]);
+        || (input.len() > 3 && input.starts_with(&[1, 0, 18]));
     let backtrace_data = if has_backtrace {
         let (rest, bt) = skip_backtrace(input)?;
         input = rest;
@@ -243,7 +243,9 @@ pub fn parse_items_data<'a>(
 
     // --- Pass 2: strings/bytes ---
     for &idx in &deferred {
-        let item = &items[idx];
+        let Some(item) = items.get_mut(idx) else {
+            continue;
+        };
         let str_size = item.item_size as usize;
         let kind = item.item_type;
 
@@ -264,11 +266,7 @@ pub fn parse_items_data<'a>(
             _ => RawItemValue::Empty,
         };
 
-        items[idx] = RawFirehoseItem {
-            item_type: item.item_type,
-            item_size: item.item_size,
-            value,
-        };
+        item.value = value;
     }
 
     Ok((
@@ -408,7 +406,7 @@ fn skip_backtrace(data: &[u8]) -> nom::IResult<&[u8], &[u8]> {
     let (input, _) = take(pad)(input)?;
 
     let consumed = start.len() - input.len();
-    let backtrace_slice = &start[..consumed];
+    let (_, backtrace_slice) = take(consumed)(start)?;
 
     Ok((input, backtrace_slice))
 }
@@ -442,10 +440,9 @@ pub fn fill_private_data<'a>(
     // When private_strings_offset < private_data_virtual_offset, this produces a huge offset,
     // causing the nom take() to fail → items stay as <private>. We replicate that here.
     let string_offset = private_strings_offset.wrapping_sub(private_data_virtual_offset) as usize;
-    if string_offset > private_data.len() {
+    let Some(mut cursor) = private_data.get(string_offset..) else {
         return;
-    }
-    let mut cursor = &private_data[string_offset..];
+    };
 
     // Private string type bytes (from old pipeline constants)
     const PRIVATE_STRING_TYPES: [u8; 7] = [0x21, 0x25, 0x41, 0x35, 0x31, 0x81, 0xf1];

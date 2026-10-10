@@ -517,14 +517,14 @@ fn legacy_natural_float(f: f64) -> String {
 /// Parse a format specifier starting after `%`. Returns (`FormatSpec`, `bytes_consumed`, `has_dynamic_width`).
 /// `bytes` is the format string slice starting right after `%`.
 fn parse_specifier(bytes: &[u8]) -> (FormatSpec, usize, bool) {
-    let len = bytes.len();
+    let at = |pos: usize| bytes.get(pos).copied();
     let mut pos = 0;
     let mut spec = FormatSpec::new('\0');
     let mut has_dynamic_width = false;
 
     // 1. Flags
-    while pos < len {
-        match bytes[pos] {
+    while let Some(byte) = at(pos) {
+        match byte {
             b'-' => spec.left_justify = true,
             b'+' => spec.show_sign = true,
             b'#' => spec.alternate = true,
@@ -536,67 +536,53 @@ fn parse_specifier(bytes: &[u8]) -> (FormatSpec, usize, bool) {
     }
 
     // 2. Width
-    if pos < len && bytes[pos] == b'*' {
+    if at(pos) == Some(b'*') {
         has_dynamic_width = true;
         pos += 1;
-    } else {
-        let start = pos;
-        while pos < len && bytes[pos].is_ascii_digit() {
-            pos += 1;
-        }
-        if pos > start
-            && let Ok(w) = std::str::from_utf8(&bytes[start..pos])
-                .unwrap_or("0")
-                .parse::<usize>()
-        {
-            spec.width = w;
-            spec.has_width = true;
-        }
+    } else if let Some(w) = parse_digits(bytes, &mut pos) {
+        spec.width = w;
+        spec.has_width = true;
     }
 
     // 3. Precision
-    if pos < len && bytes[pos] == b'.' {
+    if at(pos) == Some(b'.') {
         // Precision may not have an additional value
         // Example: %.f or %.lf is valid precision. The precision value is 0
         pos += 1;
         spec.has_precision = true;
-        if pos < len && bytes[pos] == b'*' {
+        if at(pos) == Some(b'*') {
             // Dynamic precision — will be filled from precision item
             pos += 1;
-        } else {
-            let start = pos;
-            while pos < len && bytes[pos].is_ascii_digit() {
-                pos += 1;
-            }
-            if pos > start
-                && let Ok(p) = std::str::from_utf8(&bytes[start..pos])
-                    .unwrap_or("0")
-                    .parse::<usize>()
-            {
-                spec.precision = p;
-            }
+        } else if let Some(p) = parse_digits(bytes, &mut pos) {
+            spec.precision = p;
         }
     }
 
     // 4. Length modifier (consumed but ignored)
-    if pos < len && is_length_modifier_start(bytes[pos] as char) {
+    if let Some(modifier) = at(pos).filter(|&b| is_length_modifier_start(b as char)) {
         pos += 1;
         // Handle hh, ll (two-char modifiers)
-        if pos < len
-            && ((bytes[pos - 1] == b'h' && bytes[pos] == b'h')
-                || (bytes[pos - 1] == b'l' && bytes[pos] == b'l'))
-        {
+        if matches!(modifier, b'h' | b'l') && at(pos) == Some(modifier) {
             pos += 1;
         }
     }
 
     // 5. Conversion type
-    if pos < len && is_conversion_char(bytes[pos] as char) {
-        spec.conversion = bytes[pos] as char;
+    if let Some(conversion) = at(pos).map(char::from).filter(|&c| is_conversion_char(c)) {
+        spec.conversion = conversion;
         pos += 1;
     }
 
     (spec, pos, has_dynamic_width)
+}
+
+/// Consume the ASCII digits starting at `pos` and parse them.
+/// Returns `None` when there are no digits (or they overflow `usize`).
+fn parse_digits(bytes: &[u8], pos: &mut usize) -> Option<usize> {
+    let rest = bytes.get(*pos..).unwrap_or_default();
+    let count = rest.iter().take_while(|b| b.is_ascii_digit()).count();
+    *pos += count;
+    std::str::from_utf8(rest.get(..count)?).ok()?.parse().ok()
 }
 
 // ---------------------------------------------------------------------------
@@ -610,34 +596,31 @@ fn parse_specifier(bytes: &[u8]) -> (FormatSpec, usize, bool) {
 pub fn format_message(format_string: Option<&str>, items: &[RawFirehoseItem<'_>]) -> String {
     let fmt = match format_string {
         None => return String::from("<missing format string>"),
-        Some("") if items.is_empty() => return String::new(),
         Some("") => {
-            // Empty format string + non-empty items → return first item as string
-            return item_to_string(&items[0]);
+            // Empty format string → return first item as string (if any)
+            return items.first().map(item_to_string).unwrap_or_default();
         }
         Some(s) => s,
     };
 
     let bytes = fmt.as_bytes();
-    let len = bytes.len();
-    let mut result = String::with_capacity(len);
+    let mut result = String::with_capacity(bytes.len());
     let mut pos = 0;
     let mut item_index: usize = 0;
 
-    while pos < len {
-        if bytes[pos] != b'%' {
-            if bytes[pos] < 0x80 {
+    while let Some(&byte) = bytes.get(pos) {
+        if byte != b'%' {
+            if byte < 0x80 {
                 // ASCII byte — safe to cast directly
-                result.push(bytes[pos] as char);
+                result.push(byte as char);
                 pos += 1;
             } else {
                 // Multi-byte UTF-8: decode the full character
-                let rest = &fmt[pos..];
-                if let Some(ch) = rest.chars().next() {
+                if let Some(ch) = fmt.get(pos..).and_then(|rest| rest.chars().next()) {
                     result.push(ch);
                     pos += ch.len_utf8();
                 } else {
-                    result.push(bytes[pos] as char);
+                    result.push(byte as char);
                     pos += 1;
                 }
             }
@@ -646,20 +629,20 @@ pub fn format_message(format_string: Option<&str>, items: &[RawFirehoseItem<'_>]
 
         // We have a '%'
         pos += 1; // skip '%'
-        if pos >= len {
+        let Some(&byte) = bytes.get(pos) else {
             result.push('%');
             break;
-        }
+        };
 
         // %% → literal %
-        if bytes[pos] == b'%' {
+        if byte == b'%' {
             result.push('%');
             pos += 1;
             continue;
         }
 
         // % followed by space → literal "% "
-        if bytes[pos] == b' ' {
+        if byte == b' ' {
             result.push('%');
             result.push(' ');
             pos += 1;
@@ -667,7 +650,7 @@ pub fn format_message(format_string: Option<&str>, items: &[RawFirehoseItem<'_>]
         }
 
         // %{...} → Apple-annotated specifier
-        if bytes[pos] == b'{' {
+        if byte == b'{' {
             let (consumed, annotation, closed) = parse_apple_annotation(bytes, pos);
             pos += consumed;
 
@@ -691,7 +674,8 @@ pub fn format_message(format_string: Option<&str>, items: &[RawFirehoseItem<'_>]
             }
 
             // If '}' is last char (no conversion type after it) → emit literal
-            if pos >= len || !is_conversion_char(bytes[pos] as char) {
+            let next = bytes.get(pos).copied();
+            if !next.is_some_and(|b| is_conversion_char(b as char)) {
                 // Old pipeline regex only recognizes [-+0#] as flags (no space), digits,
                 // and `*` as valid chars after `}` in annotated specifiers. Anything else
                 // (space, `.` without preceding width, etc.) causes the regex to match
@@ -699,12 +683,13 @@ pub fn format_message(format_string: Option<&str>, items: &[RawFirehoseItem<'_>]
                 // Pipeline regex after `}`: flags [-+0#], width [\d*], precision
                 // \.(?:\d+|\*)?, length modifiers [hlwIztq], then conversion. The digits
                 // after the precision dot are optional, so a bare `.` is valid; space is not.
-                let is_valid_spec_start = pos < len
-                    && matches!(
-                        bytes[pos],
+                let is_valid_spec_start = matches!(
+                    next,
+                    Some(
                         b'-' | b'+' | b'0' | b'#' | b'*' | b'.' | b'1'
                             ..=b'9' | b'h' | b'l' | b'w' | b'I' | b'z' | b't' | b'q'
-                    );
+                    )
+                );
 
                 if !is_valid_spec_start {
                     // Emit as literal — old pipeline treats this as typeless annotation
@@ -716,11 +701,8 @@ pub fn format_message(format_string: Option<&str>, items: &[RawFirehoseItem<'_>]
                 }
 
                 // Check for flags/width/length before potential conversion
-                let (spec, spec_consumed, _dynamic) = if pos < len {
-                    parse_specifier(&bytes[pos..])
-                } else {
-                    (FormatSpec::new('\0'), 0, false)
-                };
+                let (spec, spec_consumed, _dynamic) =
+                    parse_specifier(bytes.get(pos..).unwrap_or_default());
 
                 if spec.conversion == '\0' {
                     // No valid conversion found → emit literal
@@ -738,7 +720,8 @@ pub fn format_message(format_string: Option<&str>, items: &[RawFirehoseItem<'_>]
             }
 
             // Parse the specifier after annotation
-            let (spec, spec_consumed, _has_dynamic_width) = parse_specifier(&bytes[pos..]);
+            let (spec, spec_consumed, _has_dynamic_width) =
+                parse_specifier(bytes.get(pos..).unwrap_or_default());
             pos += spec_consumed;
 
             if spec.conversion == '\0' {
@@ -755,7 +738,8 @@ pub fn format_message(format_string: Option<&str>, items: &[RawFirehoseItem<'_>]
         }
 
         // Plain specifier
-        let (spec, spec_consumed, has_dynamic_width) = parse_specifier(&bytes[pos..]);
+        let (spec, spec_consumed, has_dynamic_width) =
+            parse_specifier(bytes.get(pos..).unwrap_or_default());
         pos += spec_consumed;
 
         if spec.conversion == '\0' {
@@ -778,12 +762,10 @@ pub fn format_message(format_string: Option<&str>, items: &[RawFirehoseItem<'_>]
             handle_dynamic_width(items, &mut item_index, &mut spec);
         }
 
-        if item_index >= items.len() {
+        let Some(item) = items.get(item_index) else {
             result.push_str("<Missing message data>");
             continue;
-        }
-
-        let item = &items[item_index];
+        };
 
         // Check for private
         if matches!(item.value, RawItemValue::Private { .. }) {
@@ -805,26 +787,25 @@ pub fn format_message(format_string: Option<&str>, items: &[RawFirehoseItem<'_>]
 
 fn parse_apple_annotation(bytes: &[u8], start: usize) -> (usize, String, bool) {
     // start points at '{', scan to '}'
-    let mut pos = start + 1; // skip '{'
-    let mut annotation = String::new();
-    while pos < bytes.len() && bytes[pos] != b'}' {
-        annotation.push(bytes[pos] as char);
-        pos += 1;
-    }
-    if pos < bytes.len() {
-        pos += 1; // skip '}'
-        return (pos - start, annotation, true);
-    }
-    (pos - start, annotation, false)
+    let rest = bytes.get(start + 1..).unwrap_or_default(); // skip '{'
+    let annotation_len = rest.iter().take_while(|&&b| b != b'}').count();
+    let annotation: String = rest
+        .iter()
+        .take(annotation_len)
+        .map(|&b| b as char)
+        .collect();
+    let closed = annotation_len < rest.len();
+    // '{' + annotation + '}' (if closed)
+    let consumed = 1 + annotation_len + usize::from(closed);
+    (consumed, annotation, closed)
 }
 
 fn skip_precision_items(items: &[RawFirehoseItem<'_>], item_index: &mut usize) {
-    while *item_index < items.len() {
-        if items[*item_index].item_type == RawItemKind::Precision {
-            *item_index += 1;
-        } else {
-            break;
-        }
+    while items
+        .get(*item_index)
+        .is_some_and(|item| item.item_type == RawItemKind::Precision)
+    {
+        *item_index += 1;
     }
 }
 
@@ -833,13 +814,13 @@ fn handle_dynamic_width(
     item_index: &mut usize,
     spec: &mut FormatSpec,
 ) {
-    if *item_index < items.len() {
-        let item = &items[*item_index];
-        if item.item_type == RawItemKind::Number && item.item_size == 0 {
-            spec.width = item.item_size as usize;
-            spec.has_width = true;
-            *item_index += 1;
-        }
+    if let Some(item) = items.get(*item_index)
+        && item.item_type == RawItemKind::Number
+        && item.item_size == 0
+    {
+        spec.width = item.item_size as usize;
+        spec.has_width = true;
+        *item_index += 1;
     }
 }
 
@@ -853,12 +834,10 @@ fn format_annotated_item(
     // Skip precision items
     skip_precision_items(items, item_index);
 
-    if *item_index >= items.len() {
+    let Some(item) = items.get(*item_index) else {
         result.push_str("<Missing message data>");
         return;
-    }
-
-    let item = &items[*item_index];
+    };
 
     // Check for private
     if matches!(item.value, RawItemValue::Private { .. }) {
@@ -891,11 +870,12 @@ fn format_annotated_item(
 fn extract_signpost_metadata(annotation: &str) -> String {
     // Annotation format: "public,signpost.description:attribute" or "signpost.telemetry:number1,name=..."
     // Extract the signpost part
-    let parts: Vec<&str> = annotation.split(',').collect();
+    let mut parts = annotation.split(',');
+    let first = parts.next().unwrap_or(annotation);
     if annotation.starts_with("signpost") || annotation.starts_with("sign") {
         // signpost is the first element
-        parts[0].trim().to_string()
-    } else if let Some(part) = parts.get(1) {
+        first.trim().to_string()
+    } else if let Some(part) = parts.next() {
         part.trim().to_string()
     } else {
         annotation.to_string()
