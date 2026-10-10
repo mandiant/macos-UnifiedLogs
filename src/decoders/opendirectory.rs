@@ -7,13 +7,13 @@
 
 use super::DecoderError;
 use crate::helpers::{decode_standard, non_empty_cstring};
-use log::warn;
 use nom::{
     Parser,
     bytes::complete::take,
     multi::fold_many0,
     number::complete::{le_i32, le_u8, le_u32},
 };
+use tracing::warn;
 
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, PartialEq, Eq, strum::Display)]
@@ -221,7 +221,7 @@ pub(crate) fn errors(oderror: &str) -> OdError {
         "5204" => OdError::CredentialsContactPrimary,
         "2" => OdError::NotFound,
         _ => {
-            warn!("[macos-unifiedlogs] Unknown open directory error code: {oderror}",);
+            warn!("Unknown open directory error code: {oderror}",);
             OdError::Unknown(oderror.to_string())
         }
     }
@@ -272,7 +272,7 @@ pub(crate) fn member_id_type(member_string: &str) -> MemberIdType {
         "11" => MemberIdType::X509_DN,
         "12" => MemberIdType::KERBEROS,
         _ => {
-            warn!("[macos-unifiedlogs] Unknown open directory member id type: {member_string}",);
+            warn!("Unknown open directory member id type: {member_string}",);
             MemberIdType::UNKNOWN(member_string.to_string())
         }
     }
@@ -368,7 +368,7 @@ fn get_member_data(input: &[u8]) -> nom::IResult<&[u8], MemberDetails> {
             (input, MemberType::GroupId(gid))
         }
         _ => {
-            warn!("[macos-unifiedlogs] Unknown open directory member type: {member_type}",);
+            warn!("Unknown open directory member type: {member_type}",);
             (input, MemberType::Unknown(member_type))
         }
     };

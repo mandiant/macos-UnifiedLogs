@@ -18,10 +18,10 @@ use super::log_entry::LogEntry;
 use super::timesync::{RawTimesyncBoot, TimestampResolver, parse_timesync_file};
 use super::tracev3::{OversizeCache, visit_tracev3};
 use super::traits::{FileProvider, SourceFile, VisitOutcome};
-use log::{info, warn};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use tracing::{info, warn};
 use uuid::Uuid;
 
 /// Process all tracev3 files in a logarchive directory, emitting log entries via callback.

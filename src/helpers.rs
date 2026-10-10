@@ -7,7 +7,6 @@
 
 use base64::DecodeError;
 use base64::{Engine, engine::general_purpose};
-use log::{error, warn};
 use nom::error::ErrorKind;
 use nom::{
     Parser,
@@ -15,6 +14,7 @@ use nom::{
     combinator::opt,
 };
 use std::str::from_utf8;
+use tracing::{error, warn};
 use uuid::Uuid;
 
 const INVALID_UTF8: &str = "<Invalid UTF-8>";
@@ -64,7 +64,7 @@ pub(crate) fn take_array<const N: usize>(input: &[u8]) -> nom::IResult<&[u8], [u
 /// Example: `b"a\0b\0"` decodes as `"a"`.
 pub(crate) fn utf8_str(data: &[u8]) -> &str {
     std::str::from_utf8(data)
-        .inspect_err(|err| log::warn!("{err}"))
+        .inspect_err(|err| warn!("{err}"))
         .map(|s| match s.find('\0') {
             Some(pos) => &s[..pos],
             None => s,
@@ -79,7 +79,7 @@ pub(crate) fn utf8_str(data: &[u8]) -> &str {
 /// Example: `b"a\0b\0"` decodes as `"a\0b"`.
 pub(crate) fn utf8_str_sized(data: &[u8]) -> &str {
     std::str::from_utf8(data)
-        .inspect_err(|err| log::warn!("{err}"))
+        .inspect_err(|err| warn!("{err}"))
         .map(|s| s.trim_end_matches('\0'))
         .unwrap_or(INVALID_UTF8)
 }
@@ -91,6 +91,7 @@ pub(crate) fn utf8_str_from_cstring(input: &[u8]) -> nom::IResult<&[u8], &str> {
     if input.is_empty() {
         return Ok((input, ""));
     }
+
     let mut tup = (take_while(|b: u8| b != NULL_BYTE), opt(take(1_usize)));
     let (input, (str_part, _)) = tup.parse(input)?;
     let str_part = utf8_str(str_part);
@@ -115,17 +116,18 @@ pub(crate) fn extract_string(data: &[u8]) -> nom::IResult<&[u8], &str> {
             if value != &NULL_BYTE {
                 let (input, path) = take(data.len())(data)?;
                 let path_string = from_utf8(path);
+
                 match path_string {
                     Ok(results) => return Ok((input, results)),
                     Err(err) => {
-                        warn!("[macos-unifiedlogs] Failed to extract full string: {err:?}");
+                        warn!("Failed to extract full string: {err:?}");
                         return Ok((input, "Could not extract string"));
                     }
                 }
             }
         }
         None => {
-            error!("[macos-unifiedlogs] Cannot extract string. Empty input.");
+            error!("Cannot extract string. Empty input.");
             return Ok((data, "Cannot extract string. Empty input."));
         }
     }
@@ -135,7 +137,7 @@ pub(crate) fn extract_string(data: &[u8]) -> nom::IResult<&[u8], &str> {
     match from_utf8(c_str) {
         Ok(utf8_string) => Ok((input, utf8_string)),
         Err(err) => {
-            warn!("[macos-unifiedlogs] Failed to get string: {err:?}");
+            warn!("Failed to get string: {err:?}");
             Ok((input, "Could not extract string"))
         }
     }
@@ -150,10 +152,11 @@ pub(crate) fn extract_string_size(data: &[u8], size: usize) -> nom::IResult<&[u8
     }
     let available = size.min(data.len());
     let (input, bytes) = take(available)(data)?;
+
     match from_utf8(bytes) {
         Ok(s) => Ok((input, s.trim_end_matches('\0'))),
         Err(err) => {
-            error!("[macos-unifiedlogs] Failed to get specific string: {err:?}");
+            error!("Failed to get specific string: {err:?}");
             if available < size {
                 return Err(nom::Err::Error(nom::error::Error::new(
                     data,
@@ -171,6 +174,7 @@ pub(crate) fn non_empty_cstring(input: &[u8]) -> nom::IResult<&[u8], &str> {
     if input.is_empty() {
         return Ok((input, ""));
     }
+
     let mut tup = (take_while(|b: u8| b != NULL_BYTE), opt(take(1_usize)));
     let (input, (str_part, _)) = tup.parse(input)?;
     match from_utf8(str_part) {
@@ -197,13 +201,16 @@ pub(crate) fn join_strs(
         if !acc.is_empty() {
             acc.push_str(separator);
         }
+
         if let Some(decorator) = decorator {
             acc.push_str(decorator);
         }
+
         acc.push_str(s.as_ref());
         if let Some(decorator) = decorator {
             acc.push_str(decorator);
         }
+
         acc
     })
 }

@@ -57,7 +57,12 @@ pub const PREAMBLE_SIZE: usize = 16;
 /// Parsed chunk preamble — the 16-byte header that prefixes every chunk.
 #[derive(Debug, Clone, Copy)]
 pub struct ChunkPreamble {
+    /// Each binary structure of the tracev3 file
+    /// Has a unique starting tag value
     pub tag: ChunkTag,
+    /// Some tags also have a sub tag value
+    ///
+    /// Can be used to determine sections of the binary tag structure
     pub sub_tag: u32,
     /// Size of the chunk body in bytes, *excluding* the 16-byte preamble.
     pub data_size: u64,

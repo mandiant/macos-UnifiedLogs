@@ -26,9 +26,9 @@ use crate::error::NomExt;
 use crate::header::RawHeaderChunk;
 use crate::traits::{FileProvider, SourceFile};
 use elsa::FrozenMap;
-use log::warn;
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
+use tracing::{debug, warn};
 use uuid::Uuid;
 
 /// Key identifying an oversize payload:
@@ -85,6 +85,7 @@ impl<'p> OversizeCache<'p> {
         let files = provider
             .tracev3_files()
             .map(|source| Box::new(source) as QueuedFile<'p>);
+
         Self {
             entries: FrozenMap::new(),
             inserted_bytes: Cell::new(0),
@@ -101,6 +102,7 @@ impl<'p> OversizeCache<'p> {
         pending.or_else(|| self.files.borrow_mut().next())
     }
 
+    /// Track `Oversize` entries by Boot UUID, reference index, first proc id, and second proc id
     pub(super) fn insert(&self, boot_uuid: Uuid, oversize: &RawOversize<'_>) {
         let key = (
             boot_uuid,
@@ -108,16 +110,19 @@ impl<'p> OversizeCache<'p> {
             oversize.first_proc_id,
             oversize.second_proc_id,
         );
+
         // First writer wins; skip the Box allocation for duplicates.
         if self.entries.get(&key).is_some() {
             return;
         }
+
         self.inserted_bytes
             .set(self.inserted_bytes.get() + oversize.oversize_data.len());
         self.entries
             .insert(key, oversize.oversize_data.to_vec().into_boxed_slice());
     }
 
+    /// Atempt to retreive the `Oversize` data
     fn get(
         &self,
         boot_uuid: Uuid,
@@ -125,6 +130,10 @@ impl<'p> OversizeCache<'p> {
         first_proc_id: u64,
         second_proc_id: u32,
     ) -> Option<&[u8]> {
+        debug!(
+            "Oversize lookup for '{boot_uuid}', data_ref={data_ref}, proc=({first_proc_id}, {second_proc_id})"
+        );
+
         self.entries
             .get(&(boot_uuid, data_ref, first_proc_id, second_proc_id))
     }
@@ -155,6 +164,7 @@ impl<'p> OversizeCache<'p> {
         let Some(file) = next else {
             return false;
         };
+
         match file.read() {
             Ok(data) => harvest_oversize(&data, self),
             Err(e) => warn!(
@@ -162,6 +172,7 @@ impl<'p> OversizeCache<'p> {
                 file.source_path()
             ),
         }
+
         self.pending.borrow_mut().push_back(file);
         true
     }
@@ -180,6 +191,7 @@ fn harvest_oversize(data: &[u8], cache: &OversizeCache<'_>) {
     // Boot of the chunks being read: a file holds one header chunk per boot,
     // each applying to the chunksets that follow it.
     let mut boot_uuid = Uuid::nil();
+
     for raw in RawChunksReader::new(data) {
         let raw = match raw {
             Ok(r) => r,
@@ -188,6 +200,7 @@ fn harvest_oversize(data: &[u8], cache: &OversizeCache<'_>) {
                 break;
             }
         };
+
         if raw.preamble.tag == ChunkTag::Header {
             match RawHeaderChunk::parse(raw.data) {
                 Ok((_, header)) => boot_uuid = header.boot_uuid,
@@ -197,9 +210,11 @@ fn harvest_oversize(data: &[u8], cache: &OversizeCache<'_>) {
                 ),
             }
         }
+
         if raw.preamble.tag != ChunkTag::Chunkset {
             continue;
         }
+
         let payload = match ChunksetPayload::parse(raw.data) {
             Ok(p) => p,
             Err(e) => {
@@ -207,6 +222,7 @@ fn harvest_oversize(data: &[u8], cache: &OversizeCache<'_>) {
                 continue;
             }
         };
+
         let mut reader = ChunkSetReader::new(payload);
         while let Some(inner) = reader.next() {
             let inner = match inner {
@@ -216,9 +232,11 @@ fn harvest_oversize(data: &[u8], cache: &OversizeCache<'_>) {
                     break;
                 }
             };
+
             if inner.preamble.tag != ChunkTag::Oversize {
                 continue;
             }
+
             match RawOversize::parse(inner.data) {
                 Ok((_, ov)) => cache.insert(boot_uuid, &ov),
                 Err(e) => {

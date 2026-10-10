@@ -20,11 +20,17 @@ pub use super::trace::RawTraceBody;
 /// Dispatch enum for parsed firehose entry bodies.
 #[derive(Debug, Clone, Copy)]
 pub enum RawFirehoseBody<'a> {
+    /// Activity log type
     Activity(RawActivityBody<'a>),
+    /// Non-activity log type (typically called `log`)
     NonActivity(RawNonActivityBody<'a>),
+    /// Signpost log type
     Signpost(RawSignpostBody<'a>),
+    /// Trace log types. Very rare to see
     Trace(RawTraceBody<'a>),
+    /// Loss log type
     Loss(RawLossBody),
+    /// Unknown log type encountered
     Unknown(&'a [u8]),
 }
 
@@ -105,8 +111,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_activity_body_from_entry_test_data() -> anyhow::Result<()> {
-        // Same test data as entry.rs test_iterate_entries: 3 Activity entries with flags=4.
+    fn test_activity_body_from_entry_test_data() {
         let test_data: &[u8] = &[
             1, 96, 0, 0, 0, 0, 0, 0, 152, 0, 0, 0, 0, 0, 0, 0, 133, 16, 0, 0, 0, 0, 0, 0, 157, 38,
             0, 0, 0, 0, 0, 0, 136, 0, 0, 16, 0, 0, 0, 2, 42, 188, 25, 14, 104, 4, 0, 0, 2, 1, 4, 0,
@@ -151,6 +156,5 @@ mod tests {
         };
         assert_eq!(first.activity_id, Some((63920, 0x80000000)));
         assert_eq!(first.pc_id, 0x003385A3);
-        Ok(())
     }
 }

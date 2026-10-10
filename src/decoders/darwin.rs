@@ -5,7 +5,7 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-use log::warn;
+use tracing::debug;
 
 #[derive(Debug, Clone, PartialEq, Eq, strum::Display)]
 #[allow(clippy::enum_variant_names)]
@@ -392,7 +392,7 @@ pub(crate) fn errno_codes(errno: &str) -> Errno {
         "-7" => Errno::KeepLooking,
         "-8" => Errno::DataLess,
         _ => {
-            warn!("[macos-unifiedlogs] Unknown darwin errno code: {errno}");
+            debug!("Unknown darwin errno code: {errno}");
             Errno::Unknown(errno.to_string())
         }
     }

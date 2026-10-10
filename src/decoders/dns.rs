@@ -11,7 +11,6 @@ use super::{
 };
 use crate::helpers::{decode_standard, extract_string, extract_string_size};
 use byteorder::{BigEndian, WriteBytesExt};
-use log::error;
 use nom::{
     IResult, Parser,
     bytes::complete::take,
@@ -25,6 +24,7 @@ use std::{
     mem::size_of,
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
 };
+use tracing::error;
 
 /// Parse the DNS header
 pub(crate) fn parse_dns_header(data: &str) -> Result<DnsHeader, DecoderError<'_>> {
@@ -745,7 +745,7 @@ fn parse_idflags(input: &[u8]) -> nom::IResult<&[u8], DnsIdFlags> {
     let (input, id) = be_u16(input)?;
     let flag_results = get_dns_flags(input)
         .inspect_err(|err| {
-            error!("[macos-unifiedlogs] Failed to parse ID Flags: {err:?}");
+            error!("Failed to parse ID Flags: {err:?}");
         })
         .ok();
 

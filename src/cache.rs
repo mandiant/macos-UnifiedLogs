@@ -26,7 +26,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 
 use elsa::FrozenMap;
-use log::warn;
+use tracing::warn;
 use uuid::Uuid;
 
 use crate::dsc::RawSharedCacheStrings;
