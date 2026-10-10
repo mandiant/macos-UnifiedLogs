@@ -67,10 +67,8 @@ impl<'a> RawUUIDText<'a> {
     pub fn image_path(&self) -> Option<&'a str> {
         let total: u32 = self.entries.iter().map(|e| e.entry_size).sum();
         let start = total as usize;
-        if start >= self.footer_data.len() {
-            return None;
-        }
-        let (_, path) = utf8_str_from_cstring(&self.footer_data[start..]).ok()?;
+        let data = self.footer_data.get(start..).filter(|d| !d.is_empty())?;
+        let (_, path) = utf8_str_from_cstring(data).ok()?;
         Some(path)
     }
 
@@ -89,12 +87,15 @@ impl<'a> RawUUIDText<'a> {
             let local_offset = (offset - u64::from(entry.range_start_offset)) as u32;
             let data_start = (local_offset + footer_pos) as usize;
 
-            if data_start >= self.footer_data.len() || local_offset > entry.entry_size {
-                footer_pos += entry.entry_size;
-                continue;
-            }
+            let data = match self.footer_data.get(data_start..) {
+                Some(data) if !data.is_empty() && local_offset <= entry.entry_size => data,
+                _ => {
+                    footer_pos += entry.entry_size;
+                    continue;
+                }
+            };
 
-            let (_, s) = utf8_str_from_cstring(&self.footer_data[data_start..]).ok()?;
+            let (_, s) = utf8_str_from_cstring(data).ok()?;
             return Some(s);
         }
         None

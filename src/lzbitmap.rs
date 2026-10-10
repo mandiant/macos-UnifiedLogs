@@ -98,7 +98,10 @@ pub(crate) fn lzbitmap_decompress(data: &[u8]) -> nom::IResult<&[u8], Vec<u8>> {
 
         for i in 0..bitmaps_count {
             let bit = i * 10;
-            let (_, bytes) = le_u16(&bits_data[bit / 8..])?;
+            let bytes = bits_data
+                .get(bit / 8..)
+                .ok_or(nom::Err::Failure(Error::new(input, ErrorKind::Eof)))?;
+            let (_, bytes) = le_u16(bytes)?;
             let value = bytes >> (bit % 8);
             token_map.push(((value & 0xff) as u8, ((value >> 8) & 3) as u8));
         }
@@ -114,8 +117,9 @@ pub(crate) fn lzbitmap_decompress(data: &[u8]) -> nom::IResult<&[u8], Vec<u8>> {
             return Err(nom::Err::Failure(Error::new(input, ErrorKind::LengthValue)));
         }
 
-        let token_bytes =
-            &compressed_data[token_offset as usize..compressed_data.len() - bitmap_size as usize];
+        let token_bytes = compressed_data
+            .get(token_offset as usize..compressed_data.len() - bitmap_size as usize)
+            .ok_or(nom::Err::Failure(Error::new(input, ErrorKind::LengthValue)))?;
         let mut tokens = get_tokens(token_bytes).peekable();
         let mut distance = 8;
 
@@ -191,7 +195,9 @@ pub(crate) fn lzbitmap_decompress(data: &[u8]) -> nom::IResult<&[u8], Vec<u8>> {
                             .len()
                             .checked_sub(distance)
                             .ok_or(nom::Err::Failure(Error::new(input, ErrorKind::Verify)))?;
-                        let value = decom_buf[source_offset];
+                        let value = *decom_buf
+                            .get(source_offset)
+                            .ok_or(nom::Err::Failure(Error::new(input, ErrorKind::Verify)))?;
                         decom_buf.push(value);
                     }
 

@@ -62,11 +62,11 @@ impl<'a> RawSharedCacheStrings<'a> {
                     continue;
                 }
 
-                if local_offset > range.strings.len() {
+                let Some(strings) = range.strings.get(local_offset..) else {
                     continue;
-                }
+                };
 
-                let (_, s) = utf8_str_from_cstring(&range.strings[local_offset..]).ok()?;
+                let (_, s) = utf8_str_from_cstring(strings).ok()?;
                 let uuid_entry = self.uuids.get(range.uuid_index as usize)?;
                 return Some(DscStringResult {
                     format_string: s,

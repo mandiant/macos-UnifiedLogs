@@ -83,9 +83,12 @@ impl<'a> ChunkSetReader<'a> {
         // Skip zero-padding between inner chunks, matching the legacy parser's
         // `take_while(|b| b == 0)` behavior. Inner chunks may have variable
         // zero-padding that doesn't match fixed 8-byte alignment.
-        while self.current_offset < data.len() && data[self.current_offset] == 0 {
-            self.current_offset += 1;
-        }
+        self.current_offset += data
+            .get(self.current_offset..)
+            .unwrap_or_default()
+            .iter()
+            .take_while(|&&b| b == 0)
+            .count();
 
         if self.current_offset >= data.len() {
             return None;
@@ -96,7 +99,7 @@ impl<'a> ChunkSetReader<'a> {
         }
 
         // Parse preamble + data directly (no alignment padding).
-        let input = &data[self.current_offset..];
+        let input = data.get(self.current_offset..)?;
         let (remaining, preamble) = match ChunkPreamble::parse(input) {
             Ok(ok) => ok,
             Err(e) => {
