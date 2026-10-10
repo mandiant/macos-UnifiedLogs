@@ -24,8 +24,8 @@ jobs:
             target: "aarch64-apple-darwin"
           - os: "ubuntu-latest"
             target: "x86_64-unknown-linux-gnu"
-          - os: "windows-latest",
-            target: "x86_64-pc-windows-msvc",
+          - os: "windows-latest"
+            target: "x86_64-pc-windows-msvc"
           - os: "windows-11-arm"
             target: "aarch64-pc-windows-msvc"
     runs-on: ${{ matrix.info.os }}
@@ -71,7 +71,7 @@ jobs:
           Invoke-WebRequest -Uri "https://github.com/mandiant/macos-UnifiedLogs/releases/download/v1.0.0/test_data.zip" -OutFile "./test_data.zip"
           Expand-Archive -Path "./test_data.zip" -DestinationPath "." -Force
         shell: pwsh
-        
+
       - name: Build tests
         run: cargo test --no-run --release
       - name: Run tests
