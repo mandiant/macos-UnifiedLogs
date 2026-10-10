@@ -58,7 +58,11 @@
     clippy::cast_ptr_alignment,
     clippy::char_lit_as_u8,
     clippy::checked_conversions,
-    clippy::unnecessary_cast
+    clippy::unnecessary_cast,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::panic
 )]
 
 pub use error::*;

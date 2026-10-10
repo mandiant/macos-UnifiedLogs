@@ -76,7 +76,7 @@ impl LogType {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Hash)]
 pub enum MessageFlags {
     SharedCache,
     MainExe,
