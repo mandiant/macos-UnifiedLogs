@@ -21,14 +21,11 @@ jobs:
     permissions:
       contents: write # Used to publish releases
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
-      - name: Setup Stable Rust toolchain
-        uses: dtolnay/rust-toolchain@6d653acede28d24f02e3cd41383119e8b1b35921 #v2025.09.23
-        with:
-          components: clippy, rustfmt
-          toolchain: stable
+      - name: Update Rust toolchain
+        run: rustup upgrade
       - name: Setup Cross
         run: cargo install cross --git https://github.com/cross-rs/cross
 
@@ -44,7 +41,7 @@ jobs:
         run: .github/scripts/package.sh
 
       - name: Release
-        uses: softprops/action-gh-release@6cbd405e2c4e67a21c47fa9e383d020e4e28b836 #v2.3.3
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
         with:
           files: "unifiedlog_iterator*"
           name: "${{ vars.GITHUB_REF_NAME }} - Released!"
