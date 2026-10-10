@@ -15,6 +15,7 @@ use nom::{
     number::complete::{be_u128, le_u16, le_u32, le_u64},
 };
 use std::collections::HashMap;
+use tracing::{debug, error, warn};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Default)]
@@ -219,7 +220,7 @@ impl<'a> RawCatalogChunk<'a> {
             let (_, uuid) = utf8_str_from_cstring(uuid_data)?;
 
             entry.uuid = uuid;
-            log::debug!("Persona info: '{entry:?}'");
+            debug!("Persona info: '{entry:?}'");
             input = remaining;
         }
 
@@ -342,7 +343,7 @@ impl ProcessInfoEntry {
             .get(catalog_main_uuid_index as usize)
             .copied()
             .unwrap_or_else(|| {
-                log::warn!("[macos-unifiedlogs] Could not find main UUID in catalog");
+                warn!("Could not find main UUID in catalog");
                 Uuid::nil()
             });
 
@@ -353,7 +354,7 @@ impl ProcessInfoEntry {
         let padding = match u64_to_usize(padding) {
             Some(p) => p,
             None => {
-                log::error!("[macos-unifiedlogs] u64 is bigger than system usize");
+                error!("u64 is bigger than system usize");
                 return Err(nom::Err::Error(nom::error::Error::new(
                     input,
                     nom::error::ErrorKind::TooLarge,
@@ -483,9 +484,7 @@ impl CatalogSubchunk {
         if compression_algorithm != LZ4_COMPRESSION
             && !LZBITMAP_COMPRESSION.contains(&compression_algorithm)
         {
-            log::error!(
-                "[macos-unifiedlogs] Unexpected compression aglorithm: {compression_algorithm}"
-            );
+            error!("Unexpected compression aglorithm: {compression_algorithm}");
             return Err(nom::Err::Error(make_error(input, ErrorKind::OneOf)));
         }
 
@@ -509,7 +508,7 @@ impl CatalogSubchunk {
         let padding = match u64_to_usize(padding) {
             Some(p) => p,
             None => {
-                log::error!("[macos-unifiedlogs] u64 is bigger than system usize");
+                error!("u64 is bigger than system usize");
                 return Err(nom::Err::Error(nom::error::Error::new(
                     input,
                     nom::error::ErrorKind::TooLarge,
@@ -644,7 +643,6 @@ mod tests {
             Uuid::parse_str("3D05845F3F65358F9EBF2236E772AC02")?, // OTHER
         ];
 
-        // let (_, process_entry) = CatalogChunk::parse_catalog_process_entry(subsystem_data, &test_data).unwrap();
         let (_, process_entry) = ProcessInfoEntry::parse(input, &test_uuids)?;
         assert_eq!(process_entry.index, 0);
         assert_eq!(process_entry.unknown, 0);

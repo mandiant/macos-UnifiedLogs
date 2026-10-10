@@ -38,7 +38,6 @@ mod tests {
 
     #[test]
     fn test_trace_body() -> anyhow::Result<()> {
-        // From src/chunks/firehose/trace.rs test_parse_firehose_trace
         let test_data: &[u8] = &[106, 139, 3, 0, 0];
 
         let body = RawFirehoseBody::parse(

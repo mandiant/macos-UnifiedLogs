@@ -19,13 +19,20 @@ use super::{
     header::RawHeaderChunk,
 };
 
+/// Binary structures found in the `Chunk` data
 #[derive(Debug)]
 pub enum Chunk<'a> {
-    Header(super::header::RawHeaderChunk<'a>),
+    /// Header for the tracev3 file
+    Header(RawHeaderChunk<'a>),
+    /// Catalog data for the `Chunk`
     Catalog(RawCatalogChunk<'a>),
+    /// `Firehose` contains the bulk of the log messages
     Firehose(RawFirehose<'a>),
+    /// `Simpledump` chunk data
     Simpledump(RawSimpleDump<'a>),
+    /// `Statedump` chunk data
     Statedump(RawStatedump<'a>),
+    /// `Oversize` chunk
     Oversize(RawOversize<'a>),
     Unknown(RawChunk<'a>),
 }
@@ -37,7 +44,9 @@ pub enum Chunk<'a> {
 /// `ChunkSetReader` and represented by the [`Chunk`] enum.
 #[derive(Debug)]
 pub enum TopChunk<'a> {
-    Header(super::header::RawHeaderChunk<'a>),
+    /// Header for the tracev3 file
+    Header(RawHeaderChunk<'a>),
+    /// Catalog data for the `Chunk`
     Catalog(RawCatalogChunk<'a>),
     Chunkset(ChunkSetReader<'a>),
     Unknown(RawChunk<'a>),
@@ -56,13 +65,20 @@ impl<'a> ChunksReader<'a> {
     }
 }
 
+/// A reader that can be used iterate through the
+/// log message chunks.
+///
+/// Will decompression log messages
 #[derive(Debug)]
 pub struct ChunkSetReader<'a> {
+    /// Decompessed chunkset data
     payload: ChunksetPayload<'a>,
+    /// Offset within the `Chunkset` data
     current_offset: usize,
 }
 
 impl<'a> ChunkSetReader<'a> {
+    /// Return a `ChunkSetReader`
     pub fn new(payload: ChunksetPayload<'a>) -> Self {
         Self {
             payload,

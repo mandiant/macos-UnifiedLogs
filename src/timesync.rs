@@ -5,10 +5,10 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-use log::warn;
 use nom::number::complete::{be_u128, le_i64, le_u16, le_u32, le_u64};
 use serde::Serialize;
 use std::collections::HashMap;
+use tracing::warn;
 use uuid::Uuid;
 
 const TIMESYNC_BOOT_SIGNATURE: u16 = 0xbbb0;

@@ -5,14 +5,14 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-/// Heavily influenced by <https://github.com/fox-it/dissect.util/blob/main/dissect/util/compression/lzbitmap.py> -- Apache license
-use log::{error, warn};
 use nom::{
     bytes::complete::take,
     error::{Error, ErrorKind},
     number::complete::{le_u8, le_u16, le_u24},
 };
 use std::iter::Peekable;
+/// Heavily influenced by <https://github.com/fox-it/dissect.util/blob/main/dissect/util/compression/lzbitmap.py> -- Apache license
+use tracing::{error, warn};
 
 /// Decompress lzbitmap data. Seen in Unified Logs starting in Golden Gate
 pub(crate) fn lzbitmap_decompress(data: &[u8]) -> nom::IResult<&[u8], Vec<u8>> {
@@ -20,7 +20,7 @@ pub(crate) fn lzbitmap_decompress(data: &[u8]) -> nom::IResult<&[u8], Vec<u8>> {
     // ZBM
     let magic_signature = 5063258;
     if signature != magic_signature {
-        error!("[macos-unifiedlogs] Unexpected signature for LZBITMAP {signature}. Wanted ZBM");
+        error!("Unexpected signature for LZBITMAP {signature}. Wanted ZBM");
         return Err(nom::Err::Failure(Error::new(input, ErrorKind::Verify)));
     }
 
@@ -49,7 +49,7 @@ pub(crate) fn lzbitmap_decompress(data: &[u8]) -> nom::IResult<&[u8], Vec<u8>> {
 
         if compress_size > decom_size + chunk_header_size {
             error!(
-                "[macos-unifiedlogs] Bad LZBITMAP chunk size: {compress_size} vs {}",
+                "Bad LZBITMAP chunk size: {compress_size} vs {}",
                 decom_size + chunk_header_size
             );
             return Err(nom::Err::Failure(Error::new(input, ErrorKind::LengthValue)));
@@ -61,7 +61,7 @@ pub(crate) fn lzbitmap_decompress(data: &[u8]) -> nom::IResult<&[u8], Vec<u8>> {
 
         if decom_size > max_chunk {
             error!(
-                "[macos-unifiedlogs] Chunk decompressed size is larger ({decom_size}) than expected max chunk size: {max_chunk}"
+                "Chunk decompressed size is larger ({decom_size}) than expected max chunk size: {max_chunk}"
             );
             return Err(nom::Err::Failure(Error::new(input, ErrorKind::LengthValue)));
         }
@@ -88,7 +88,7 @@ pub(crate) fn lzbitmap_decompress(data: &[u8]) -> nom::IResult<&[u8], Vec<u8>> {
         let bitmap_size = 17;
         if bitmap_size > compress_size {
             error!(
-                "[macos-unifiedlogs] Bitmap size larger than compressed data size: {bitmap_size} vs {compress_size}"
+                "Bitmap size larger than compressed data size: {bitmap_size} vs {compress_size}"
             );
             return Err(nom::Err::Failure(Error::new(input, ErrorKind::LengthValue)));
         }
@@ -112,7 +112,7 @@ pub(crate) fn lzbitmap_decompress(data: &[u8]) -> nom::IResult<&[u8], Vec<u8>> {
             || token_offset > compress_size - bitmap_size
         {
             error!(
-                "[macos-unifiedlogs] Token offset {token_offset} larger than compressed data: {compress_size} bytes"
+                "Token offset {token_offset} larger than compressed data: {compress_size} bytes"
             );
             return Err(nom::Err::Failure(Error::new(input, ErrorKind::LengthValue)));
         }
@@ -186,9 +186,7 @@ pub(crate) fn lzbitmap_decompress(data: &[u8]) -> nom::IResult<&[u8], Vec<u8>> {
                         current_offset += 1;
                     } else {
                         if distance == 0 {
-                            error!(
-                                "[macos-unifiedlogs] Got distance 0 for checked_sub on decompressed data"
-                            );
+                            error!("Got distance 0 for checked_sub on decompressed data");
                             return Err(nom::Err::Failure(Error::new(input, ErrorKind::Verify)));
                         }
                         let source_offset = decom_buf
@@ -258,11 +256,11 @@ fn check_flags(flag: u8) -> bool {
         0x9 | 0xc => true,
         // These flags could exist but so far have not been seen in wild
         0x8 | 0xd => {
-            warn!("[macos-unifiedlogs] Got possible flag {flag}");
+            warn!("Got possible flag {flag}");
             true
         }
         _ => {
-            error!("[macos-unifiedlogs] Got unsupported flag {flag}");
+            error!("Got unsupported flag {flag}");
             false
         }
     }

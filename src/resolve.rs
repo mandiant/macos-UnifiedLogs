@@ -52,7 +52,6 @@ pub struct ResolvedStrings<'a> {
 ///
 /// Dispatches to one of 4 resolution paths based on formatter flags:
 /// `SharedCache`/`LargeSharedCache` > `Absolute` > `UuidRelative` > `MainExe` (default).
-#[allow(clippy::too_many_arguments)]
 pub fn resolve_strings<'s>(
     format_string_location: u32,
     pc_id: u32,
@@ -109,7 +108,6 @@ pub fn resolve_strings<'s>(
 }
 
 /// Shared cache (DSC) resolution path.
-#[allow(clippy::too_many_arguments)]
 fn resolve_shared_cache<'s>(
     string_offset: u64,
     original_offset: u64,
