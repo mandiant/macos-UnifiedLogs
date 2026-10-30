@@ -1,0 +1,37 @@
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[project]
+name = "macos-unifiedlogs"
+version = "0.8.0"
+description = "Python bindings for parsing macOS Unified Logs (tracev3 files and logarchives)"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.9"
+keywords = ["forensics", "macOS", "unifiedlog", "tracev3", "dfir"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Information Technology",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Topic :: Security",
+    "Topic :: System :: Systems Administration",
+]
+
+[project.urls]
+repository = "https://github.com/mandiant/macos-UnifiedLogs"
+
+[tool.maturin]
+# Dotted module name: the compiled extension is placed inside the
+# `macos_unifiedlogs` python package (mixed Rust/Python layout).
+module-name = "macos_unifiedlogs._macos_unifiedlogs"

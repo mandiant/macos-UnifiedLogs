@@ -1,0 +1,32 @@
+[package]
+name = "macos-unifiedlogs-python"
+version = "0.8.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Python bindings for the macos-unifiedlogs library"
+publish = false
+
+# Keep this crate independent so it is only built when building the bindings,
+# not as part of regular `cargo build`/`cargo test` runs of the library itself.
+[workspace]
+
+[lib]
+name = "_macos_unifiedlogs"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+macos-unifiedlogs = { path = "../.." }
+pyo3 = "0.30"
+serde_json = "1.0"
+tracing = "0.1"
+
+[dev-dependencies]
+# Auto-initialize the Python interpreter in `cargo test` so the unit tests
+# can build and inspect Python objects; the shipped extension module is
+# unaffected (maturin still controls the `extension-module` feature).
+pyo3 = { version = "0.30", features = ["auto-initialize"] }
+
+[features]
+# Enabled automatically by maturin when building the extension module.
+# When off (e.g. for `cargo test`), the rlib links against libpython normally.
+extension-module = ["pyo3/extension-module"]
