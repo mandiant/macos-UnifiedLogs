@@ -15,7 +15,8 @@
 //! Every log entry is returned as a plain `dict` with the same fields the
 //! library serializes to JSON (see the `Serialize` impl on
 //! [`LogEntry`]): subsystem, message, process, pid, time, timestamp,
-//! event_type, log_type, …
+//! event_type, log_type, … — except `timestamp`, which is handed to Python
+//! as a timezone-aware `datetime` (UTC) instead of an RFC 3339 string.
 //!
 //! The library's visitor API yields zero-copy [`LogEntry`] values that borrow
 //! the parse buffers, so the bindings serialize each entry to an owned
@@ -102,16 +103,35 @@ fn json_to_py<'py>(py: Python<'py>, value: &serde_json::Value) -> PyResult<Bound
 
 /// Convert a serialized log entry (a JSON object) into a plain Python `dict`.
 ///
+/// The `timestamp` field becomes a timezone-aware Python `datetime` (the
+/// value is UTC); everything else is converted per [`json_to_py`].
 /// Non-object values produce an empty `dict`, which cannot occur for
 /// serialized log entries.
 fn value_to_pydict(py: Python<'_>, value: &serde_json::Value) -> PyResult<PyObject> {
     let dict = PyDict::new(py);
     if let serde_json::Value::Object(map) = value {
         for (key, val) in map {
-            dict.set_item(key.as_str(), json_to_py(py, val)?)?;
+            if key == "timestamp" {
+                dict.set_item(key.as_str(), timestamp_to_py(py, val)?)?;
+            } else {
+                dict.set_item(key.as_str(), json_to_py(py, val)?)?;
+            }
         }
     }
     Ok(dict.into_any().unbind())
+}
+
+/// Convert the RFC 3339 `timestamp` field into a timezone-aware Python
+/// `datetime` (always UTC). Falls back to the raw string when parsing fails,
+/// which cannot occur for values produced by the library.
+fn timestamp_to_py<'py>(py: Python<'py>, value: &serde_json::Value) -> PyResult<Bound<'py, PyAny>> {
+    match value {
+        serde_json::Value::String(ts) => match chrono::DateTime::parse_from_rfc3339(ts) {
+            Ok(dt) => Ok(dt.into_pyobject(py)?.into_any()),
+            Err(_) => Ok(ts.clone().into_pyobject(py)?.into_any()),
+        },
+        _ => json_to_py(py, value),
+    }
 }
 
 /// Serialize a zero-copy [`LogEntry`] to an owned [`serde_json::Value`].
@@ -374,7 +394,7 @@ impl LogArchive {
                         let msg = payload
                             .downcast_ref::<&'static str>()
                             .map(|s| s.to_string())
-                            .or_else(|| payload.downcast_ref::<String>().map(String::clone))
+                            .or_else(|| payload.downcast_ref::<String>().cloned())
                             .unwrap_or_else(|| "visit worker thread panicked".to_string());
                         Err(UnifiedLogError::new_err(msg))
                     }
@@ -557,6 +577,31 @@ mod tests {
 
             // JSON null becomes Python None
             assert!(dict.get_item("missing").unwrap().unwrap().is_none());
+        });
+    }
+
+    #[test]
+    fn timestamp_becomes_timezone_aware_datetime() {
+        use chrono::{Datelike, TimeZone};
+
+        let value: serde_json::Value = serde_json::json!({
+            "pid": 1u64,
+            "timestamp": "2024-05-01T12:00:00.123456789Z",
+        });
+        Python::attach(|py| {
+            let obj = value_to_pydict(py, &value).unwrap();
+            let dict = obj.bind(py).cast::<PyDict>().unwrap();
+
+            // A timezone-aware datetime in UTC, not a plain string
+            let ts = dict.get_item("timestamp").unwrap().unwrap();
+            let dt = ts.extract::<chrono::DateTime<chrono::FixedOffset>>().unwrap();
+            assert_eq!(dt.year(), 2024);
+            assert_eq!(dt.month(), 5);
+            assert_eq!(chrono::Utc.from_utc_datetime(&dt.naive_utc()), dt);
+
+            // Other fields still convert normally
+            let pid = dict.get_item("pid").unwrap().unwrap();
+            assert_eq!(pid.extract::<u64>().unwrap(), 1);
         });
     }
 

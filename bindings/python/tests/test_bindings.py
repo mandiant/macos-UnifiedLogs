@@ -7,7 +7,9 @@ used by the Rust tests, downloadable from the project's GitHub releases), or
 run on a live macOS system to use ``MACOS_UNIFIEDLOGS_TEST_ARCHIVE=live``.
 """
 
+import json
 import os
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -85,6 +87,15 @@ class TestLogarchive:
             assert isinstance(record, dict)
             for field in _expected_fields():
                 assert field in record, f"missing field: {field}"
+
+    def test_timestamp_is_timezone_aware_datetime(self):
+        records = macos_unifiedlogs.parse_logarchive(ARCHIVE)
+        first = records[0]
+        assert isinstance(first["timestamp"], datetime)
+        assert first["timestamp"].tzinfo is not None
+        assert first["timestamp"].utcoffset() == timedelta(0)
+        # jsonl serialization needs default=str because of the datetime field
+        json.dumps(first, default=str)
 
     def test_streaming_matches_bulk(self):
         streamed = list(macos_unifiedlogs.LogArchive(ARCHIVE))

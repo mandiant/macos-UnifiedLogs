@@ -244,6 +244,7 @@ dependencies = [
 name = "macos-unifiedlogs-python"
 version = "0.8.0"
 dependencies = [
+ "chrono",
  "macos-unifiedlogs",
  "pyo3",
  "serde_json",
@@ -363,6 +364,7 @@ version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "229ca13b8a15bb0d1487b81ab975bfcd97513416499a8312011b6036e42e0de4"
 dependencies = [
+ "chrono",
  "libc",
  "once_cell",
  "portable-atomic",

@@ -48,9 +48,11 @@ Each entry is a plain `dict` containing:
 `parent_activity_id`, `boot_uuid`, `timezone_name`, `evidence`,
 `message_flags`.
 
-`timestamp` is an RFC 3339 string; `time` is the same instant as Unix
-nanoseconds (float). `event_type` and `log_type` are strings (`"Log"`,
-`"Signpost"`, `"Default"`, …). `message_flags` is a list of strings.
+`timestamp` is a timezone-aware `datetime` (UTC); `time` is the same instant
+as Unix nanoseconds (float). Serialize datetime values back to JSON with
+`json.dumps(entry, default=str)`. `event_type` and `log_type` are strings
+(`"Log"`, `"Signpost"`, `"Default"`, …). `message_flags` is a list of
+strings.
 
 ## Usage
 
@@ -83,11 +85,13 @@ iterate with `LogArchive`, which yields entries one at a time and holds only a
 small buffer plus the string cache:
 
 ```python
+import json
+
 from macos_unifiedlogs import LogArchive
 
 with open("out.jsonl", "w") as fh:
     for entry in LogArchive("/path/to/system_logs.logarchive"):
-        fh.write(entry["message"] + "\n")
+        fh.write(json.dumps(entry, default=str) + "\n")
 ```
 
 ### Parse the live system (macOS only)
