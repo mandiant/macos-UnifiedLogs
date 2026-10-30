@@ -17,7 +17,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 chrono = "0.4"
 macos-unifiedlogs = { path = "../.." }
-pyo3 = { version = "0.30", features = ["chrono"] }
+pyo3 = { version = "0.30", features = ["abi3-py311", "chrono"] }
 serde_json = "1.0"
 tracing = "0.1"
 
