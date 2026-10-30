@@ -7,7 +7,7 @@ name = "macos-unifiedlogs"
 version = "0.8.0"
 description = "Python bindings for parsing macOS Unified Logs (tracev3 files and logarchives)"
 readme = "README.md"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
 requires-python = ">=3.9"
 keywords = ["forensics", "macOS", "unifiedlog", "tracev3", "dfir"]
 classifiers = [
