@@ -1,0 +1,21 @@
+use clap::Subcommand;
+use std::path::PathBuf;
+
+#[derive(Subcommand, Debug)]
+pub(crate) enum Commands {
+    /// View log messages
+    Show {
+        /// Optional path to logarchive
+        #[clap(long)]
+        archive: Option<PathBuf>,
+        /// Only output timesync data
+        #[clap(long)]
+        timesync: bool,
+        /// Only output uuidtext data
+        #[clap(long)]
+        uuidtext: bool,
+        // Parse specific tracev3 log files
+        //#[clap(long, value_delimiter = ',')]
+        //trace_files:Option<Vec<PathBuf>>
+    },
+}
