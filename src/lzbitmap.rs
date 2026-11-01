@@ -1,11 +1,18 @@
-/// Heavily influenced by <https://github.com/fox-it/dissect.util/blob/main/dissect/util/compression/lzbitmap.py> -- Apache license
-use log::{error, warn};
+// Copyright 2022 Mandiant, Inc. All Rights Reserved
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software distributed under the License
+// is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and limitations under the License.
+
 use nom::{
     bytes::complete::take,
     error::{Error, ErrorKind},
     number::complete::{le_u8, le_u16, le_u24},
 };
 use std::iter::Peekable;
+/// Heavily influenced by <https://github.com/fox-it/dissect.util/blob/main/dissect/util/compression/lzbitmap.py> -- Apache license
+use tracing::{error, warn};
 
 /// Decompress lzbitmap data. Seen in Unified Logs starting in Golden Gate
 pub(crate) fn lzbitmap_decompress(data: &[u8]) -> nom::IResult<&[u8], Vec<u8>> {
@@ -13,7 +20,7 @@ pub(crate) fn lzbitmap_decompress(data: &[u8]) -> nom::IResult<&[u8], Vec<u8>> {
     // ZBM
     let magic_signature = 5063258;
     if signature != magic_signature {
-        error!("[macos-unifiedlogs] Unexpected signature for LZBITMAP {signature}. Wanted ZBM");
+        error!("Unexpected signature for LZBITMAP {signature}. Wanted ZBM");
         return Err(nom::Err::Failure(Error::new(input, ErrorKind::Verify)));
     }
 
@@ -42,7 +49,7 @@ pub(crate) fn lzbitmap_decompress(data: &[u8]) -> nom::IResult<&[u8], Vec<u8>> {
 
         if compress_size > decom_size + chunk_header_size {
             error!(
-                "[macos-unifiedlogs] Bad LZBITMAP chunk size: {compress_size} vs {}",
+                "Bad LZBITMAP chunk size: {compress_size} vs {}",
                 decom_size + chunk_header_size
             );
             return Err(nom::Err::Failure(Error::new(input, ErrorKind::LengthValue)));
@@ -54,7 +61,7 @@ pub(crate) fn lzbitmap_decompress(data: &[u8]) -> nom::IResult<&[u8], Vec<u8>> {
 
         if decom_size > max_chunk {
             error!(
-                "[macos-unifiedlogs] Chunk decompressed size is larger ({decom_size}) than expected max chunk size: {max_chunk}"
+                "Chunk decompressed size is larger ({decom_size}) than expected max chunk size: {max_chunk}"
             );
             return Err(nom::Err::Failure(Error::new(input, ErrorKind::LengthValue)));
         }
@@ -81,7 +88,7 @@ pub(crate) fn lzbitmap_decompress(data: &[u8]) -> nom::IResult<&[u8], Vec<u8>> {
         let bitmap_size = 17;
         if bitmap_size > compress_size {
             error!(
-                "[macos-unifiedlogs] Bitmap size larger than compressed data size: {bitmap_size} vs {compress_size}"
+                "Bitmap size larger than compressed data size: {bitmap_size} vs {compress_size}"
             );
             return Err(nom::Err::Failure(Error::new(input, ErrorKind::LengthValue)));
         }
@@ -91,7 +98,10 @@ pub(crate) fn lzbitmap_decompress(data: &[u8]) -> nom::IResult<&[u8], Vec<u8>> {
 
         for i in 0..bitmaps_count {
             let bit = i * 10;
-            let (_, bytes) = le_u16(&bits_data[bit / 8..])?;
+            let bytes = bits_data
+                .get(bit / 8..)
+                .ok_or(nom::Err::Failure(Error::new(input, ErrorKind::Eof)))?;
+            let (_, bytes) = le_u16(bytes)?;
             let value = bytes >> (bit % 8);
             token_map.push(((value & 0xff) as u8, ((value >> 8) & 3) as u8));
         }
@@ -102,13 +112,14 @@ pub(crate) fn lzbitmap_decompress(data: &[u8]) -> nom::IResult<&[u8], Vec<u8>> {
             || token_offset > compress_size - bitmap_size
         {
             error!(
-                "[macos-unifiedlogs] Token offset {token_offset} larger than compressed data: {compress_size} bytes"
+                "Token offset {token_offset} larger than compressed data: {compress_size} bytes"
             );
             return Err(nom::Err::Failure(Error::new(input, ErrorKind::LengthValue)));
         }
 
-        let token_bytes =
-            &compressed_data[token_offset as usize..compressed_data.len() - bitmap_size as usize];
+        let token_bytes = compressed_data
+            .get(token_offset as usize..compressed_data.len() - bitmap_size as usize)
+            .ok_or(nom::Err::Failure(Error::new(input, ErrorKind::LengthValue)))?;
         let mut tokens = get_tokens(token_bytes).peekable();
         let mut distance = 8;
 
@@ -175,16 +186,16 @@ pub(crate) fn lzbitmap_decompress(data: &[u8]) -> nom::IResult<&[u8], Vec<u8>> {
                         current_offset += 1;
                     } else {
                         if distance == 0 {
-                            error!(
-                                "[macos-unifiedlogs] Got distance 0 for checked_sub on decompressed data"
-                            );
+                            error!("Got distance 0 for checked_sub on decompressed data");
                             return Err(nom::Err::Failure(Error::new(input, ErrorKind::Verify)));
                         }
                         let source_offset = decom_buf
                             .len()
                             .checked_sub(distance)
                             .ok_or(nom::Err::Failure(Error::new(input, ErrorKind::Verify)))?;
-                        let value = decom_buf[source_offset];
+                        let value = *decom_buf
+                            .get(source_offset)
+                            .ok_or(nom::Err::Failure(Error::new(input, ErrorKind::Verify)))?;
                         decom_buf.push(value);
                     }
 
@@ -245,11 +256,11 @@ fn check_flags(flag: u8) -> bool {
         0x9 | 0xc => true,
         // These flags could exist but so far have not been seen in wild
         0x8 | 0xd => {
-            warn!("[macos-unifiedlogs] Got possible flag {flag}");
+            warn!("Got possible flag {flag}");
             true
         }
         _ => {
-            error!("[macos-unifiedlogs] Got unsupported flag {flag}");
+            error!("Got unsupported flag {flag}");
             false
         }
     }
@@ -258,17 +269,29 @@ fn check_flags(flag: u8) -> bool {
 #[cfg(test)]
 mod tests {
     use crate::lzbitmap::lzbitmap_decompress;
-    use std::{fs, path::PathBuf};
+    use nom::{Err, error::ErrorKind};
+    use std::{fs::read, path::PathBuf};
 
-    // #[test]
-    fn test_decompress_lzbitmap() {
+    #[test]
+    fn test_lzbitmap_decompress() {
         let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        test_path.push("tests/test_data/lzbitmap/lzbitmap_zbm.raw");
+        test_path.push("tests/test_data/Compression/lzbitmap/golden_gate_lzbitmap.raw");
 
-        let buffer = fs::read(test_path).unwrap();
+        let bytes = read(test_path).unwrap();
+        let (remaining, decom_data) = lzbitmap_decompress(&bytes).unwrap();
+        assert_eq!(decom_data.len(), 61560);
+        assert_eq!(remaining.len(), 6);
+    }
 
-        let (_, results) = lzbitmap_decompress(&buffer).unwrap();
-        assert!(results.starts_with(&[1, 96, 0, 0, 0, 0, 0, 0, 6, 16, 0, 0, 0, 0, 0, 0, 80, 2, 0]));
-        assert_eq!(results.len(), 65424);
+    #[test]
+    fn test_lzbitmap_decompress_bad_sig() {
+        let mut test_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        test_path.push("tests/test_data/Compression/lzbitmap/Malformed/golden_gate_lzbitmap.raw");
+
+        let bytes = read(test_path).unwrap();
+        let err = lzbitmap_decompress(&bytes).unwrap_err();
+        assert!(
+            matches!(err, Err::Failure(e) if e.input.len() == 15545 && e.code == ErrorKind::Verify)
+        );
     }
 }
