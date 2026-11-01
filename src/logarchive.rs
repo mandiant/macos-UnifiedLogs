@@ -153,6 +153,8 @@ pub fn visit_provider_with_options<O: VisitOutcome>(
 
         loop {
             let Some(source) = sources.next() else {
+                // Break out of labeled 'generations loop
+                // Lets us break out the nested loop
                 break 'generations;
             };
             info!("Parsing: {}", source.source_path());

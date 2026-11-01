@@ -6,18 +6,19 @@
 // See the License for the specific language governing permissions and limitations under the License.
 
 use nom::number::complete::le_u32;
+use serde::Serialize;
 
 use super::helpers::utf8_str_from_cstring;
 
 const UUIDTEXT_SIGNATURE: u32 = 0x6677_8899;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize)]
 pub struct RawUUIDTextEntry {
     pub range_start_offset: u32,
     pub entry_size: u32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct RawUUIDText<'a> {
     pub major_version: u32,
     pub minor_version: u32,
