@@ -1,6 +1,6 @@
 [package]
 name = "unifiedlog_iterator"
-version = "0.6.0"
+version = "0.7.0"
 edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -9,10 +9,10 @@ edition = "2024"
 tracing-subscriber = { version = "0.3.23", features = ["json", "env-filter"] }
 csv = "1.4.0"
 chrono = "0.4.45"
-uuid = "1.28.0"
+uuid = "1.29.0"
 tracing = "0.1.44"
-serde_json = "1.0.152"
+serde_json = "1.0.154"
 macos-unifiedlogs = { path = "../../" }
 clap = { version = "4.6.7", features = ["derive"] }
 serde = { version = "1.0.229", features = ["derive"] }
-libc = "0.2.190"
+libc = "0.2.191"
