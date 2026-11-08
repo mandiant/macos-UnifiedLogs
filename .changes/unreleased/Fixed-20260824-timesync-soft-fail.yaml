@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  Missing timesync data no longer aborts the whole parse: `load_timesync_data` returns an
+  empty collection with a warning (matching legacy behavior) and every entry is still emitted,
+  with timestamps left as unresolved mach continuous time. Partial acquisitions holding only
+  tracev3 files now produce output instead of a `NotFound` error.
+time: 2026-08-24T00:00:06.000000000Z
