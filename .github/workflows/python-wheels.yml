@@ -1,0 +1,132 @@
+name: Python Wheels
+
+# Builds abi3 wheels for the `unifiedlogs` Python binding (bindings/python/)
+# with PyO3/maturin-action. Separate from the binary-release workflows
+# (release.yml / cross-release.yml) — the binding is its own cargo workspace, so
+# this never disturbs the library build or its releases. The target matrix
+# mirrors release.yml + cross-release.yml so wheels cover the same platforms.
+
+on:
+  # Manual runs for ad-hoc wheel builds / testing.
+  workflow_dispatch:
+  # Tag pushes, matching the binary release workflows' trigger.
+  push:
+    tags:
+      - v[0-9]+.*
+
+permissions: {}
+
+env:
+  # Allow building against interpreters newer than the pinned PyO3's max-tested
+  # version (abi3 forward compatibility). See PyO3 issue #5505.
+  PYO3_USE_ABI3_FORWARD_COMPATIBILITY: "1"
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  wheels:
+    name: Wheel ${{ matrix.info.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        info:
+          # macOS (mirrors release.yml)
+          - os: "macOS-latest"
+            target: "x86_64-apple-darwin"
+          - os: "macOS-latest"
+            target: "aarch64-apple-darwin"
+          # Windows (mirrors release.yml)
+          - os: "windows-latest"
+            target: "x86_64-pc-windows-msvc"
+          - os: "windows-11-arm"
+            target: "aarch64-pc-windows-msvc"
+          # Linux gnu (mirrors release.yml + cross-release.yml). Rust needs
+          # glibc >= 2.17, so manylinux2014 is the floor.
+          - os: "ubuntu-latest"
+            target: "x86_64-unknown-linux-gnu"
+            manylinux: "2014"
+          - os: "ubuntu-latest"
+            target: "aarch64-unknown-linux-gnu"
+            manylinux: "2014"
+          # Linux musl (mirrors cross-release.yml)
+          - os: "ubuntu-latest"
+            target: "x86_64-unknown-linux-musl"
+            manylinux: "musllinux_1_2"
+    runs-on: ${{ matrix.info.os }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Build wheels
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
+        with:
+          target: ${{ matrix.info.target }}
+          # manylinux/musllinux is only meaningful on Linux; empty elsewhere.
+          manylinux: ${{ matrix.info.manylinux }}
+          # abi3-py39 (set via the pyo3 Cargo feature) yields one portable wheel
+          # per platform loadable on CPython 3.9+.
+          args: --release --out dist
+          working-directory: bindings/python
+        env:
+          PYO3_USE_ABI3_FORWARD_COMPATIBILITY: "1"
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: wheels-${{ matrix.info.target }}
+          path: bindings/python/dist/*.whl
+          if-no-files-found: error
+
+  sdist:
+    name: Source distribution
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Build sdist
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
+        with:
+          command: sdist
+          args: --out dist
+          working-directory: bindings/python
+
+      - name: Upload sdist
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sdist
+          path: bindings/python/dist/*.tar.gz
+          if-no-files-found: error
+
+  # Publishing to PyPI is intentionally left wired-but-disabled: it must not
+  # require live secrets to exist, and the binding has not been released yet.
+  # To enable, remove the `if: false` guard, configure a PyPI trusted publisher
+  # (or set MATURIN_PYPI_TOKEN as a secret), and ensure the tag trigger above is
+  # the desired release trigger.
+  #
+  # publish:
+  #   name: Publish to PyPI
+  #   needs: [wheels, sdist]
+  #   if: false  # gated: enable once a PyPI project + credentials exist
+  #   runs-on: ubuntu-latest
+  #   permissions:
+  #     id-token: write  # for PyPI trusted publishing (OIDC)
+  #   steps:
+  #     - uses: actions/download-artifact@v7
+  #       with:
+  #         path: dist
+  #         merge-multiple: true
+  #     - uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
+  #       with:
+  #         command: upload
+  #         args: --non-interactive --skip-existing dist/*
+  #       env:
+  #         MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}

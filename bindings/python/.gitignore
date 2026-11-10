@@ -1,0 +1,8 @@
+# Build / packaging artifacts and local virtualenvs for the Python binding.
+/target
+/dist
+/.venv
+*.so
+__pycache__/
+*.pyc
+*.egg-info/

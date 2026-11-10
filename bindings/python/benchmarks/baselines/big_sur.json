@@ -1,0 +1,17 @@
+{
+  "archive": "../../tests/test_data/system_logs_big_sur.logarchive",
+  "machine": {
+    "platform": "Linux-6.8.0-147-generic-x86_64-with-glibc2.39",
+    "processor": "x86_64",
+    "python": "3.12.3",
+    "python_implementation": "CPython"
+  },
+  "note": "Machine-specific baseline. Regenerate on the target machine (e.g. CI runner) before comparing; absolute numbers are not portable across hardware or Python builds.",
+  "result": {
+    "batch_size": 256,
+    "entries": 747616,
+    "entries_per_sec": 275009.1154035451,
+    "peak_mb": 138.3125,
+    "repeats": 3
+  }
+}

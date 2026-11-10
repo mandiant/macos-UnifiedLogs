@@ -1,0 +1,52 @@
+# cargo-deny configuration scoped to the `unifiedlogs-python` binding crate.
+#
+# This is a SEPARATE crate from the published `macos-unifiedlogs` library, so it
+# gets its own deny.toml rather than loosening the library's root deny.toml. It
+# mirrors the root allowlist and adds only the one extra license the PyO3/maturin
+# dependency tree pulls in that the library's tree does not:
+#   - Apache-2.0 WITH LLVM-exception  (from `target-lexicon`, a PyO3 build dep)
+#
+# Run with: cargo deny --manifest-path bindings/python/Cargo.toml check
+# (uses this file because it sits next to the manifest).
+
+[advisories]
+db-path = "~/.cargo/advisory-db"
+db-urls = ["https://github.com/rustsec/advisory-db"]
+ignore = []
+
+[licenses]
+# Root allowlist plus the LLVM-exception Apache variant used by target-lexicon.
+# BSD-3-Clause (num_enum) is covered via its "OR MIT OR Apache-2.0" alternative.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "Unlicense",
+    "Unicode-3.0",
+]
+confidence-threshold = 0.8
+exceptions = []
+
+[licenses.private]
+ignore = false
+registries = []
+
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+highlight = "all"
+workspace-default-features = "allow"
+external-default-features = "allow"
+allow = []
+deny = []
+skip = []
+skip-tree = []
+
+[sources]
+unknown-registry = "warn"
+unknown-git = "warn"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
+
+[sources.allow-org]
+github = []
