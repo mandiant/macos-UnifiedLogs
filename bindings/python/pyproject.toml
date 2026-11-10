@@ -1,0 +1,20 @@
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[project]
+name = "unifiedlogs"
+description = "Streaming Python binding for the macOS UnifiedLogs Rust library"
+requires-python = ">=3.9"
+license = { text = "Apache-2.0" }
+readme = "README.md"
+classifiers = [
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Rust",
+]
+dynamic = ["version"]
+
+[tool.maturin]
+bindings = "pyo3"
+# abi3 wheel tags are selected by the `abi3-py39` Cargo feature on pyo3.

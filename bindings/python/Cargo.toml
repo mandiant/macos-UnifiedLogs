@@ -1,0 +1,38 @@
+# Standalone workspace: detaches this crate from any parent manifest so it never
+# perturbs the published `macos-unifiedlogs` library build — mirrors how
+# `examples/` is isolated. The root Cargo.toml is a single-crate package and is
+# left untouched.
+[workspace]
+
+[package]
+name = "unifiedlogs-python"
+# Intentionally shadows the `macos-unifiedlogs` library version it binds, so the
+# two move in lockstep. The crate is `publish = false`, so this version is never
+# released on its own; the Python distribution version is set in pyproject.toml.
+version = "0.8.0"
+edition = "2024"
+rust-version = "1.88"
+license = "Apache-2.0"
+description = "Python binding for the macos-unifiedlogs library"
+publish = false
+
+[lib]
+# `unifiedlogs` is the Python import name.
+name = "unifiedlogs"
+crate-type = ["cdylib"]
+
+[dependencies]
+macos-unifiedlogs = { path = "../.." }
+# Match the library's versions so the dependency tree stays unified.
+chrono = { version = "0.4.45", default-features = false, features = ["std"] }
+uuid = { version = "1.29.0", default-features = false }
+# Pinned to the 0.30 minor (latest patch 0.30.1 at build time). abi3-py39 yields
+# one portable wheel loadable on CPython 3.9+; extension-module links against the
+# interpreter at import time rather than at build. The `chrono` feature enables
+# the built-in `DateTime<Utc>` -> Python `datetime.datetime` conversion used for
+# the `timestamp` field.
+pyo3 = { version = "0.30", features = ["abi3-py39", "extension-module", "chrono"] }
+
+[profile.release]
+# Match the library's release characteristics for benchmarking.
+opt-level = 3

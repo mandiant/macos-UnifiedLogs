@@ -20,6 +20,13 @@ cargo run --release --manifest-path examples/Cargo.toml -p unifiedlog_iterator -
 
 See `RUNNING.md` for more usage, how to create a logarchive, and expected warnings.
 
+## Python bindings
+
+A Python binding (`unifiedlogs`) streams parsed log entries from a `.logarchive`
+into Python as plain dicts, built with PyO3 + maturin. It lives in
+`bindings/python/` — see [`bindings/python/README.md`](bindings/python/README.md)
+for installation, usage, and design notes.
+
 ## Design
 
 The core type is `LogEntry<'a, 'b>` — a zero-copy log entry that borrows directly
