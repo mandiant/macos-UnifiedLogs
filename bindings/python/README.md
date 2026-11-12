@@ -94,7 +94,7 @@ with open("out.jsonl", "w") as fh:
         fh.write(json.dumps(entry, default=str) + "\n")
 ```
 
-### Parse the live system (macOS only)
+### Parse the live system
 
 ```python
 for entry in macos_unifiedlogs.LogArchive():
