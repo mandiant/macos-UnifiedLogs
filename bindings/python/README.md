@@ -34,7 +34,7 @@ maturin develop
 | `parse_logarchive(path)` | Parse a full `.logarchive` directory; returns `list[dict]`. |
 | `parse_tracev3(path, logarchive=None)` | Parse a single `tracev3` file; returns `list[dict]`. |
 | `parse_live_system()` | Parse the live system (macOS only); returns `list[dict]`. |
-| `LogArchive(path=None)` | Streaming iterator yielding one `dict` per entry. `path=None` parses the live system (macOS only). |
+| `LogArchive(path=None)` | Streaming iterator yielding one `dict` per entry. `path=None` parses the live system. |
 | `LogArchive.parse_all(path=None)` | Bulk equivalent of iterating `LogArchive`; returns `list[dict]`. |
 | `UnifiedLogError` | `RuntimeError` subclass raised on parse failures. |
 
