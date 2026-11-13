@@ -5,27 +5,38 @@
 //! [maturin](https://www.maturin.rs). The public surface mirrors the visitor
 //! pipeline in [`macos_unifiedlogs::logarchive`]:
 //!
-//! - [`parse_logarchive`] parses a full `.logarchive` directory (as produced
-//!   by `log collect`) into a list of dicts
-//! - [`parse_tracev3`] parses a single tracev3 file
-//! - [`parse_live_system`] parses the live system (macOS only)
-//! - [`LogArchive`] streams entries one at a time, holding only a small
-//!   buffer plus the string cache in memory
+//! - [`parse_logarchive`] streams entries from a full `.logarchive` directory
+//!   (as produced by `log collect`)
+//! - [`parse_tracev3`] streams entries from a single tracev3 file
+//! - [`parse_live_system`] streams entries from the live system (macOS only)
+//! - [`LogArchive`] is the streaming iterator class all of them return
 //!
-//! Every log entry is returned as a plain `dict` with the same fields the
+//! Every log entry is yielded as a plain `dict` with the same fields the
 //! library serializes to JSON (see the `Serialize` impl on
 //! [`LogEntry`]): subsystem, message, process, pid, time, timestamp,
 //! event_type, log_type, … — except `timestamp`, which is handed to Python
 //! as a timezone-aware `datetime` (UTC) instead of an RFC 3339 string.
 //!
+//! # Uniformly streaming, flat memory by construction
+//!
+//! Every entry point goes through the same bounded channel — there is no way
+//! to accidentally materialize the whole archive. A dedicated worker thread
+//! drives the library's push-based visitor with the GIL released
+//! (`Python::detach`), serializing each zero-copy [`LogEntry`] to an owned
+//! [`serde_json::Value`] in pure Rust and converting full batches to
+//! `Py<PyDict>` objects under brief GIL re-acquisitions. The batches travel
+//! over a bounded `std::sync::mpsc` channel (single producer / single
+//! consumer, so no extra dependency is needed): the parse thread blocks once
+//! a few batches are queued, keeping memory flat regardless of archive size —
+//! measured at ~138 MB peak on a 747k-entry archive — while parsing overlaps
+//! with Python-side work. Dropping the iterator closes the receiver, which
+//! makes the visit callback return `ControlFlow::Break` and stops parsing
+//! early.
+//!
 //! The library's visitor API yields zero-copy [`LogEntry`] values that borrow
-//! the parse buffers, so the bindings serialize each entry to an owned
-//! [`serde_json::Value`] inside the visit callback — pure Rust, no GIL —
-//! and convert it to a `dict` only at the Python boundary. The GIL is
-//! released while a visit runs, so other Python threads keep executing
-//! during long parses. The streaming [`LogArchive`] runs the visit on a
-//! worker thread and hands entries back through a channel, so callers can
-//! consume a large archive entry-by-entry without buffering it.
+//! the parse buffers, so the bindings serialize each entry inside the visit
+//! callback; because the serde schema is walked directly, new or changed
+//! entry fields flow through to Python without hand-maintaining a converter.
 
 #![warn(missing_docs)]
 
@@ -40,7 +51,7 @@ use macos_unifiedlogs::logarchive::{
     visit_live_system, visit_logarchive, visit_logarchive_tracev3_file,
 };
 use pyo3::create_exception;
-use pyo3::exceptions::PyFileNotFoundError;
+use pyo3::exceptions::{PyFileNotFoundError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use pyo3::IntoPyObjectExt;
@@ -50,10 +61,20 @@ use tracing::warn;
 /// internally for readability.
 type PyObject = Py<PyAny>;
 
-/// Bounded channel capacity between the visit worker thread and the
-/// [`LogArchive`] iterator. Small enough to bound memory, large enough to
-/// amortize per-entry wakeups.
-const STREAM_CHANNEL_CAPACITY: usize = 64;
+/// Default number of entries converted and shipped per batch, tunable per
+/// call via the `batch_size` argument.
+///
+/// The bounded channel only ever holds [`STREAM_CHANNEL_CAPACITY`] batches,
+/// so peak memory stays flat regardless of archive size; the batch size just
+/// amortizes the cross-thread hand-off. 512 sits on the measured throughput
+/// plateau (256–1024 entries) of the upstream benchmark on a 747,616-entry
+/// archive while keeping per-batch GIL re-acquisitions coarse.
+const DEFAULT_BATCH_SIZE: usize = 512;
+
+/// Number of batches the bounded channel holds before the parse thread
+/// blocks. Small, so at most `STREAM_CHANNEL_CAPACITY * batch_size` live
+/// dicts are queued between the parse thread and the Python iterator.
+const STREAM_CHANNEL_CAPACITY: usize = 4;
 
 // Exception raised to Python when Unified Log data could not be parsed.
 //
@@ -107,7 +128,7 @@ fn json_to_py<'py>(py: Python<'py>, value: &serde_json::Value) -> PyResult<Bound
 /// value is UTC); everything else is converted per [`json_to_py`].
 /// Non-object values produce an empty `dict`, which cannot occur for
 /// serialized log entries.
-fn value_to_pydict(py: Python<'_>, value: &serde_json::Value) -> PyResult<PyObject> {
+fn value_to_pydict(py: Python<'_>, value: &serde_json::Value) -> PyResult<Py<PyDict>> {
     let dict = PyDict::new(py);
     if let serde_json::Value::Object(map) = value {
         for (key, val) in map {
@@ -118,7 +139,7 @@ fn value_to_pydict(py: Python<'_>, value: &serde_json::Value) -> PyResult<PyObje
             }
         }
     }
-    Ok(dict.into_any().unbind())
+    Ok(dict.unbind())
 }
 
 /// Convert the RFC 3339 `timestamp` field into a timezone-aware Python
@@ -156,137 +177,177 @@ fn visit_err_to_py(err: std::io::Error) -> PyErr {
     }
 }
 
-/// Visit callback shared by the eager collectors: serialize the entry or, if
-/// serialization fails, skip it with a `tracing` warning — matching the
-/// library's behavior of warning and skipping individual bad files.
-fn record_callback(
-    records: &mut Vec<serde_json::Value>,
-) -> impl for<'a, 'b> FnMut(LogEntry<'a, 'b>) + '_ {
-    move |entry| match entry_to_value(&entry) {
-        Ok(value) => records.push(value),
-        Err(err) => warn!("Failed to serialize log entry: {err}"),
+/// Resolve the user-facing `batch_size` argument, rejecting zero.
+fn resolve_batch_size(batch_size: Option<usize>) -> PyResult<usize> {
+    match batch_size {
+        None => Ok(DEFAULT_BATCH_SIZE),
+        Some(0) => Err(PyValueError::new_err("batch_size must be greater than 0")),
+        Some(n) => Ok(n),
     }
 }
 
-/// Visit a logarchive directory, collecting every entry as an owned JSON value.
-///
-/// # Errors
-///
-/// Returns the visit error as-is: `ErrorKind::NotFound` when the provider
-/// yields no tracev3 files at all — a wrong or unreadable path rather than
-/// an empty log.
-fn collect_archive(path: &Path) -> Result<Vec<serde_json::Value>, std::io::Error> {
-    let mut records = Vec::new();
-    visit_logarchive(path, record_callback(&mut records))?;
-    Ok(records)
+/// Which source the streaming worker thread should parse.
+#[derive(Debug)]
+enum Source {
+    /// A `.logarchive` directory (as produced by `log collect`).
+    Logarchive(PathBuf),
+    /// One tracev3 file, `relative` to the logarchive base directory that
+    /// holds the `uuidtext`/`dsc`/`timesync` support files.
+    Tracev3 {
+        /// Logarchive base directory.
+        base: PathBuf,
+        /// Tracev3 file path, relative to `base`.
+        relative: PathBuf,
+    },
+    /// The live macOS system (`/private/var/db/diagnostics`).
+    LiveSystem,
 }
 
-/// Visit the live system (macOS only), collecting every entry as an owned
-/// JSON value.
+/// Build a [`Source::Tracev3`] for an absolute tracev3 file path inside
+/// `base`, rejecting files outside the logarchive base directory.
+///
+/// `visit_logarchive_tracev3_file` resolves the tracev3 path against `base`,
+/// so the containment check happens up front, here.
 ///
 /// # Errors
 ///
-/// Returns the visit error as-is: on a non-Apple platform the live provider
-/// yields no tracev3 files and the visit fails with `ErrorKind::NotFound`.
-fn collect_live() -> Result<Vec<serde_json::Value>, std::io::Error> {
-    let mut records = Vec::new();
-    visit_live_system(record_callback(&mut records))?;
-    Ok(records)
-}
-
-/// Visit a single tracev3 file resolved against a logarchive/base directory,
-/// collecting every entry as an owned JSON value.
-///
-/// `visit_logarchive_tracev3_file` joins the tracev3 path onto `base`, so
-/// `file_path` is passed relative to `base`.
-///
-/// # Errors
-///
-/// Returns `ErrorKind::InvalidInput` when the file is not inside `base`,
-/// and the visit error otherwise.
-fn collect_tracev3(
-    file_path: &Path,
-    base: &Path,
-) -> Result<Vec<serde_json::Value>, std::io::Error> {
-    let relative = file_path.strip_prefix(base).map_err(|_| {
+/// Returns `ErrorKind::InvalidInput` when the file is not inside `base`.
+fn tracev3_source(file_path: PathBuf, base: PathBuf) -> Result<Source, std::io::Error> {
+    let relative = file_path.strip_prefix(&base).map_err(|_| {
         std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             format!("tracev3 file {file_path:?} is not inside logarchive base {base:?}"),
         )
     })?;
-    let mut records = Vec::new();
-    visit_logarchive_tracev3_file(base, relative, record_callback(&mut records))?;
-    Ok(records)
-}
-
-/// Convert a batch of owned JSON values into a list of Python `dict`s.
-fn values_to_pylist(py: Python<'_>, values: &[serde_json::Value]) -> PyResult<Vec<PyObject>> {
-    values
-        .iter()
-        .map(|value| value_to_pydict(py, value))
-        .collect()
+    Ok(Source::Tracev3 {
+        base,
+        relative: relative.to_path_buf(),
+    })
 }
 
 // ---------------------------------------------------------------------------
-// Streaming iterator over a worker-thread visit
+// Streaming worker: visit on a thread, ship batches over a bounded channel
 // ---------------------------------------------------------------------------
 
 /// Messages handed from the visit worker thread to the [`LogArchive`]
 /// iterator.
 #[derive(Debug)]
 enum StreamMsg {
-    /// One serialized log entry.
-    Entry(serde_json::Value),
+    /// A batch of converted log-entry dicts.
+    Batch(Vec<Py<PyDict>>),
     /// The visit finished. `None` means success; `Some` carries the failure.
     End(Option<std::io::Error>),
 }
 
-/// Visit callback shared by the streaming workers: serialize the entry and
-/// hand it to the iterator, or skip it with a `tracing` warning. Returns
-/// `ControlFlow::Break` when the receiver is gone (the Python iterator was
-/// dropped), so early abandonment stops parsing instead of producing the
-/// whole archive.
-fn stream_callback(
+/// Convert a full batch of serialized entries into `Py<PyDict>` objects and
+/// ship it over the channel in one send.
+///
+/// Runs on the visit worker thread, so the conversion re-acquires the GIL
+/// briefly via `Python::attach` (the visit itself runs detached). Entries
+/// that fail to convert are skipped with a `tracing` warning, matching the
+/// library's behavior of warning and skipping individual bad files.
+///
+/// Returns `false` when the receiver is gone (the Python iterator was
+/// dropped), signalling the caller to stop parsing via `ControlFlow::Break`.
+fn flush_batch(
+    batch: &mut Vec<serde_json::Value>,
     tx: &mpsc::SyncSender<StreamMsg>,
-) -> impl for<'a, 'b> FnMut(LogEntry<'a, 'b>) -> ControlFlow<()> + '_ {
-    move |entry| match entry_to_value(&entry) {
-        Ok(value) => {
-            if tx.send(StreamMsg::Entry(value)).is_err() {
-                ControlFlow::Break(())
-            } else {
-                ControlFlow::Continue(())
-            }
-        }
-        Err(err) => {
-            warn!("Failed to serialize log entry: {err}");
-            ControlFlow::Continue(())
-        }
+) -> bool {
+    if batch.is_empty() {
+        return true;
     }
+    let dicts = Python::attach(|py| {
+        batch
+            .drain(..)
+            .filter_map(|value| match value_to_pydict(py, &value) {
+                Ok(dict) => Some(dict),
+                Err(err) => {
+                    warn!("Failed to convert log entry to a dict: {err}");
+                    None
+                }
+            })
+            .collect::<Vec<Py<PyDict>>>()
+    });
+    tx.send(StreamMsg::Batch(dicts)).is_ok()
 }
 
-/// Run a visit on a worker thread, streaming serialized entries through a
-/// bounded channel. Returns the receiver and join handle used by the
-/// [`LogArchive`] pyclass.
+/// Drive the visitor for `source` on the worker thread, batching serialized
+/// entries and shipping converted dicts over the bounded channel.
 ///
-/// The visit closure must be pure Rust (no GIL, no Python objects); it
-/// receives the sending half of the channel. It always terminates by
-/// returning, after which the worker sends a final [`StreamMsg::End`] with
-/// the visit result.
-fn spawn_stream<F>(visit: F) -> (mpsc::Receiver<StreamMsg>, thread::JoinHandle<()>)
-where
-    F: FnOnce(mpsc::SyncSender<StreamMsg>) -> Result<(), std::io::Error> + Send + 'static,
-{
+/// The visit runs with the GIL released; the GIL is re-acquired only once
+/// per batch, inside [`flush_batch`]. A bad entry is skipped with a
+/// `tracing` warning instead of stopping the stream.
+///
+/// # Errors
+///
+/// Returns the visit error as-is: `ErrorKind::NotFound` when the provider
+/// yields no tracev3 files at all — a wrong or unreadable path rather than an
+/// empty log.
+fn visit_source(
+    source: &Source,
+    batch_size: usize,
+    tx: &mpsc::SyncSender<StreamMsg>,
+) -> Result<(), std::io::Error> {
+    let mut batch: Vec<serde_json::Value> = Vec::with_capacity(batch_size);
+
+    let on_entry = |entry: LogEntry<'_, '_>| {
+        // Serialize the zero-copy entry in pure Rust, no GIL. A failed
+        // serialization skips the entry with a warning.
+        match entry_to_value(&entry) {
+            Ok(value) => batch.push(value),
+            Err(err) => warn!("Failed to serialize log entry: {err}"),
+        }
+
+        if batch.len() >= batch_size && !flush_batch(&mut batch, tx) {
+            // Receiver gone (iterator dropped): stop parsing early.
+            return ControlFlow::Break(());
+        }
+        ControlFlow::Continue(())
+    };
+
+    let result = match source {
+        Source::Logarchive(path) => visit_logarchive(path, on_entry),
+        Source::Tracev3 { base, relative } => {
+            visit_logarchive_tracev3_file(base, relative, on_entry)
+        }
+        Source::LiveSystem => visit_live_system(on_entry),
+    };
+
+    // Flush the final partial batch. A failed send is expected when the
+    // receiver is gone, so the result is ignored.
+    let _ = flush_batch(&mut batch, tx);
+    result
+}
+
+/// Spawn the visit worker thread for `source`, returning the receiving half
+/// of the bounded channel and the join handle used by the [`LogArchive`]
+/// pyclass.
+///
+/// The thread marks itself as a Python user up front (`Python::attach`),
+/// then releases the GIL for the whole visit (`Python::detach`) so other
+/// Python threads keep running; the GIL is re-acquired per batch inside
+/// [`flush_batch`]. The worker always terminates by sending a final
+/// [`StreamMsg::End`] with the visit result.
+fn spawn_stream(
+    source: Source,
+    batch_size: usize,
+) -> (mpsc::Receiver<StreamMsg>, thread::JoinHandle<()>) {
     let (tx, rx) = mpsc::sync_channel::<StreamMsg>(STREAM_CHANNEL_CAPACITY);
 
     let handle = thread::spawn(move || {
-        let result = visit(tx.clone());
-        // Always send an End so the receiver can stop cleanly. If the receiver
-        // is already gone (iterator dropped), sending is a no-op error.
-        let end = match result {
-            Ok(()) => StreamMsg::End(None),
-            Err(err) => StreamMsg::End(Some(err)),
-        };
-        let _ = tx.send(end);
+        Python::attach(|py| {
+            py.detach(|| {
+                let result = visit_source(&source, batch_size, &tx);
+                // Always send an End so the receiver can stop cleanly. If the
+                // receiver is already gone (iterator dropped), sending is a
+                // no-op error.
+                let end = match result {
+                    Ok(()) => StreamMsg::End(None),
+                    Err(err) => StreamMsg::End(Some(err)),
+                };
+                let _ = tx.send(end);
+            })
+        })
     });
 
     (rx, handle)
@@ -295,10 +356,13 @@ where
 /// Streaming parser for macOS Unified Log data.
 ///
 /// Iterates over fully reconstructed log entries, one `dict` per `next()`.
-/// The visit runs on a worker thread and entries are handed back through a
-/// bounded channel, so only a small buffer is held in memory at a time —
-/// unlike [`parse_logarchive`], which materializes every entry up front.
-/// Dropping the iterator early stops the visit.
+/// The visit runs on a worker thread and entries are handed back in batches
+/// through a bounded channel, so only a small, fixed number of batches is
+/// held in memory at a time — memory stays flat no matter how large the
+/// archive is. Every entry point of this module returns a `LogArchive`;
+/// materializing the whole archive is only possible by explicitly building
+/// a Python list (`list(LogArchive(path))`). Dropping the iterator early
+/// stops the visit.
 ///
 /// Example:
 /// ```python
@@ -315,10 +379,76 @@ where
 /// ```
 #[pyclass]
 pub struct LogArchive {
-    /// Channel receiver for entries serialized by the visit worker thread.
-    rx: Mutex<mpsc::Receiver<StreamMsg>>,
-    /// Handle to the visit worker thread, joined on abnormal stream end.
+    /// Channel receiver for the batches produced by the visit worker
+    /// thread. `None` once the stream has finished or been shut down;
+    /// dropping it unblocks a full channel so the worker stops parsing.
+    rx: Mutex<Option<mpsc::Receiver<StreamMsg>>>,
+    /// The batch most recently received from the worker, drained one dict
+    /// per `__next__` call.
+    current: std::vec::IntoIter<Py<PyDict>>,
+    /// Handle to the visit worker thread, joined on stream end and drop.
     handle: Option<thread::JoinHandle<()>>,
+}
+
+impl LogArchive {
+    /// Build a streaming parser around an already-validated [`Source`].
+    fn from_source(source: Source, batch_size: usize) -> Self {
+        let (rx, handle) = spawn_stream(source, batch_size);
+        Self {
+            rx: Mutex::new(Some(rx)),
+            current: Vec::new().into_iter(),
+            handle: Some(handle),
+        }
+    }
+
+    /// Build a streaming parser for a logarchive directory, validating the
+    /// path up front.
+    ///
+    /// # Errors
+    ///
+    /// Raises `FileNotFoundError` when `path` is not a directory, and
+    /// `ValueError` for a zero `batch_size`.
+    fn from_path(path: &str, batch_size: Option<usize>) -> PyResult<Self> {
+        let batch_size = resolve_batch_size(batch_size)?;
+        let path = PathBuf::from(path);
+        if !path.is_dir() {
+            return Err(PyFileNotFoundError::new_err(format!(
+                "logarchive directory not found: {}",
+                path.display()
+            )));
+        }
+        Ok(Self::from_source(Source::Logarchive(path), batch_size))
+    }
+
+    /// Stop the stream: drop the receiver so a blocked worker send fails
+    /// (translating to `ControlFlow::Break` in the visit callback), then
+    /// join the worker thread.
+    ///
+    /// The join runs with the GIL released: the worker re-acquires the GIL
+    /// to convert batches, so joining while holding it could deadlock.
+    /// `Python::attach` is a no-op re-acquisition when the GIL is already
+    /// held by the caller.
+    fn shutdown(&mut self) {
+        // Recover from a poisoned lock instead of panicking across the FFI
+        // boundary: the lock guards nothing but receiver access, and the
+        // stream state lives in the channel.
+        *self.rx.lock().unwrap_or_else(|p| p.into_inner()) = None;
+        if let Some(handle) = self.handle.take() {
+            Python::attach(|py| {
+                py.detach(|| {
+                    let _ = handle.join();
+                })
+            });
+        }
+    }
+}
+
+impl Drop for LogArchive {
+    fn drop(&mut self) {
+        // Dropping the iterator stops the visit promptly instead of letting
+        // the worker parse the whole archive for nobody.
+        self.shutdown();
+    }
 }
 
 #[pymethods]
@@ -327,30 +457,24 @@ impl LogArchive {
     /// `log collect`). When no path is provided, the live system is parsed
     /// (macOS only).
     ///
+    /// `batch_size` tunes how many entries are converted and shipped per
+    /// channel message (default: 512); the bounded channel keeps memory flat
+    /// regardless of the value.
+    ///
     /// # Errors
     ///
-    /// Raises `FileNotFoundError` when `path` is not a directory.
+    /// Raises `FileNotFoundError` when `path` is not a directory, and
+    /// `ValueError` when `batch_size` is zero.
     #[new]
-    #[pyo3(signature = (path=None))]
-    fn new(path: Option<&str>) -> PyResult<Self> {
-        let (rx, handle) = match path {
-            Some(path) => {
-                let path = PathBuf::from(path);
-                if !path.is_dir() {
-                    return Err(PyFileNotFoundError::new_err(format!(
-                        "logarchive directory not found: {}",
-                        path.display()
-                    )));
-                }
-                spawn_stream(move |tx| visit_logarchive(&path, stream_callback(&tx)))
-            }
-            None => spawn_stream(move |tx| visit_live_system(stream_callback(&tx))),
-        };
-
-        Ok(Self {
-            rx: Mutex::new(rx),
-            handle: Some(handle),
-        })
+    #[pyo3(signature = (path=None, batch_size=None))]
+    fn new(path: Option<&str>, batch_size: Option<usize>) -> PyResult<Self> {
+        match path {
+            Some(path) => Self::from_path(path, batch_size),
+            None => Ok(Self::from_source(
+                Source::LiveSystem,
+                resolve_batch_size(batch_size)?,
+            )),
+        }
     }
 
     /// Return the iterator itself, so `LogArchive` instances are directly
@@ -368,90 +492,96 @@ impl LogArchive {
     /// when no tracev3 files were found (e.g. the live system on a non-Apple
     /// platform), `UnifiedLogError` for any other visit failure or a
     /// worker-thread panic.
-    fn __next__(&mut self, py: Python<'_>) -> PyResult<Option<PyObject>> {
-        // Wait without holding the GIL so other Python threads keep running
-        // while the visit produces the next entry.
-        let msg = py.detach(|| {
-            // Recover from a poisoned lock instead of panicking across the
-            // FFI boundary: the lock guards nothing but receiver access, and
-            // the stream state lives in the channel.
-            self.rx
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .recv()
-        });
+    fn __next__(&mut self, py: Python<'_>) -> PyResult<Option<Py<PyDict>>> {
+        loop {
+            if let Some(dict) = self.current.next() {
+                return Ok(Some(dict));
+            }
 
-        match msg {
-            Ok(StreamMsg::Entry(value)) => Ok(Some(value_to_pydict(py, &value)?)),
-            Ok(StreamMsg::End(None)) => Ok(None),
-            Ok(StreamMsg::End(Some(err))) => Err(visit_err_to_py(err)),
-            Err(RecvError) => {
-                // The worker always sends `End` before exiting, so a closed
-                // channel means it panicked mid-visit.
-                match self.handle.take().map(|handle| handle.join()) {
-                    Some(Ok(())) => Ok(None),
-                    Some(Err(payload)) => {
-                        let msg = payload
-                            .downcast_ref::<&'static str>()
-                            .map(|s| s.to_string())
-                            .or_else(|| payload.downcast_ref::<String>().cloned())
-                            .unwrap_or_else(|| "visit worker thread panicked".to_string());
-                        Err(UnifiedLogError::new_err(msg))
+            // Batch drained — block for the next one. Release the GIL while
+            // waiting so the worker can re-acquire it to convert the next
+            // batch (and other Python threads can run). The receiver is
+            // accessed through the mutex guard inside the closure because a
+            // bare `&Receiver` is not `Send` and cannot cross `detach`.
+            let msg = py.detach(|| {
+                self.rx
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .as_ref()
+                    .map(|rx| rx.recv())
+            });
+
+            match msg {
+                // Already shut down or finished.
+                None => return Ok(None),
+                Some(msg) => match msg {
+                    Ok(StreamMsg::Batch(dicts)) => {
+                        self.current = dicts.into_iter();
+                        // Loop around to yield the first item of the new batch.
                     }
-                    None => Ok(None),
-                }
+                    Ok(StreamMsg::End(None)) => {
+                        self.shutdown();
+                        return Ok(None);
+                    }
+                    Ok(StreamMsg::End(Some(err))) => {
+                        self.shutdown();
+                        return Err(visit_err_to_py(err));
+                    }
+                    Err(RecvError) => {
+                        // The worker always sends `End` before exiting, so a
+                        // closed channel means it panicked mid-visit.
+                        *self.rx.lock().unwrap_or_else(|p| p.into_inner()) = None;
+                        let joined = match self.handle.take() {
+                            Some(handle) => {
+                                // Join with the GIL released: the worker may
+                                // be waiting to acquire it mid-conversion.
+                                Python::attach(|py| py.detach(|| handle.join()))
+                            }
+                            None => Ok(()),
+                        };
+                        return match joined {
+                            // The worker exited without sending End; treat
+                            // the stream as finished.
+                            Ok(()) => Ok(None),
+                            Err(payload) => {
+                                let msg = payload
+                                    .downcast_ref::<&'static str>()
+                                    .map(|s| s.to_string())
+                                    .or_else(|| payload.downcast_ref::<String>().cloned())
+                                    .unwrap_or_else(|| {
+                                        "visit worker thread panicked".to_string()
+                                    });
+                                Err(UnifiedLogError::new_err(msg))
+                            }
+                        };
+                    }
+                },
             }
         }
     }
-
-    /// Collect all log entries into a list. Equivalent to
-    /// `list(LogArchive(path))`, but the visit runs without holding the GIL
-    /// and the entries are converted once it completes.
-    ///
-    /// # Errors
-    ///
-    /// Raises `FileNotFoundError` when `path` is not a directory, and
-    /// `UnifiedLogError` when the visit fails.
-    #[staticmethod]
-    #[pyo3(signature = (path=None))]
-    fn parse_all(path: Option<&str>) -> PyResult<Vec<PyObject>> {
-        Python::attach(|py| {
-            let values = match path {
-                Some(path) => {
-                    let path = PathBuf::from(path);
-                    if !path.is_dir() {
-                        return Err(PyFileNotFoundError::new_err(format!(
-                            "logarchive directory not found: {}",
-                            path.display()
-                        )));
-                    }
-                    // Release the GIL while the (potentially long) visit runs.
-                    py.detach(|| collect_archive(&path)).map_err(visit_err_to_py)?
-                }
-                None => py.detach(collect_live).map_err(visit_err_to_py)?,
-            };
-            values_to_pylist(py, &values)
-        })
-    }
 }
 
-/// Parse a logarchive directory (as produced by `log collect`) and return all
-/// reconstructed log entries as a list of dicts.
+/// Stream every log entry from a `.logarchive` directory (as produced by
+/// `log collect`), as a [`LogArchive`] iterator yielding one `dict` per
+/// entry.
 ///
-/// Every entry is materialized in memory; for large archives consider the
-/// streaming [`LogArchive`] class instead.
+/// The entries flow through a bounded channel from a worker thread, so
+/// memory stays flat regardless of archive size; use `list(...)` on the
+/// result to deliberately materialize every entry.
 ///
 /// # Errors
 ///
 /// Raises `FileNotFoundError` when `path` is not a directory (or contains no
-/// tracev3 files), and `UnifiedLogError` for other visit failures.
+/// tracev3 files), `UnifiedLogError` for other visit failures, and
+/// `ValueError` when `batch_size` is zero.
 #[pyfunction]
-pub fn parse_logarchive(path: &str) -> PyResult<Vec<PyObject>> {
-    LogArchive::parse_all(Some(path))
+#[pyo3(signature = (path, batch_size=None))]
+pub fn parse_logarchive(path: &str, batch_size: Option<usize>) -> PyResult<LogArchive> {
+    LogArchive::from_path(path, batch_size)
 }
 
-/// Parse the Unified Logs on the live system (macOS only) and return all
-/// reconstructed log entries as a list of dicts.
+/// Stream every entry from the Unified Logs on the live system (macOS only)
+/// as a [`LogArchive`] iterator yielding one `dict` per entry.
 ///
 /// Reads tracev3/timesync data from `/private/var/db/diagnostics` and
 /// `UUIDText`/DSC support files from `/private/var/db/uuidtext`.
@@ -459,14 +589,19 @@ pub fn parse_logarchive(path: &str) -> PyResult<Vec<PyObject>> {
 /// # Errors
 ///
 /// Raises `FileNotFoundError` on a non-Apple platform (the live provider
-/// yields no tracev3 files), and `UnifiedLogError` for other visit failures.
+/// yields no tracev3 files), `UnifiedLogError` for other visit failures, and
+/// `ValueError` when `batch_size` is zero.
 #[pyfunction]
-pub fn parse_live_system() -> PyResult<Vec<PyObject>> {
-    LogArchive::parse_all(None)
+#[pyo3(signature = (batch_size=None))]
+pub fn parse_live_system(batch_size: Option<usize>) -> PyResult<LogArchive> {
+    Ok(LogArchive::from_source(
+        Source::LiveSystem,
+        resolve_batch_size(batch_size)?,
+    ))
 }
 
-/// Parse a single tracev3 file and return all reconstructed log entries as a
-/// list of dicts.
+/// Stream every log entry from a single tracev3 file, as a [`LogArchive`]
+/// iterator yielding one `dict` per entry.
 ///
 /// `logarchive` optionally points to the logarchive directory (or extracted
 /// archive layout) that contains the `uuidtext`/`dsc`/`timesync` files needed
@@ -475,12 +610,18 @@ pub fn parse_live_system() -> PyResult<Vec<PyObject>> {
 ///
 /// # Errors
 ///
-/// Raises `FileNotFoundError` when the tracev3 file does not exist, and
+/// Raises `FileNotFoundError` when the tracev3 file does not exist,
 /// `UnifiedLogError` when the file lies outside the logarchive base or the
-/// visit fails.
+/// visit fails, and `ValueError` when `batch_size` is zero.
 #[pyfunction]
-#[pyo3(signature = (path, logarchive=None))]
-pub fn parse_tracev3(path: &str, logarchive: Option<&str>) -> PyResult<Vec<PyObject>> {
+#[pyo3(signature = (path, logarchive=None, batch_size=None))]
+pub fn parse_tracev3(
+    path: &str,
+    logarchive: Option<&str>,
+    batch_size: Option<usize>,
+) -> PyResult<LogArchive> {
+    let batch_size = resolve_batch_size(batch_size)?;
+
     let file_path = PathBuf::from(path);
     if !file_path.is_file() {
         return Err(PyFileNotFoundError::new_err(format!(
@@ -488,24 +629,24 @@ pub fn parse_tracev3(path: &str, logarchive: Option<&str>) -> PyResult<Vec<PyObj
         )));
     }
 
-    let base = logarchive
-        .map(PathBuf::from)
-        .unwrap_or_else(|| file_path.parent().map(Path::to_path_buf).unwrap_or_default());
+    let base = logarchive.map(PathBuf::from).unwrap_or_else(|| {
+        file_path
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_default()
+    });
+    let source = tracev3_source(file_path, base).map_err(visit_err_to_py)?;
 
-    Python::attach(|py| {
-        // Release the GIL while the visit runs.
-        let values = py
-            .detach(|| collect_tracev3(&file_path, &base))
-            .map_err(visit_err_to_py)?;
-        values_to_pylist(py, &values)
-    })
+    Ok(LogArchive::from_source(source, batch_size))
 }
 
-/// Registers the `UnifiedLogError` exception, the [`LogArchive`] class and
-/// the `parse_*` functions on the `_macos_unifiedlogs` module.
+/// Registers the `UnifiedLogError` exception, the [`LogArchive`] class, the
+/// streaming `parse_*` functions and `DEFAULT_BATCH_SIZE` on the
+/// `_macos_unifiedlogs` module.
 #[pymodule]
 fn _macos_unifiedlogs(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("UnifiedLogError", py.get_type::<UnifiedLogError>())?;
+    m.add("DEFAULT_BATCH_SIZE", DEFAULT_BATCH_SIZE)?;
     m.add_class::<LogArchive>()?;
     m.add_function(wrap_pyfunction!(parse_logarchive, m)?)?;
     m.add_function(wrap_pyfunction!(parse_live_system, m)?)?;
@@ -518,19 +659,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn missing_archive_dir_rejected() {
-        let err = collect_archive(Path::new("/this/path/does/not/exist")).unwrap_err();
-        assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
-    }
-
-    #[test]
     fn tracev3_outside_base_rejected() {
-        let err = collect_tracev3(
-            Path::new("/this/path/does/not/exist.tracev3"),
-            Path::new("/other/base"),
+        let err = tracev3_source(
+            PathBuf::from("/this/path/does/not/exist.tracev3"),
+            PathBuf::from("/other/base"),
         )
         .unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+    }
+
+    #[test]
+    fn tracev3_inside_base_resolved_relative() {
+        let source = tracev3_source(
+            PathBuf::from("/archive/Persist/0000000000000002.tracev3"),
+            PathBuf::from("/archive"),
+        )
+        .unwrap();
+        match source {
+            Source::Tracev3 { base, relative } => {
+                assert_eq!(base, Path::new("/archive"));
+                assert_eq!(relative, Path::new("Persist/0000000000000002.tracev3"));
+            }
+            other => panic!("expected Source::Tracev3, got {other:?}"),
+        }
     }
 
     #[test]
@@ -606,28 +757,80 @@ mod tests {
     }
 
     #[test]
-    fn spawn_stream_forwards_entries_and_end_result() {
-        let (rx, handle) = spawn_stream(|tx| {
-            tx.send(StreamMsg::Entry(serde_json::json!({"pid": 1})))
-                .expect("receiver is alive in this test");
-            Err(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "no tracev3 files found",
-            ))
+    fn batch_size_resolution() {
+        assert_eq!(resolve_batch_size(None).unwrap(), DEFAULT_BATCH_SIZE);
+        assert_eq!(resolve_batch_size(Some(1)).unwrap(), 1);
+        Python::attach(|py| {
+            let err = resolve_batch_size(Some(0)).unwrap_err();
+            assert!(err.is_instance_of::<PyValueError>(py));
         });
+    }
 
-        assert!(matches!(rx.recv(), Ok(StreamMsg::Entry(_))));
+    #[test]
+    fn missing_archive_dir_surfaces_not_found_at_stream_end() {
+        let (rx, handle) = spawn_stream(
+            Source::Logarchive(PathBuf::from("/this/path/does/not/exist")),
+            16,
+        );
         match rx.recv() {
             Ok(StreamMsg::End(Some(err))) => assert_eq!(err.kind(), std::io::ErrorKind::NotFound),
-            other => panic!("expected End(Some), got {other:?}"),
+            other => panic!("expected End(Some(NotFound)), got {other:?}"),
         }
         handle.join().unwrap();
     }
 
     #[test]
-    fn spawn_stream_ends_with_none_on_success() {
-        let (rx, handle) = spawn_stream(|_tx| Ok(()));
-        assert!(matches!(rx.recv(), Ok(StreamMsg::End(None))));
+    fn dropping_receiver_does_not_hang_the_worker() {
+        let (rx, handle) = spawn_stream(
+            Source::Logarchive(PathBuf::from("/this/path/does/not/exist")),
+            16,
+        );
+        drop(rx);
+        // The worker notices the gone receiver and exits instead of
+        // blocking on a full channel forever.
         handle.join().unwrap();
+    }
+
+    #[test]
+    fn logarchive_next_maps_visit_error_to_file_not_found() {
+        Python::attach(|py| {
+            let mut archive = LogArchive::from_source(
+                Source::Logarchive(PathBuf::from("/this/path/does/not/exist")),
+                16,
+            );
+            let err = archive.__next__(py).unwrap_err();
+            assert!(err.is_instance_of::<PyFileNotFoundError>(py));
+        });
+    }
+
+    #[test]
+    fn batch_flush_converts_values_and_reports_closed_channel() {
+        let (tx, rx) = mpsc::sync_channel::<StreamMsg>(STREAM_CHANNEL_CAPACITY);
+        let mut batch = vec![serde_json::json!({"pid": 1u64}), serde_json::json!({"pid": 2u64})];
+
+        Python::attach(|py| {
+            assert!(flush_batch(&mut batch, &tx));
+            assert!(batch.is_empty());
+            match rx.recv() {
+                Ok(StreamMsg::Batch(dicts)) => {
+                    assert_eq!(dicts.len(), 2);
+                    let pid = dicts[0]
+                        .bind(py)
+                        .get_item("pid")
+                        .unwrap()
+                        .unwrap()
+                        .extract::<u64>()
+                        .unwrap();
+                    assert_eq!(pid, 1);
+                }
+                other => panic!("expected Batch, got {other:?}"),
+            }
+
+            // With the receiver gone the flush reports failure so the visit
+            // can stop early.
+            drop(rx);
+            let mut batch = vec![serde_json::json!({"pid": 3u64})];
+            assert!(!flush_batch(&mut batch, &tx));
+        });
     }
 }

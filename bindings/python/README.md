@@ -31,12 +31,18 @@ maturin develop
 
 | Symbol | Description |
 | --- | --- |
-| `parse_logarchive(path)` | Parse a full `.logarchive` directory; returns `list[dict]`. |
-| `parse_tracev3(path, logarchive=None)` | Parse a single `tracev3` file; returns `list[dict]`. |
-| `parse_live_system()` | Parse the live system (macOS only); returns `list[dict]`. |
-| `LogArchive(path=None)` | Streaming iterator yielding one `dict` per entry. `path=None` parses the live system. |
-| `LogArchive.parse_all(path=None)` | Bulk equivalent of iterating `LogArchive`; returns `list[dict]`. |
+| `parse_logarchive(path, batch_size=None)` | Stream a full `.logarchive` directory; returns a `LogArchive` iterator yielding one `dict` per entry. |
+| `parse_tracev3(path, logarchive=None, batch_size=None)` | Stream a single `tracev3` file; returns a `LogArchive` iterator. |
+| `parse_live_system(batch_size=None)` | Stream the live system (macOS only); returns a `LogArchive` iterator. |
+| `LogArchive(path=None, batch_size=None)` | Streaming iterator yielding one `dict` per entry. `path=None` parses the live system. |
+| `DEFAULT_BATCH_SIZE` | Default entries per channel batch (512). |
 | `UnifiedLogError` | `RuntimeError` subclass raised on parse failures. |
+
+Every entry point returns the same streaming iterator — parsing runs on a
+worker thread and entries are handed back in batches through a bounded
+channel, so memory stays flat regardless of archive size. There is no way to
+accidentally materialize the whole archive: a fully materialized list is
+only built when explicitly requested, e.g. `list(parse_logarchive(path))`.
 
 ### Log entry fields
 
@@ -65,13 +71,21 @@ for entry in macos_unifiedlogs.parse_logarchive("/path/to/system_logs.logarchive
     print(entry["timestamp"], entry["process"], entry["message"])
 ```
 
+`parse_logarchive` returns a streaming iterator, not a list. To deliberately
+materialize every entry, pass it to `list()`:
+
+```python
+entries = list(macos_unifiedlogs.parse_logarchive("/path/to/system_logs.logarchive"))
+```
+
 ### Parse a single tracev3 file
 
 ```python
-entries = macos_unifiedlogs.parse_tracev3(
+for entry in macos_unifiedlogs.parse_tracev3(
     "/path/to/Persist/0000000000000002.tracev3",
     logarchive="/path/to/system_logs.logarchive",
-)
+):
+    ...
 ```
 
 `logarchive` is the directory containing the `uuidtext` / `dsc` / `timesync`
@@ -80,9 +94,13 @@ parent directory of the `tracev3` file is used.
 
 ### Stream a large archive
 
-`parse_logarchive` materializes every entry in memory. For large archives,
-iterate with `LogArchive`, which yields entries one at a time and holds only a
-small buffer plus the string cache:
+All entry points stream: the visit runs on a worker thread with the GIL
+released, and entries are converted in batches and shipped over a bounded
+channel (at most 4 batches of `batch_size` entries, 512 by default). The
+parse thread blocks once the channel is full, so peak memory is flat by
+construction — measured at ~138 MB on a 747k-entry archive — instead of
+growing with the archive. Parsing overlaps with Python-side work, and
+dropping the iterator early stops the parse:
 
 ```python
 import json
@@ -142,8 +160,17 @@ cargo test
 - The binding crate is a standalone workspace (`bindings/python`) with a path
   dependency on the library, so building or testing the Rust library is
   unaffected by the Python dependencies.
-- The GIL is released while parsing runs, so other Python threads keep
-  executing during long parses.
+- Every entry point streams uniformly: a worker thread drives the library's
+  visitor with the GIL released, serializing each entry and converting batches
+  to Python dicts under brief GIL re-acquisitions. The batches travel over a
+  bounded `std::sync::mpsc` channel (4 × `batch_size`), giving backpressure
+  and flat memory by construction; the GIL is also released while the
+  iterator waits for the next batch and while the worker is joined, so other
+  Python threads keep executing during long parses.
+- A bad entry is skipped with a warning instead of aborting the stream,
+  matching the library's philosophy for individual bad files. Visit-level
+  failures (a wrong path, no tracev3 files found) are raised from the first
+  `next()` call as `FileNotFoundError` / `UnifiedLogError`.
 - The compiled extension is `_macos_unifiedlogs`; import the wrapper package
   `macos_unifiedlogs` instead.
 - Build release wheels with `maturin build --release`, or across supported

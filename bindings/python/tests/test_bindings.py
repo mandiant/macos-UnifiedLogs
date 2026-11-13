@@ -48,6 +48,7 @@ def _expected_fields():
 
 def test_exceptions_and_exports():
     assert macos_unifiedlogs.UnifiedLogError.__name__ == "UnifiedLogError"
+    assert macos_unifiedlogs.DEFAULT_BATCH_SIZE > 0
     for name in macos_unifiedlogs.__all__:
         assert hasattr(macos_unifiedlogs, name)
 
@@ -67,6 +68,13 @@ def test_streaming_missing_archive_raises():
         macos_unifiedlogs.LogArchive("/this/path/does/not/exist")
 
 
+def test_zero_batch_size_rejected():
+    with pytest.raises(ValueError):
+        macos_unifiedlogs.parse_logarchive("/any/path", batch_size=0)
+    with pytest.raises(ValueError):
+        macos_unifiedlogs.LogArchive("/any/path", batch_size=0)
+
+
 def test_streaming_empty_archive_raises_on_first_next(tmp_path):
     # A directory with no tracev3 files passes the constructor check but the
     # visit fails with NotFound, surfaced on the first next() call.
@@ -80,8 +88,15 @@ def test_streaming_empty_archive_raises_on_first_next(tmp_path):
     reason="set MACOS_UNIFIEDLOGS_TEST_ARCHIVE to a logarchive directory",
 )
 class TestLogarchive:
+    def test_parse_logarchive_streams(self):
+        # parse_logarchive returns a streaming iterator, not a list: there is
+        # no way to accidentally materialize the whole archive.
+        iterator = macos_unifiedlogs.parse_logarchive(ARCHIVE)
+        assert not isinstance(iterator, list)
+        assert iter(iterator) is iterator
+
     def test_parse_logarchive(self):
-        records = macos_unifiedlogs.parse_logarchive(ARCHIVE)
+        records = list(macos_unifiedlogs.parse_logarchive(ARCHIVE))
         assert len(records) > 0
         for record in records[:50]:
             assert isinstance(record, dict)
@@ -89,7 +104,7 @@ class TestLogarchive:
                 assert field in record, f"missing field: {field}"
 
     def test_timestamp_is_timezone_aware_datetime(self):
-        records = macos_unifiedlogs.parse_logarchive(ARCHIVE)
+        records = list(macos_unifiedlogs.parse_logarchive(ARCHIVE))
         first = records[0]
         assert isinstance(first["timestamp"], datetime)
         assert first["timestamp"].tzinfo is not None
@@ -99,7 +114,7 @@ class TestLogarchive:
 
     def test_streaming_matches_bulk(self):
         streamed = list(macos_unifiedlogs.LogArchive(ARCHIVE))
-        bulk = macos_unifiedlogs.parse_logarchive(ARCHIVE)
+        bulk = list(macos_unifiedlogs.parse_logarchive(ARCHIVE))
         assert len(streamed) == len(bulk)
         assert streamed[0]["message"] == bulk[0]["message"]
 
@@ -107,6 +122,9 @@ class TestLogarchive:
         parser = macos_unifiedlogs.LogArchive(ARCHIVE)
         first = next(iter(parser))
         assert "message" in first
+        # Dropping the iterator early stops the visit instead of parsing the
+        # whole archive for nobody.
+        del parser
         # A fresh instance starts over from the beginning
         again = next(iter(macos_unifiedlogs.LogArchive(ARCHIVE)))
         assert again["message"] == first["message"]
@@ -123,7 +141,7 @@ class TestLogarchive:
                 break
 
         assert tracev3 is not None, "no tracev3 file found in archive"
-        records = macos_unifiedlogs.parse_tracev3(tracev3, ARCHIVE)
+        records = list(macos_unifiedlogs.parse_tracev3(tracev3, ARCHIVE))
         assert len(records) > 0
         for record in records[:50]:
             assert "message" in record
