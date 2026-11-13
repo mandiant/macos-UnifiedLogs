@@ -51,3 +51,45 @@ jobs:
           name: "${{ vars.GITHUB_REF_NAME }} - Released!"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # python-wheels:
+    # name: Release Python wheels
+    # strategy:
+      # fail-fast: false
+      # matrix:
+        # info:
+          # - os: "macos-latest"
+          #   target: "aarch64-apple-darwin"
+          # - os: "macos-latest"
+          #   target: "x86_64-apple-darwin"
+          # - os: "ubuntu-latest"
+          #   target: "x86_64-unknown-linux-gnu"
+          # - os: "ubuntu-latest"
+          #   target: "aarch64-unknown-linux-gnu"
+          # - os: "windows-latest"
+          #   target: "x86_64-pc-windows-msvc"
+          # - os: "windows-latest"
+          #   target: "aarch64-pc-windows-msvc"
+    # runs-on: ${{ matrix.info.os }}
+    # permissions:
+      # contents: write # Used to publish releases
+    # steps:
+      # - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        # with:
+          # persist-credentials: false
+      # - name: Update Rust toolchain
+        # run: rustup upgrade
+      # - name: Build wheel
+        # uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
+        # with:
+          # command: build
+          # target: ${{ matrix.info.target }}
+          # manylinux: auto
+          # args: --release --manifest-path bindings/python/Cargo.toml --out dist
+      # - name: Release
+        # uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
+        # with:
+          # files: "dist/*"
+          # name: "${{ vars.GITHUB_REF_NAME }} - Released!"
+        # env:
+          # GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
