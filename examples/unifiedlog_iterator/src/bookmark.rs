@@ -11,6 +11,8 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use time::format_description::well_known::Rfc3339;
+use time::UtcDateTime;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Bookmark {
@@ -34,7 +36,7 @@ impl Bookmark {
             last_timestamp: 0.0,
             processed_files: HashMap::new(),
             boot_uuid: None,
-            last_updated: chrono::Utc::now().to_rfc3339(),
+            last_updated: UtcDateTime::now().format(&Rfc3339).unwrap(),
             source_id,
         }
     }
@@ -54,7 +56,7 @@ impl Bookmark {
     pub fn update_timestamp(&mut self, timestamp: f64) {
         if timestamp > self.last_timestamp {
             self.last_timestamp = timestamp;
-            self.last_updated = chrono::Utc::now().to_rfc3339();
+            self.last_updated = UtcDateTime::now().format(&Rfc3339).unwrap();
         }
     }
 

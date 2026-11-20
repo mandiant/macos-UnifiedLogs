@@ -21,9 +21,10 @@
 //! ```rust,no_run
 //! use macos_unifiedlogs::logarchive::visit_logarchive;
 //! use std::path::Path;
+//! use time::format_description::well_known::Rfc3339;
 //!
 //! visit_logarchive(Path::new("system_logs.logarchive"), |entry| {
-//!     let timestamp = entry.timestamp().to_rfc3339();
+//!     let timestamp = entry.timestamp().format(&Rfc3339).unwrap();
 //!     let process = entry.process.unwrap_or("");
 //!     let message = entry.message();
 //!
