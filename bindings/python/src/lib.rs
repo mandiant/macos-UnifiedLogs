@@ -750,7 +750,6 @@ mod tests {
             let dt = ts.extract::<OffsetDateTime>().unwrap();
             assert_eq!(dt.year(), 2024);
             assert_eq!(u8::from(dt.month()), 5);
-            //  assert_eq!(chrono::Utc.from_utc_datetime(&dt.naive_utc()), dt);
 
             // Other fields still convert normally
             let pid = dict.get_item("pid").unwrap().unwrap();

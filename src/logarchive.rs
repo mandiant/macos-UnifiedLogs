@@ -472,7 +472,6 @@ mod tests {
     #[cfg(target_os = "macos")]
     fn test_visit_live_system() {
         use crate::log_entry::EventType;
-        use chrono::SecondsFormat;
 
         visit_live_system(|entry| {
             assert_ne!(
@@ -484,7 +483,8 @@ mod tests {
             assert!(
                 !entry
                     .timestamp()
-                    .to_rfc3339_opts(SecondsFormat::Nanos, true)
+                    .format(&Rfc3339)
+                    .unwrap()
                     .starts_with("1970-")
             );
         })
