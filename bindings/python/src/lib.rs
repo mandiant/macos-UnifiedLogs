@@ -249,10 +249,7 @@ enum StreamMsg {
 ///
 /// Returns `false` when the receiver is gone (the Python iterator was
 /// dropped), signalling the caller to stop parsing via `ControlFlow::Break`.
-fn flush_batch(
-    batch: &mut Vec<serde_json::Value>,
-    tx: &mpsc::SyncSender<StreamMsg>,
-) -> bool {
+fn flush_batch(batch: &mut Vec<serde_json::Value>, tx: &mpsc::SyncSender<StreamMsg>) -> bool {
     if batch.is_empty() {
         return true;
     }
@@ -548,9 +545,7 @@ impl LogArchive {
                                     .downcast_ref::<&'static str>()
                                     .map(|s| s.to_string())
                                     .or_else(|| payload.downcast_ref::<String>().cloned())
-                                    .unwrap_or_else(|| {
-                                        "visit worker thread panicked".to_string()
-                                    });
+                                    .unwrap_or_else(|| "visit worker thread panicked".to_string());
                                 Err(UnifiedLogError::new_err(msg))
                             }
                         };
@@ -721,7 +716,12 @@ mod tests {
             let time = dict.get_item("time").unwrap().unwrap();
             assert_eq!(time.extract::<f64>().unwrap(), 1.5);
 
-            assert!(dict.get_item("active").unwrap().unwrap().is_truthy().unwrap());
+            assert!(dict
+                .get_item("active")
+                .unwrap()
+                .unwrap()
+                .is_truthy()
+                .unwrap());
 
             let tags = dict.get_item("tags").unwrap().unwrap();
             assert_eq!(tags.extract::<Vec<String>>().unwrap(), ["a", "b"]);
@@ -745,7 +745,9 @@ mod tests {
 
             // A timezone-aware datetime in UTC, not a plain string
             let ts = dict.get_item("timestamp").unwrap().unwrap();
-            let dt = ts.extract::<chrono::DateTime<chrono::FixedOffset>>().unwrap();
+            let dt = ts
+                .extract::<chrono::DateTime<chrono::FixedOffset>>()
+                .unwrap();
             assert_eq!(dt.year(), 2024);
             assert_eq!(dt.month(), 5);
             assert_eq!(chrono::Utc.from_utc_datetime(&dt.naive_utc()), dt);
@@ -806,7 +808,10 @@ mod tests {
     #[test]
     fn batch_flush_converts_values_and_reports_closed_channel() {
         let (tx, rx) = mpsc::sync_channel::<StreamMsg>(STREAM_CHANNEL_CAPACITY);
-        let mut batch = vec![serde_json::json!({"pid": 1u64}), serde_json::json!({"pid": 2u64})];
+        let mut batch = vec![
+            serde_json::json!({"pid": 1u64}),
+            serde_json::json!({"pid": 2u64}),
+        ];
 
         Python::attach(|py| {
             assert!(flush_batch(&mut batch, &tx));
