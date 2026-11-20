@@ -296,6 +296,9 @@ pub fn load_timesync_data(
 
 #[cfg(test)]
 mod tests {
+    use time::OffsetDateTime;
+    use time::format_description::well_known::Rfc3339;
+
     use super::*;
     use crate::filesystem::collect_tracev3_paths;
     use crate::helpers::tests::test_data_path;
@@ -332,11 +335,13 @@ mod tests {
             "9A6A3124274A44B29ABF2BC9E4599B3B"
         );
 
+        println!("{entry:?}");
         // RFC3339 timestamp restored, consistent with the nanosecond `time`
         let timestamp = entry["timestamp"].as_str().unwrap();
-        let parsed = chrono::DateTime::parse_from_rfc3339(timestamp).unwrap();
+        let parsed = OffsetDateTime::parse(timestamp, &Rfc3339).unwrap();
         let time = entry["time"].as_f64().unwrap();
-        let delta = (parsed.timestamp_nanos_opt().unwrap() as f64 - time).abs();
+        let delta = (parsed.unix_timestamp_nanos() as f64 - time).abs();
+
         assert!(
             delta < 1_000.0,
             "timestamp {timestamp} should match time {time}"
@@ -467,7 +472,6 @@ mod tests {
     #[cfg(target_os = "macos")]
     fn test_visit_live_system() {
         use crate::log_entry::EventType;
-        use chrono::SecondsFormat;
 
         visit_live_system(|entry| {
             assert_ne!(
@@ -479,7 +483,8 @@ mod tests {
             assert!(
                 !entry
                     .timestamp()
-                    .to_rfc3339_opts(SecondsFormat::Nanos, true)
+                    .format(&Rfc3339)
+                    .unwrap()
                     .starts_with("1970-")
             );
         })

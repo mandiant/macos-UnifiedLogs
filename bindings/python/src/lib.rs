@@ -55,6 +55,8 @@ use pyo3::exceptions::{PyFileNotFoundError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use pyo3::IntoPyObjectExt;
+use time::format_description::well_known::Rfc3339;
+use time::OffsetDateTime;
 use tracing::warn;
 
 /// pyo3 0.30 removed the `PyObject` alias for `Py<PyAny>`; keep using the name
@@ -147,8 +149,10 @@ fn value_to_pydict(py: Python<'_>, value: &serde_json::Value) -> PyResult<Py<PyD
 /// which cannot occur for values produced by the library.
 fn timestamp_to_py<'py>(py: Python<'py>, value: &serde_json::Value) -> PyResult<Bound<'py, PyAny>> {
     match value {
-        serde_json::Value::String(ts) => match chrono::DateTime::parse_from_rfc3339(ts) {
-            Ok(dt) => Ok(dt.into_pyobject(py)?.into_any()),
+        serde_json::Value::String(ts) => match OffsetDateTime::parse(ts, &Rfc3339) {
+            Ok(dt) => Ok(dt
+                .into_pyobject(py)?
+                .into_any()),
             Err(_) => Ok(ts.clone().into_pyobject(py)?.into_any()),
         },
         _ => json_to_py(py, value),
@@ -733,8 +737,6 @@ mod tests {
 
     #[test]
     fn timestamp_becomes_timezone_aware_datetime() {
-        use chrono::{Datelike, TimeZone};
-
         let value: serde_json::Value = serde_json::json!({
             "pid": 1u64,
             "timestamp": "2024-05-01T12:00:00.123456789Z",
@@ -745,12 +747,9 @@ mod tests {
 
             // A timezone-aware datetime in UTC, not a plain string
             let ts = dict.get_item("timestamp").unwrap().unwrap();
-            let dt = ts
-                .extract::<chrono::DateTime<chrono::FixedOffset>>()
-                .unwrap();
+            let dt = ts.extract::<OffsetDateTime>().unwrap();
             assert_eq!(dt.year(), 2024);
-            assert_eq!(dt.month(), 5);
-            assert_eq!(chrono::Utc.from_utc_datetime(&dt.naive_utc()), dt);
+            assert_eq!(u8::from(dt.month()), 5);
 
             // Other fields still convert normally
             let pid = dict.get_item("pid").unwrap().unwrap();

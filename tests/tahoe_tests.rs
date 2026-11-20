@@ -12,6 +12,7 @@ use macos_unifiedlogs::{
     logarchive::{visit_logarchive, visit_logarchive_tracev3_file},
 };
 use std::path::PathBuf;
+use time::format_description::well_known::Rfc3339;
 use uuid::uuid;
 
 fn item_kind_counts(entry: &LogEntry<'_, '_>) -> (usize, usize, usize, usize) {
@@ -144,8 +145,7 @@ fn test_build_log_tahoe() {
             assert_eq!(
                 results
                     .timestamp()
-                    .format("%Y-%m-%dT%H:%M:%S%.9fZ")
-                    .to_string(),
+                    .format(&Rfc3339).unwrap(),
                 "2026-04-20T00:42:45.055178496Z"
             );
         }
@@ -188,16 +188,14 @@ fn test_build_log_tahoe() {
             assert_eq!(
                 results
                     .timestamp()
-                    .format("%Y-%m-%dT%H:%M:%S%.9fZ")
-                    .to_string(),
+                    .format(&Rfc3339).unwrap(),
                 "2026-04-20T00:42:31.171707648Z"
             );
         }
 
         let timestamp = results
-            .timestamp()
-            .format("%Y-%m-%dT%H:%M:%S%.9fZ")
-            .to_string();
+                    .timestamp()
+                    .format(&Rfc3339).unwrap();
         assert!(timestamp.contains("2026-04-20T"));
         if timestamp.contains("2026-04-20T00:42") {
             midnight += 1;
