@@ -76,3 +76,18 @@ jobs:
         run: cargo test --no-run --release
       - name: Run tests
         run: cargo test --release
+
+  # python-bindings:
+    # name: "Check Python bindings build"
+    # runs-on: ubuntu-latest
+    # permissions:
+      # contents: read
+    # steps:
+      # - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        # with:
+          # persist-credentials: false
+      # - name: Build bindings
+        # uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
+        # with:
+          # command: build
+          # args: --manifest-path bindings/python/Cargo.toml
