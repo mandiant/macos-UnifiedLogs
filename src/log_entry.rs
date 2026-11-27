@@ -12,7 +12,7 @@
 //! on demand via `.message()` — no heap allocation until explicitly requested.
 
 use base64::Engine;
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 use std::path::PathBuf;
@@ -297,8 +297,8 @@ impl<'a, 'b> LogEntry<'a, 'b> {
     }
 
     /// Compute wall-clock timestamp on demand from `time` (nanoseconds since UNIX epoch).
-    pub fn timestamp(&self) -> DateTime<Utc> {
-        DateTime::from_timestamp_nanos(self.time as i64)
+    pub fn timestamp(&self) -> Timestamp {
+        Timestamp::from_nanosecond(self.time as i128).unwrap_or(Timestamp::UNIX_EPOCH)
     }
 
     /// Apply signpost and backtrace prefixes for parity with the old pipeline.
@@ -464,8 +464,9 @@ impl Serialize for LogEntry<'_, '_> {
         state.serialize_field("parent_activity_id", &self.parent_activity_id)?;
         state.serialize_field("time", &self.time)?;
         // RFC3339 rendering of `time`, matching the historical output format
-        let timestamp = DateTime::from_timestamp_nanos(self.time as i64)
-            .to_rfc3339_opts(chrono::SecondsFormat::Nanos, true);
+        let timestamp = Timestamp::from_nanosecond(self.time as i128)
+            .unwrap_or(Timestamp::UNIX_EPOCH)
+            .to_string();
         state.serialize_field("timestamp", timestamp.as_str())?;
         state.serialize_field("event_type", &self.event_type)?;
         state.serialize_field("log_type", &self.log_type)?;

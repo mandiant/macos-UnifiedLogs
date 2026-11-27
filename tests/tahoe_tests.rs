@@ -144,7 +144,6 @@ fn test_build_log_tahoe() {
             assert_eq!(
                 results
                     .timestamp()
-                    .format("%Y-%m-%dT%H:%M:%S%.9fZ")
                     .to_string(),
                 "2026-04-20T00:42:45.055178496Z"
             );
@@ -188,7 +187,6 @@ fn test_build_log_tahoe() {
             assert_eq!(
                 results
                     .timestamp()
-                    .format("%Y-%m-%dT%H:%M:%S%.9fZ")
                     .to_string(),
                 "2026-04-20T00:42:31.171707648Z"
             );
@@ -196,7 +194,6 @@ fn test_build_log_tahoe() {
 
         let timestamp = results
             .timestamp()
-            .format("%Y-%m-%dT%H:%M:%S%.9fZ")
             .to_string();
         assert!(timestamp.contains("2026-04-20T"));
         if timestamp.contains("2026-04-20T00:42") {

@@ -5,7 +5,6 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
-use chrono::SecondsFormat;
 use macos_unifiedlogs::cache::{StringCatalog, StringStorage};
 use macos_unifiedlogs::filesystem::{InMemoryProvider, LiveSystemProvider, LogarchiveProvider};
 use macos_unifiedlogs::log_entry::LogEntry;
@@ -13,7 +12,6 @@ use macos_unifiedlogs::logarchive::{VisitOptions, visit_provider_with_options};
 use macos_unifiedlogs::timesync::TimestampResolver;
 use macos_unifiedlogs::tracev3::{OversizeCache, visit_tracev3};
 use macos_unifiedlogs::traits::FileProvider;
-use tracing_subscriber::util::SubscriberInitExt;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs::{self, File};
@@ -23,8 +21,9 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use tracing::{error, info, warn};
 use tracing::level_filters::LevelFilter;
+use tracing::{error, info, warn};
+use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{fmt::layer, layer::SubscriberExt};
 
 use clap::{Parser, ValueEnum, builder};
@@ -213,7 +212,8 @@ impl From<Format> for &str {
 }
 
 fn main() {
-    let log_file = File::create(PathBuf::from("issues.jsonl")).expect("Could not create issues.jsonl file");
+    let log_file =
+        File::create(PathBuf::from("issues.jsonl")).expect("Could not create issues.jsonl file");
     let _ = tracing_subscriber::registry()
         .with(
             layer()
@@ -225,7 +225,8 @@ fn main() {
                 .with_span_list(false)
                 .with_writer(log_file),
         )
-        .with(LevelFilter::WARN).init();
+        .with(LevelFilter::WARN)
+        .init();
     info!("Starting Unified Log parser...");
 
     let args = Args::parse();
@@ -479,10 +480,7 @@ impl OutputWriter {
         match &mut self.writer {
             OutputWriterEnum::Csv(csv_writer) => {
                 csv_writer.write_record(&[
-                    record
-                        .timestamp()
-                        .to_rfc3339_opts(SecondsFormat::Millis, true)
-                        .as_str(),
+                    &record.timestamp().to_string(),
                     &format!("{:?}", record.event_type),
                     &format!("{:?}", record.log_type),
                     record.subsystem.unwrap_or_default(),

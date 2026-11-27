@@ -15,11 +15,11 @@ name = "_macos_unifiedlogs"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-chrono = "0.4"
+jiff = { version = "1.0.3", default-features = false }
 macos-unifiedlogs = { path = "../.." }
-pyo3 = { version = "0.30", features = ["abi3-py311", "chrono"] }
-serde_json = "1.0"
-tracing = "0.1"
+pyo3 = { version = "0.30.1", features = ["abi3-py311", "jiff-02"] }
+serde_json = "1.0.154"
+tracing = "0.1.44"
 
 [dev-dependencies]
 # Auto-initialize the Python interpreter in `cargo test` so the unit tests

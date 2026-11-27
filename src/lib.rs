@@ -23,7 +23,7 @@
 //! use std::path::Path;
 //!
 //! visit_logarchive(Path::new("system_logs.logarchive"), |entry| {
-//!     let timestamp = entry.timestamp().to_rfc3339();
+//!     let timestamp = entry.timestamp().to_string();
 //!     let process = entry.process.unwrap_or("");
 //!     let message = entry.message();
 //!
