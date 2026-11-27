@@ -6,6 +6,9 @@ license = "Apache-2.0"
 description = "Python bindings for the macos-unifiedlogs library"
 publish = false
 
+[profile.release]
+strip = true
+
 # Keep this crate independent so it is only built when building the bindings,
 # not as part of regular `cargo build`/`cargo test` runs of the library itself.
 [workspace]
