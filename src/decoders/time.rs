@@ -5,29 +5,20 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and limitations under the License.
 
+use super::DecoderError;
+use jiff::Timestamp;
 use std::fmt::Display;
 
-use super::DecoderError;
-use chrono::{DateTime, LocalResult, SecondsFormat, TimeZone, Utc};
-
+#[derive(Debug)]
 pub enum LocalDateTime {
-    Single(DateTime<Utc>),
-    Ambiguous(DateTime<Utc>, DateTime<Utc>),
+    Single(String),
 }
 
 impl Display for LocalDateTime {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             LocalDateTime::Single(dt) => {
-                write!(f, "{}", dt.to_rfc3339_opts(SecondsFormat::Millis, true))
-            }
-            LocalDateTime::Ambiguous(dt1, dt2) => {
-                write!(
-                    f,
-                    "Ambiguous time: {} or {}",
-                    dt1.to_rfc3339_opts(SecondsFormat::Millis, true),
-                    dt2.to_rfc3339_opts(SecondsFormat::Millis, true)
-                )
+                write!(f, "{dt}")
             }
         }
     }
@@ -42,28 +33,44 @@ pub(crate) fn parse_time(input: &str) -> Result<LocalDateTime, DecoderError<'_>>
     })?;
 
     // Format to UTC, the log command will format to whatever the local time is for the system
-    let date_time_result = Utc.timestamp_opt(timestamp, 0);
-    match date_time_result {
-        LocalResult::None => Err(DecoderError::Parse {
-            input: input.as_bytes(),
-            parser_name: "parse time",
-            message: "Could not parse time",
-        }),
-        LocalResult::Single(date_time) => Ok(LocalDateTime::Single(date_time)),
-        LocalResult::Ambiguous(date_time, date_time2) => {
-            Ok(LocalDateTime::Ambiguous(date_time, date_time2))
-        }
+    if let Ok(utc) = Timestamp::from_second(timestamp) {
+        return Ok(LocalDateTime::Single(utc.to_string()));
     }
+
+    Err(DecoderError::Parse {
+        input: input.as_bytes(),
+        parser_name: "parse time",
+        message: "Could not convert timestamp to RFC3339",
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::parse_time;
+    use crate::decoders::DecoderError;
 
     #[test]
     fn test_parse_time() {
         let test_data = "1642302428";
         let result = parse_time(test_data).unwrap();
-        assert_eq!(result.to_string(), "2022-01-16T03:07:08.000Z")
+        assert_eq!(result.to_string(), "2022-01-16T03:07:08Z")
+    }
+
+    #[test]
+    fn test_parse_time_bad_string() {
+        let bad_time = "not a timestamp";
+        let err = parse_time(bad_time).unwrap_err();
+        assert!(
+            matches!(err, DecoderError::Parse { message, .. } if message == "Failed to parse timestamp")
+        )
+    }
+
+    #[test]
+    fn test_parse_time_bad_number() {
+        let bad_time = "9223372036854775807";
+        let err = parse_time(bad_time).unwrap_err();
+        assert!(
+            matches!(err, DecoderError::Parse { message, .. } if message == "Could not convert timestamp to RFC3339")
+        )
     }
 }

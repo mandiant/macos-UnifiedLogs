@@ -1,6 +1,5 @@
-use chrono::SecondsFormat;
-use macos_unifiedlogs::{log_entry::LogEntry, uuidtext::RawUUIDText};
 use macos_unifiedlogs::timesync::RawTimesyncBoot;
+use macos_unifiedlogs::{log_entry::LogEntry, uuidtext::RawUUIDText};
 use serde::Serialize;
 use std::{collections::HashMap, error::Error, io::Write};
 use uuid::Uuid;
@@ -68,9 +67,7 @@ impl OutputWriter {
             library_uuid: entry.library_uuid.to_string(),
             activity_id: entry.activity_id,
             parent_activity_id: entry.parent_activity_id,
-            timestamp: entry
-                .timestamp()
-                .to_rfc3339_opts(SecondsFormat::Nanos, true),
+            timestamp: entry.timestamp().to_string(),
             time: entry.time,
             event_type: format!("{:?}", entry.event_type),
             log_type: format!("{:?}", entry.log_type),
@@ -110,7 +107,7 @@ impl OutputWriter {
     }
 
     pub fn write_uuidtext(&mut self, uuidtext: &RawUUIDText) -> Result<(), Box<dyn Error>> {
-                match &mut self.writer {
+        match &mut self.writer {
             OutputWriterEnum::Json(json_writer) => {
                 writeln!(json_writer, "{}", serde_json::to_string(uuidtext).unwrap())?;
             }
